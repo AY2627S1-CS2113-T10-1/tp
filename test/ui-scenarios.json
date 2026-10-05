@@ -46,6 +46,21 @@
       "status": "planned", "setup": "Unsupported version; Save and Printing implemented and error wording agreed",
       "files": { "data/scheduleflow.txt": "SCHEDULEFLOW|99\nNEXT|1|1\n" },
       "sessions": [{ "startup": "Error: Unsupported file version: 99\n", "steps": [], "exitCode": 1 }]
+    },
+    {
+      "requiredComponents": ["Main.main","App.run","ConsoleUi.prompt","ConsoleUi.readLine","ConsoleUi.write","FileStorage.load","StateCodec.decode","CommandParser.parse","CommandDispatcher.execute","TextRenderer.parseError","TextRenderer.exit"],
+      "id": "UI-005", "aim": "Syntax errors include command usage and allow subsequent commands",
+      "status": "planned", "setup": "No data file; parser ready, Save and remaining Printing dependencies needed",
+      "sessions": [{ "startup": "", "steps": [
+        { "input": "task add n/A due/2026-02-30 0900 d/30", "output": "Error: Invalid date or time\nExpected: task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES" },
+        { "input": "task add n/A n/B due/2026-10-06 0900 d/30", "output": "Error: Invalid command format or missing fields\nExpected: task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES" },
+        { "input": "task delete 1", "output": "Error: Invalid command format or missing fields\nExpected: task delete TNUMBER" },
+        { "input": "task list extra", "output": "Error: This command accepts no arguments\nExpected: task list" },
+        { "input": "commitment add n/A day/mon start/1000 d/30", "output": "Error: Invalid command format or missing fields\nExpected: commitment add n/NAME day/DAY start/HHmm d/MINUTES" },
+        { "input": "schedule 2026-02-30", "output": "Error: Invalid date or time\nExpected: schedule today OR schedule YYYY-MM-DD" },
+        { "input": "exit extra", "output": "Error: This command accepts no arguments\nExpected: exit" },
+        { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+      ] }]
     }
   ]
 }

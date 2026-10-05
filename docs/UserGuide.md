@@ -9,7 +9,7 @@ ScheduleFlow is a command line application for university students balancing cou
 
 Study hours are **08:00–22:00 every day**, including weekends. Work is scheduled in **30-minute slots**, and any work that does not fit is reported explicitly.
 
-> **Implementation status:** This guide describes the intended MVP behaviour. The application is still under development; not every feature described here is implemented.
+> **Implementation status:** Printing stage 1 (command parsing) is implemented and tested. All command formats below can be parsed, with strict syntax, date, time and integer checks. Text rendering and the application loop are still pending, so the launch instructions and console transcripts describe intended MVP behaviour rather than a working console release.
 
 ## Contents
 
@@ -92,6 +92,12 @@ Use one or more ordinary spaces between fields. Outer whitespace is trimmed, and
 IDs identify records, not list positions. Bare numbers such as `1`, zero-padded IDs such as `T01`, and IDs with the wrong prefix are rejected. Task and commitment IDs have separate sequences starting at `T1` and `C1`. Deleted IDs are never reused, including after a restart; a failed add does not consume an ID. Numeric inputs must fit within a signed 32-bit integer, and an exhausted ID sequence rejects further additions.
 
 Missing, repeated, unknown, reordered, or extra fields are rejected. Commands such as `help`, `task list`, `plan`, and `exit` accept no arguments. Deletion and schedule commands also reject trailing input.
+
+Impossible dates such as `2026-02-30` are rejected rather than adjusted to another
+date. Parsing keeps `schedule today` as a request for today's schedule; its date
+will be resolved when the command executes. Checks such as a future deadline,
+duration divisibility and whether an ID exists belong to domain validation
+after parsing.
 
 Examples below are independent unless a sequence is explicitly described. Use existing IDs and suitable future dates in your own session. List spacing and explanatory error wording may vary; identifiers, values, and behaviour follow the rules described in this guide.
 

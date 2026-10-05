@@ -1,6 +1,7 @@
 # ScheduleFlow UI test plan
 
-The application is an unfinished starter. No feature scenario has passed.
+The application loop is unfinished. Printing stage 1 parsing is covered by
+`CommandParserTest`; no process UI feature scenario has passed.
 `ui-scenarios.json` is the executable source of truth for IDs, aims, setup,
 ordered commands, exact per-command output, exit codes and active/planned
 status. Review it after every code update. These initial CLI cases are not
@@ -58,6 +59,7 @@ may proceed with passing Java tests/checks and recorded BLOCKED UI status.
 | UI-002 | Adjacency, midnight and commitment counters/restart | Planned |
 | UI-003 | EOF | Planned |
 | UI-004 | Unsupported store version | Planned; error wording chosen for fixture |
+| UI-005 | Syntax errors include usage and permit the next command | Planned; parser ready, console dependencies unfinished |
 
 UI-004's error wording is a proposed exact regression baseline, not a new
 behaviour requirement; the Save/Printing owners may update it when agreeing
@@ -71,10 +73,13 @@ Save-failure rollback checks require fake storage or deterministic failure
 injection. Their release checks remain
 unexecuted until the responsible modules are implemented.
 
-Foundation checkpoint: all required types now compile; 32 feature methods
-remain ownership-marked stubs. Review found no justified change to the four
-planned scenarios or their expectations. The foundation UI session remains
-BLOCKED; it does not establish any CLI acceptance behavior.
+Stage 1 checkpoint: the shared declarations are present and CommandParser.parse
+is implemented. Review of UI-001 through UI-004 found that their application
+and storage dependencies still prevent activation. UI-005 adds the planned
+process check for parsing errors and recovery, with exact usage hints. It also
+requires the pending application loop, renderer and startup storage. Run all
+ready active scenarios when those dependencies are implemented; parser unit
+tests do not establish console recovery or unchanged persisted state.
 
 Each fixture's `requiredComponents` lists the Type.method implementations
 needed for that scenario. Preflight reports all unfinished methods, blocks
