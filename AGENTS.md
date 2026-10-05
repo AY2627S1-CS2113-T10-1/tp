@@ -40,9 +40,18 @@ The ScheduleFlow starter task explicitly authorizes local commits. For future
 project code tasks, make local commits after significant verified changes as
 part of this repository workflow; never push unless explicitly requested.
 
-Read `docs/ScheduleFlow-Implementation-Contract.docx` (or its full text companion)
-before changing shared contracts. Preserve public signatures and ownership;
-read sections 1-3, your role, and 14-16 before feature implementation.
+Before implementation, read `docs/DeveloperGuide.md`, `docs/UserGuide.md`,
+the relevant source and tests, and any applicable nested `AGENTS.md` files.
+Preserve public signatures and the ownership recorded in
+`src/main/java/scheduleflow/AGENTS.md`; coordinate shared API changes with
+affected owners.
+
+After every implementation, all AI agents working on this project must review
+`docs/DeveloperGuide.md` and `docs/UserGuide.md` and update them as needed in
+the same change. Document affected design, implementation and testing details
+in the Developer Guide, and affected commands, examples and user-visible
+behaviour in the User Guide. Keep descriptions consistent with verified
+behaviour and distinguish planned features from implemented features.
 
 Repository skills are discoverable under `.agents/skills/` in Codex. Load the
 files explicitly if they are absent from the initial skill catalog:

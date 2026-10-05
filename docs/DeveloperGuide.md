@@ -1,5 +1,14 @@
 # Developer Guide
 
+## Keeping the guides up to date
+
+After each implementation, review this guide and the [User Guide](UserGuide.md)
+and update them as needed in the same change. Record changes to design,
+implementation and testing here, and changes to commands, examples and
+user-visible behaviour in the User Guide. Describe verified behaviour accurately
+and clearly mark planned features. This requirement also applies to all AI
+agents working on the project, as specified in the repository's root `AGENTS.md`.
+
 ## Acknowledgements
 
 {list here sources of all reused/adapted ideas, code, documentation, and third-party libraries -- include links to the original source as well}

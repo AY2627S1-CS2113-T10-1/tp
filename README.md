@@ -5,10 +5,10 @@ The shared foundation and public APIs are implemented and tested. The
 application is **not functionally complete**: task/commitment operations,
 persistence, planning and the CLI deliberately remain owned stubs.
 
-Start with [the starter handoff](docs/STARTER.md), the
-[implementation contract](docs/ScheduleFlow-Implementation-Contract.docx)
-([full extracted text](docs/ScheduleFlow-Implementation-Contract.txt)), and
-[AGENTS.md](AGENTS.md).
+Start with the [Developer Guide](docs/DeveloperGuide.md), the
+[User Guide](docs/UserGuide.md), and [AGENTS.md](AGENTS.md).
+Module ownership is recorded in
+[the source instructions](src/main/java/scheduleflow/AGENTS.md).
 
 Import this repository as a Gradle project in IntelliJ and select JDK 25.
 Keep the standard `src/main/java` and `src/test/java` source roots.
