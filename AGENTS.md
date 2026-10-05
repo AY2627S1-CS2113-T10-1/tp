@@ -28,6 +28,27 @@ Unless the user says otherwise, assume that you are assisting a student working 
 
 Ensure that Java 25 is used when running the application or build tasks. On macOS, use `sdk use java 25.0.3.fx-zulu` to switch to Java 25 if needed.
 
+Verify both `java -version` and the JVM reported by the Gradle wrapper; do
+not silently downgrade the runtime. Import the project into IntelliJ as a
+Gradle project with SDK 25, and keep Java source files encoded as UTF-8.
+
+## Build and verification setup
+
+Run checks from the repository root using the committed Gradle wrapper:
+
+```powershell
+java -version
+.\gradlew.bat --version
+.\gradlew.bat build
+node --test test/ui-runner.test.mjs
+node .agents/skills/test-ui/scripts/run-ui-tests.mjs
+```
+
+Use `./gradlew` on Unix. The UI runner requires Node.js 22 or later and uses
+only built-in modules, so it needs no npm install. If the default Gradle cache
+is unwritable, set `GRADLE_USER_HOME` to an accessible writable cache instead
+of changing project dependencies to work around the environment.
+
 ## Git
 
 Use lightweight tags unless the user requests an annotated tag.
@@ -42,9 +63,11 @@ part of this repository workflow; never push unless explicitly requested.
 
 Before implementation, read `docs/DeveloperGuide.md`, `docs/UserGuide.md`,
 the relevant source and tests, and any applicable nested `AGENTS.md` files.
-Preserve public signatures and the ownership recorded in
-`src/main/java/scheduleflow/AGENTS.md`; coordinate shared API changes with
-affected owners.
+Follow the scope and implementation requirements supplied by the programmer
+for the current task; do not infer assignments or implementation plans from
+historical handoff notes. Preserve existing public interfaces unless a change
+is authorized. Coordinate incompatible changes with affected contributors and
+update callers, tests and documentation together.
 
 After every implementation, all AI agents working on this project must review
 `docs/DeveloperGuide.md` and `docs/UserGuide.md` and update them as needed in
@@ -75,3 +98,28 @@ Preserve existing unrelated work. Keep separate quality improvements in
 separate commits with tests and a problem/impact/change/rationale body.
 Do not implement another owner's deferred features as a refactoring. No fake
 success returns from stubs. Constructors must not perform I/O.
+
+## Quality review and verification evidence
+
+- Passing Checkstyle does not replace reviewing names, intent and design.
+  Follow the repository skills' distinction between mandatory rules,
+  recommendations and documented exceptions; do not rename public APIs solely
+  to satisfy a style preference.
+- Keep tests deterministic and isolate test data from the developer's saved
+  data. Use controlled time and temporary storage where needed.
+- A successful build or test-harness run does not establish that application
+  features work. Verify the affected behaviour and acceptance cases before
+  claiming completion; diagnostic stub failures are never feature passes.
+- Review and activate ready planned UI cases. An unrelated unfinished
+  component cannot excuse a failure in a ready active scenario. Report the
+  runner's results accurately: exit 0 means active scenarios passed, exit 1
+  means FAILED, and exit 2 means BLOCKED.
+- Include the checks run, their results, unexecuted or blocked cases, and
+  remaining limitations in the completion report. Use the exact transcript
+  path printed by the UI runner when citing evidence. Transcripts are under
+  ignored `build/ui-transcripts/`; preserve needed evidence before running
+  Gradle `clean`, which removes build artifacts and transcripts.
+- Keep generated output, saved data and temporary verification dependencies
+  out of commits. Stage only intended changes and review the staged diff and
+  whitespace before committing. Do not merge or rewrite history without an
+  explicit request.
