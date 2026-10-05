@@ -20,7 +20,7 @@ Review new and touched code for:
 - Comments that explain intent and rationale to another developer, avoiding
   narration of obvious statements.
 
-Preserve the contract APIs and required scaffold dependencies even while
+Preserve existing public APIs and required scaffold dependencies even while
 unused. Compact constructor parameter assignments normalize/copy that same
 value; they do not repurpose parameters. Keep shared validation in its assigned
 owner; do not extract a competing public framework merely to reduce lines.

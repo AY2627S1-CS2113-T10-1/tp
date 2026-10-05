@@ -1,8 +1,9 @@
 # ScheduleFlow ownership
 
 Root AGENTS.md and its three repository-local skills apply here. Read the
-entire implementation contract before modifying shared APIs. Preserve exact
-record components, packages, constructors, checked exceptions and methods.
+Developer Guide and relevant source and tests before modifying shared APIs.
+Preserve exact record components, packages, constructors, checked exceptions
+and methods.
 
 Paths below are relative to this directory:
 

@@ -33,7 +33,7 @@ passing automation alone does not establish full compliance.
 - Use UTF-8, one public top-level type per matching file, explicit imports
   sorted lexically (static first), `@Override` where applicable, and no silent
   exception catches. These use the Google fallback.
-- The contract's record accessors and named APIs (including `snapshot`,
+- Existing record accessors and named APIs (including `snapshot`,
   `usage`, `minutes`, `forDate`, and renderer methods) override verb naming.
   Command type names also remain exact. Do not rename shared APIs for style.
 - The requested `TODO(Owner): implement Type.method` markers override Google's
