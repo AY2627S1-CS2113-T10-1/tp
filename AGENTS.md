@@ -32,6 +32,27 @@ Verify both `java -version` and the JVM reported by the Gradle wrapper; do
 not silently downgrade the runtime. Import the project into IntelliJ as a
 Gradle project with SDK 25, and keep Java source files encoded as UTF-8.
 
+## Java comments and Javadoc
+
+Use Javadoc (`/** ... */`) for comments that document a Java type, constructor,
+method or field, including private declarations and test helpers. Place the
+Javadoc directly before the declaration's annotations or modifiers; do not use
+ordinary line/block comments for declaration documentation. Document all types
+and nontrivial members as required by the Java coding standard. Obvious
+accessors, exact overrides and test methods retain that standard's exceptions;
+any documentation added to those declarations must still use Javadoc.
+
+Describe purpose, contracts and relevant constraints. Add `@param`, `@return`
+and `@throws` tags when they clarify inputs, results or failure conditions; if
+using parameter tags, document every parameter. Use `{@code ...}` and
+`{@link ...}` where appropriate. Keep documentation accurate when code changes.
+
+Keep ordinary `//` or `/* ... */` comments for implementation explanations
+inside method bodies, local variables, TODO ownership markers and tooling
+directives. Javadoc must attach to a declaration, so do not convert these
+comments mechanically. Review changed Java comments for this rule before
+committing, in addition to running Checkstyle.
+
 ## Build and verification setup
 
 Run checks from the repository root using the committed Gradle wrapper:

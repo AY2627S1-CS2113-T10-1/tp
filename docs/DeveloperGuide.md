@@ -15,6 +15,20 @@ agents working on the project, as specified in the repository's root `AGENTS.md`
 
 ## Design & implementation
 
+### Java documentation
+
+Use Javadoc for comments documenting types, constructors, methods and fields,
+including private declarations and test helpers. Document purpose, constraints
+and failure conditions; include parameter, return and exception tags when they
+clarify the contract. If parameter tags are used, cover every parameter. The
+Java standard's exceptions for obvious accessors, exact overrides and test
+methods still apply, but any declaration documentation must use Javadoc.
+
+Keep implementation explanations inside method bodies, local-variable comments,
+ownership TODO markers and tooling directives as ordinary comments. Review
+comment placement and accuracy alongside Checkstyle before committing. These
+rules are required by the root `AGENTS.md` and do not change command behaviour.
+
 ### Commands and parsing
 
 `CommandParser.parse` implements all command formats in the User Guide and
