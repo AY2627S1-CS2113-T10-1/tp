@@ -10,7 +10,9 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
@@ -28,6 +30,7 @@ import scheduleflow.planning.UnallocatedWork;
 /**
  * Verifies public output using fixed records without console, storage or clock dependencies.
  */
+@Isolated("Locale checks temporarily change JVM defaults.")
 class TextRendererTest {
     private static final LocalDateTime DEADLINE = LocalDateTime.of(2027, 1, 1, 9, 5);
     private static final String LONG_NAME = "项目 préparation 📚 " + "a".repeat(150);
@@ -74,6 +77,47 @@ class TextRendererTest {
                 + " | 180 min | 2027-01-02 09:05\nT10 | Earlier deadline | 30 min | 2027-01-01 09:05"
                 + "\nTotal: 2 task(s).", renderer.tasks(tasks));
         assertEquals(original, tasks);
+    }
+
+    @Test
+    void tasks_boundaryYears_preservesFourDigitDatesAndMinutePrecision() {
+        Task earliest = new Task(1, "Early", LocalDateTime.of(1, 1, 1, 0, 0), 30);
+        Task latest = new Task(2, "Late", LocalDateTime.of(9999, 12, 31, 23, 59), 60);
+        assertOutput("Added T1: Early\nDue: 0001-01-01 00:00 | Duration: 30 min", renderer.taskAdded(earliest));
+        assertOutput("Added T2: Late\nDue: 9999-12-31 23:59 | Duration: 60 min", renderer.taskAdded(latest));
+        assertOutput("=== Actionable Tasks ===\nID | Name | Duration | Deadline"
+                + "\nT1 | Early | 30 min | 0001-01-01 00:00\nT2 | Late | 60 min | 9999-12-31 23:59"
+                + "\nTotal: 2 task(s).", renderer.tasks(List.of(earliest, latest)));
+    }
+
+    @Test
+    void rendering_nonEnglishLocales_preservesContractText() {
+        Locale original = Locale.getDefault();
+        Locale originalDisplay = Locale.getDefault(Locale.Category.DISPLAY);
+        Locale originalFormat = Locale.getDefault(Locale.Category.FORMAT);
+        try {
+            for (Locale locale : List.of(Locale.FRANCE, Locale.forLanguageTag("ar-SA"))) {
+                Locale.setDefault(locale);
+                TextRenderer localizedRenderer = new TextRenderer();
+                Task task = new Task(1, "Draft", DEADLINE, 90);
+                Commitment late = new Commitment(1, "Review", DayOfWeek.MONDAY, LocalTime.of(23, 30), 30);
+                ScheduleView free = new ScheduleView(DATE, NOW,
+                        List.of(createEntry(8, 0, 22, 0, SlotKind.FREE, "", "")), List.of());
+                assertOutput("Added T1: Draft\nDue: 2027-01-01 09:05 | Duration: 90 min",
+                        localizedRenderer.taskAdded(task));
+                assertOutput("Added C1: Review | Monday 23:30 - 24:00 (30 min)",
+                        localizedRenderer.commitmentAdded(late));
+                assertOutput("=== Recurring Weekly Commitments ===\n[Monday]\nC1. 23:30 - 24:00 | Review"
+                        + "\n\nTotal: 1 recurring commitments across the week.",
+                        localizedRenderer.commitments(List.of(late)));
+                assertOutput("=== Schedule for Monday (2026-09-21) ===\nGenerated at: 2026-09-21 07:00"
+                        + "\n08:00 - 22:00 | [FREE]", localizedRenderer.schedule(free));
+            }
+        } finally {
+            Locale.setDefault(original);
+            Locale.setDefault(Locale.Category.DISPLAY, originalDisplay);
+            Locale.setDefault(Locale.Category.FORMAT, originalFormat);
+        }
     }
 
     @Test
@@ -246,6 +290,19 @@ class TextRendererTest {
         assertOutput("=== Schedule for Monday (2026-09-21) ===\nGenerated at: 2026-09-21 07:00"
                 + "\n08:00 - 08:30 | [TASK] T2: Draft (30 min)\n08:30 - 09:00 | [TASK] T2: Draft (30 min)"
                 + "\n09:00 - 22:00 | [FREE]", renderer.schedule(view));
+    }
+
+    @Test
+    void schedule_leapDay_usesViewDateAndOriginalGenerationDate() {
+        LocalDate leapDay = LocalDate.of(2024, 2, 29);
+        LocalDateTime generatedAt = LocalDateTime.of(2024, 2, 28, 21, 45);
+        ScheduleEntry free = new ScheduleEntry(leapDay.atTime(8, 0), leapDay.atTime(22, 0),
+                SlotKind.FREE, "", "");
+        ScheduleView view = new ScheduleView(leapDay, generatedAt, List.of(free), List.of());
+        assertOutput("=== Schedule for Thursday (2024-02-29) ===\nGenerated at: 2024-02-28 21:45"
+                + "\n08:00 - 22:00 | [FREE]", renderer.schedule(view));
+        assertEquals(leapDay, view.date());
+        assertEquals(generatedAt, view.generatedAt());
     }
 
     @Test

@@ -93,6 +93,11 @@ existing planner and schedule service, but is not a process UI scenario.
 No fixture is ready for activation solely because formatting is implemented;
 the process dependencies above remain required.
 
+Additional formatter JUnit checks cover years 0001/9999, a leap-day view whose
+generation date differs from its selected date, and unchanged English output
+under French/Arabic JVM defaults. Locale checks restore defaults and run in
+isolation. These checks leave process fixtures and readiness unchanged.
+
 Each fixture's `requiredComponents` lists the Type.method implementations
 needed for that scenario. Preflight reports all unfinished methods, blocks
 only dependent cases, and still runs ready active cases. Ad-hoc lists without

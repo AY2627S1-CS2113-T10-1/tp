@@ -126,6 +126,29 @@ through the existing planner and projection APIs before formatting.
 
 ## Instructions for manual testing
 
+### JUnit tests
+
+Add or update JUnit 5 tests alongside new or changed Java behaviour, including
+regression tests for bug fixes. Assert observable behaviour for relevant valid,
+invalid and boundary inputs. Documentation-only changes require a coverage
+review rather than redundant tests. The root and test `AGENTS.md` files make
+these requirements part of the agent workflow.
+
+Tests mirror production paths and packages: the SUT
+`src/main/java/scheduleflow/cli/TextRenderer.java` is tested by
+`src/test/java/scheduleflow/cli/TextRendererTest.java`, both in
+`scheduleflow.cli`. Matching packages permit package-private access without
+making production members public. Use the `SutNameTest` class naming convention;
+the Java standard permits test names such as `tasks_empty_returnsExactMessage`.
+
+Keep test time and data controlled. `TextRendererTest` includes exact-output
+checks for years 0001 and 9999, a leap-day view generated on a different date,
+and French/Arabic default locales. Its locale test restores all default locale
+categories in `finally`; JUnit's `@Isolated` annotation prevents the class from
+running concurrently with other tests while JVM defaults are changed.
+
+### Build and console checks
+
 Run checks from the repository root with Java 25 and Node.js 22 or later:
 
 ```powershell

@@ -53,6 +53,30 @@ directives. Javadoc must attach to a declaration, so do not convert these
 comments mechanically. Review changed Java comments for this rule before
 committing, in addition to running Checkstyle.
 
+## JUnit test requirements
+
+For new or changed Java behaviour, add or update meaningful JUnit 5 tests in
+the same change. Add regression coverage for bug fixes and review existing
+tests whenever requirements change. Cover representative valid inputs, relevant
+invalid inputs and boundary cases; assert observable results and side effects
+rather than private implementation details. Documentation-only changes must
+review existing coverage but do not need redundant tests.
+
+Place tests under `src/test/java` in the same package as the system under test
+(SUT), mirroring its `src/main/java` path. Name the test class `SutNameTest`,
+for example `scheduleflow/cli/TextRendererTest.java` for `TextRenderer.java`.
+Matching packages allow tests to access package-private members without
+widening production visibility. Test method names may use the Java standard's
+`method_scenario_expectedOutcome` convention, for example
+`tasks_empty_returnsExactMessage`.
+
+Keep tests deterministic and independent. Use fixed time, isolated temporary
+storage and controlled dependencies where needed. Restore any shared JVM state
+changed by a test and prevent concurrent tests from observing it. Do not add
+disabled placeholder tests or treat expected stub failures as acceptance
+coverage. Run affected tests and the Java 25 build/quality checks before each
+local commit; report any blocked coverage honestly.
+
 ## Build and verification setup
 
 Run checks from the repository root using the committed Gradle wrapper:
