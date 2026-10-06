@@ -1,6 +1,7 @@
 package scheduleflow.cli;
 
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.TextStyle;
@@ -10,13 +11,18 @@ import java.util.StringJoiner;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Task;
 import scheduleflow.planning.Plan;
+import scheduleflow.planning.ScheduleEntry;
 import scheduleflow.planning.ScheduleView;
+import scheduleflow.planning.SlotKind;
+import scheduleflow.planning.StudySession;
+import scheduleflow.planning.UnallocatedWork;
 
 /**
  * Formats output without a trailing newline, clock reads, console I/O or state mutation.
  */
 public final class TextRenderer {
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm", Locale.ROOT);
+    private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("uuuu-MM-dd", Locale.ROOT);
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT);
     private static final int MINUTES_PER_HOUR = 60;
     private static final int MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR;
@@ -79,8 +85,8 @@ public final class TextRenderer {
      * Formats the added commitment, including midnight as 24:00.
      */
     public String commitmentAdded(Commitment commitment) {
-        return "Added " + commitment.displayId() + ": " + commitment.name() + " | " + weekday(commitment.day())
-                + " " + TIME.format(commitment.start()) + " - " + commitmentEnd(commitment)
+        return "Added " + commitment.displayId() + ": " + commitment.name() + " | " + formatWeekday(commitment.day())
+                + " " + TIME.format(commitment.start()) + " - " + formatCommitmentEnd(commitment)
                 + " (" + commitment.durationMinutes() + " min)";
     }
 
@@ -105,10 +111,10 @@ public final class TextRenderer {
             if (group.isEmpty()) {
                 continue;
             }
-            lines.add("[" + weekday(day) + "]");
+            lines.add("[" + formatWeekday(day) + "]");
             for (Commitment commitment : group) {
                 lines.add(commitment.displayId() + ". " + TIME.format(commitment.start()) + " - "
-                        + commitmentEnd(commitment) + " | " + commitment.name());
+                        + formatCommitmentEnd(commitment) + " | " + commitment.name());
             }
             lines.add("");
         }
@@ -117,18 +123,42 @@ public final class TextRenderer {
 
     /**
      * Formats complete or partial allocation results with whole-plan totals.
-     * This feature is intentionally unfinished in the shared starter.
      */
     public String plan(Plan plan) {
-        throw new UnsupportedOperationException("TODO(Printing): implement TextRenderer.plan");
+        if (plan.source().tasks().isEmpty()) {
+            return "No tasks to schedule.";
+        }
+        if (plan.isComplete()) {
+            return "Study plan generated successfully! Type 'schedule today' to view your sessions.";
+        }
+        long scheduled = plan.sessions().stream().mapToLong(StudySession::minutes).sum();
+        long unallocated = plan.unallocated().stream().mapToLong(UnallocatedWork::minutes).sum();
+        StringJoiner lines = new StringJoiner("\n");
+        lines.add("Study plan generated with unallocated work.");
+        lines.add("Scheduled: " + scheduled + " min | Unallocated: " + unallocated + " min");
+        appendUnallocated(lines, plan.unallocated());
+        return lines.toString();
     }
 
     /**
      * Formats the frozen schedule and whole-plan unallocated footer.
-     * This feature is intentionally unfinished in the shared starter.
      */
     public String schedule(ScheduleView view) {
-        throw new UnsupportedOperationException("TODO(Printing): implement TextRenderer.schedule");
+        StringJoiner lines = new StringJoiner("\n");
+        lines.add("=== Schedule for " + formatWeekday(view.date().getDayOfWeek())
+                + " (" + DATE.format(view.date()) + ") ===");
+        lines.add("Generated at: " + DATE_TIME.format(view.generatedAt()));
+        for (ScheduleEntry entry : view.entries()) {
+            lines.add(formatScheduleRow(entry));
+        }
+        if (view.entries().stream().anyMatch(entry -> entry.kind() == SlotKind.UNPLANNED)) {
+            lines.add("UNPLANNED periods were before the planning cutoff.");
+        }
+        if (!view.unallocated().isEmpty()) {
+            lines.add("").add("Unallocated work for the whole plan:");
+            appendUnallocated(lines, view.unallocated());
+        }
+        return lines.toString();
     }
 
     /**
@@ -159,14 +189,42 @@ public final class TextRenderer {
         return "Goodbye for now!";
     }
 
-    private String weekday(DayOfWeek day) {
+    private String formatWeekday(DayOfWeek day) {
         return day.getDisplayName(TextStyle.FULL, Locale.ENGLISH);
+    }
+
+    /**
+     * Displays each supplied interval without clipping, merging or allocating it.
+     */
+    private String formatScheduleRow(ScheduleEntry entry) {
+        String range = TIME.format(entry.start()) + " - " + TIME.format(entry.end()) + " | [" + entry.kind() + "]";
+        return switch (entry.kind()) {
+            case BUSY -> range + " " + entry.reference() + ": " + entry.name();
+            case TASK -> range + " " + entry.reference() + ": " + entry.name()
+                    + " (" + Duration.between(entry.start(), entry.end()).toMinutes() + " min)";
+            case FREE, UNPLANNED -> range;
+        };
+    }
+
+    /**
+     * Shares the same ordered task rows between plan summaries and schedule footers.
+     */
+    private void appendUnallocated(StringJoiner lines, List<UnallocatedWork> unallocated) {
+        for (UnallocatedWork work : unallocated) {
+            String reason = switch (work.reason()) {
+                case DEADLINE_PASSED -> "deadline passed";
+                case OUTSIDE_HORIZON -> "outside planning horizon";
+                case INSUFFICIENT_CAPACITY -> "insufficient time before deadline";
+            };
+            lines.add("T" + work.taskId() + ": " + work.taskName() + " | Unallocated: " + work.minutes()
+                    + " min | Reason: " + reason);
+        }
     }
 
     /**
      * Formats the same-day endpoint without wrapping midnight to 00:00.
      */
-    private String commitmentEnd(Commitment commitment) {
+    private String formatCommitmentEnd(Commitment commitment) {
         int endMinute = commitment.endMinuteOfDay();
         if (endMinute == MINUTES_PER_DAY) {
             return "24:00";

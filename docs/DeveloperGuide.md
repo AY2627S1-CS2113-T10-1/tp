@@ -49,11 +49,12 @@ whitespace, strict leap dates and year boundaries, times, field rejection,
 numeric limits, case sensitivity, usage hints and unresolved `today`. These
 tests use fixed values and require no disk data or running application.
 
-### Task, commitment and command text
+### Text rendering
 
-`TextRenderer` formats help, task and commitment success messages, lists, errors,
-the absent-plan message and goodbye. It returns LF-separated strings without a
-trailing newline and performs no I/O, clock reads or state changes. Task rows
+`TextRenderer` formats help, task and commitment success messages, lists, plan
+results, schedules, errors, the absent-plan message and goodbye. It returns
+LF-separated strings without a trailing newline and performs no I/O, clock reads
+or state changes. Task rows
 preserve the service's supplied order and stored duration. Commitment groups
 appear Monday through Sunday, preserve supplied order within each group and
 omit empty weekdays. Names remain visible in full, including Unicode.
@@ -61,8 +62,28 @@ omit empty weekdays. Names remain visible in full, including Unicode.
 Date/time formatters use `uuuu-MM-dd HH:mm` and `HH:mm` with `Locale.ROOT`;
 weekday names explicitly use English. Commitment endpoints use
 `Commitment.endMinuteOfDay()` so midnight displays as `24:00` without wrapping.
-`TextRendererTest` checks these fields, ordering, messages and line framing with
-fixed immutable records. Plan and schedule formatting remain deferred.
+
+Plan summaries distinguish empty task lists, complete results and partial
+allocation (including zero scheduled minutes). Scheduled and unallocated totals
+use `mapToLong` over all plan rows. A private helper formats the unallocated task
+rows and maps all three reasons to the required English text; schedule footers
+reuse it without filtering by the selected date.
+
+Schedules display `ScheduleView` metadata and entries in their supplied order.
+TASK minutes come from that row's endpoints, rather than the task's whole
+estimate. BUSY retains its reference and name; FREE and UNPLANNED have only their
+labels. Any UNPLANNED row adds the cutoff note. A nonempty remainder list adds a
+blank line and the whole-plan footer. The formatter never allocates, clips,
+merges, repairs or reorders schedule rows, and never recalculates generation
+time or date ranges. Range validation remains with `ScheduleService`; the
+dispatcher will handle absent plans during application integration.
+
+`TextRendererTest` checks messages, fields/order, long/Unicode names, midnight,
+empty/complete/partial plans, all reasons, totals above `Integer.MAX_VALUE`,
+multiple planning dates, all schedule labels, session durations, preserved row
+boundaries, frozen metadata, footers and LF/no trailing newline. Fixed records
+avoid live clocks and saved data. The corrected schedule example also runs
+through the existing planner and projection APIs before formatting.
 
 
 ## Product scope

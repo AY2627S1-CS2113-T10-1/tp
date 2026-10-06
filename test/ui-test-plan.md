@@ -1,7 +1,7 @@
 # ScheduleFlow UI test plan
 
 The application loop is unfinished. Parsing is covered by `CommandParserTest`,
-and task, commitment, help and error text by `TextRendererTest`; no process UI
+and all text formatting by `TextRendererTest`; no process UI
 feature scenario has passed.
 `ui-scenarios.json` is the executable source of truth for IDs, aims, setup,
 ordered commands, exact per-command output, exit codes and active/planned
@@ -74,8 +74,8 @@ Save-failure rollback checks require fake storage or deterministic failure
 injection. Their release checks remain
 unexecuted until the responsible modules are implemented.
 
-The shared declarations, `CommandParser.parse`, task/commitment rendering and
-short command messages are implemented. Review of UI-001 through UI-004 found that their application
+The shared declarations, `CommandParser.parse` and all `TextRenderer` methods
+are implemented. Review of UI-001 through UI-004 found that their application
 and storage dependencies still prevent activation. UI-005 adds the planned
 process check for parsing errors and recovery, with exact usage hints. It also
 requires the pending application loop and startup storage. Run all
@@ -85,6 +85,11 @@ tests do not establish console recovery or unchanged persisted state.
 Formatter coverage verifies exact empty/no-plan text, syntax-error usage hints,
 all command formats in help, weekday groups, midnight endpoints, stable IDs,
 stored durations, complete long/Unicode names and LF without trailing newlines.
+Plan/schedule checks cover empty, complete and partial results (including zero
+allocation), all unallocated reasons, whole-plan totals with long arithmetic,
+all labels, session-specific minutes, cutoff notes, frozen metadata, supplied
+row boundaries and plan-wide footers. The corrected schedule example uses the
+existing planner and schedule service, but is not a process UI scenario.
 No fixture is ready for activation solely because formatting is implemented;
 the process dependencies above remain required.
 
