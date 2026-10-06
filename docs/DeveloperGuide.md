@@ -15,12 +15,12 @@ agents working on the project, as specified in the repository's root `AGENTS.md`
 
 ## Design & implementation
 
-### Printing stage 1: commands and parsing
+### Commands and parsing
 
 `CommandParser.parse` implements all command formats in the User Guide and
 returns the existing nested `Command` records. The parser has no clock, storage
 or application-state dependency. `schedule today` produces `Command.ScheduleToday`;
-the dispatcher will resolve its date when stage 3 is implemented.
+the dispatcher will resolve its date when application integration is implemented.
 
 After stripping outer whitespace, the parser recognizes the command words and
 matches the entire input. Field patterns allow ordinary spaces and multiword
@@ -41,13 +41,28 @@ Parsing does not create domain records or validate nonblank names, duration
 multiples, commitment alignment/end times, future deadlines, overlaps or ID
 existence. Those remain the responsibility of the existing domain constructors
 and services. No other member's implementation or shared public API is changed.
-The existing command records and `ParseException` already satisfy stage 1.
-Text rendering and application integration remain deferred to stages 2 and 3.
+The existing command records and `ParseException` satisfy the parsing contract.
+Application integration remains deferred.
 
 `CommandParserTest` verifies every command, all weekdays, multiword/Unicode names,
 whitespace, strict leap dates and year boundaries, times, field rejection,
 numeric limits, case sensitivity, usage hints and unresolved `today`. These
 tests use fixed values and require no disk data or running application.
+
+### Task, commitment and command text
+
+`TextRenderer` formats help, task and commitment success messages, lists, errors,
+the absent-plan message and goodbye. It returns LF-separated strings without a
+trailing newline and performs no I/O, clock reads or state changes. Task rows
+preserve the service's supplied order and stored duration. Commitment groups
+appear Monday through Sunday, preserve supplied order within each group and
+omit empty weekdays. Names remain visible in full, including Unicode.
+
+Date/time formatters use `uuuu-MM-dd HH:mm` and `HH:mm` with `Locale.ROOT`;
+weekday names explicitly use English. Commitment endpoints use
+`Commitment.endMinuteOfDay()` so midnight displays as `24:00` without wrapping.
+`TextRendererTest` checks these fields, ordering, messages and line framing with
+fixed immutable records. Plan and schedule formatting remain deferred.
 
 
 ## Product scope
@@ -88,11 +103,13 @@ node .agents/skills/test-ui/scripts/run-ui-tests.mjs
 
 For the parser alone, use
 `.\gradlew.bat test --tests scheduleflow.cli.CommandParserTest`.
+For the formatter alone, use
+`.\gradlew.bat test --tests scheduleflow.cli.TextRendererTest`.
 On Unix, replace `.\gradlew.bat` with `./gradlew`. If the default Gradle cache
 is unwritable, set `GRADLE_USER_HOME` to an accessible cache.
 
 The process UI cases in [the test plan](../test/ui-test-plan.md) remain planned
-until their application and storage dependencies are implemented. Parser unit
-tests establish stage 1 behavior; a BLOCKED UI run (exit 2) does not establish
-console recovery, transaction rollback or release acceptance. The runner uses
+until their application and storage dependencies are implemented. Parser and
+formatter unit tests establish their own behavior; a BLOCKED UI run (exit 2)
+does not establish console recovery, transaction rollback or release acceptance. The runner uses
 isolated temporary data and writes evidence under `build/ui-transcripts/`.
