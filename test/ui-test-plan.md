@@ -2,6 +2,13 @@
 
 The application loop is unfinished. Printing stage 1 parsing is covered by
 `CommandParserTest`; no process UI feature scenario has passed.
+
+Basic storage checkpoint: `StateCodec` and `FileStorage` are implemented with
+isolated JUnit tests. UI-001 through UI-005 remain planned because their Main,
+App and other console dependencies are unfinished. UI-004's unsupported-version
+message matches the codec, so its fixture needs no output change. Storage unit
+tests do not certify console restart or in-memory rollback.
+
 `ui-scenarios.json` is the executable source of truth for IDs, aims, setup,
 ordered commands, exact per-command output, exit codes and active/planned
 status. Review it after every code update. These initial CLI cases are not
