@@ -1,7 +1,8 @@
 # ScheduleFlow UI test plan
 
-The application loop is unfinished. Printing stage 1 parsing is covered by
-`CommandParserTest`; no process UI feature scenario has passed.
+The application loop is unfinished. Parsing is covered by `CommandParserTest`,
+and all text formatting by `TextRendererTest`; no process UI
+feature scenario has passed.
 
 Basic storage checkpoint: `StateCodec` and `FileStorage` are implemented with
 isolated JUnit tests. UI-001 through UI-005 remain planned because their Main,
@@ -53,6 +54,13 @@ Transcripts are generated in ignored `build/ui-transcripts/`.
 
 ## Starter readiness
 
+Commitment addition is now covered by `CommitmentServiceTest`, including
+overlap rejection, adjacency, midnight, ID exhaustion and unchanged input
+snapshots. A planner integration test verifies that an added commitment blocks
+study slots. UI-002 remains planned: deletion, listing, console I/O, application
+dispatch and persistence integration are still unfinished. No console or restart
+acceptance is established by these service tests; fixture expectations remain unchanged.
+
 All maintained cases are **planned pending implementation**. Preflight lists
 every ownership-marked stub and each unexecuted case and returns **BLOCKED**
 (exit 2). A build failure is FAILED (exit 1). Do not treat scaffold exceptions
@@ -80,13 +88,29 @@ Save-failure rollback checks require fake storage or deterministic failure
 injection. Their release checks remain
 unexecuted until the responsible modules are implemented.
 
-Stage 1 checkpoint: the shared declarations are present and CommandParser.parse
-is implemented. Review of UI-001 through UI-004 found that their application
-and storage dependencies still prevent activation. UI-005 adds the planned
+The shared declarations, `CommandParser.parse` and all `TextRenderer` methods
+are implemented. Review of UI-001 through UI-004 found that their application
+and service dependencies still prevent activation. UI-005 adds the planned
 process check for parsing errors and recovery, with exact usage hints. It also
-requires the pending application loop, renderer and startup storage. Run all
+requires the pending application loop and startup storage integration. Run all
 ready active scenarios when those dependencies are implemented; parser unit
 tests do not establish console recovery or unchanged persisted state.
+
+Formatter coverage verifies exact empty/no-plan text, syntax-error usage hints,
+all command formats in help, weekday groups, midnight endpoints, stable IDs,
+stored durations, complete long/Unicode names and LF without trailing newlines.
+Plan/schedule checks cover empty, complete and partial results (including zero
+allocation), all unallocated reasons, whole-plan totals with long arithmetic,
+all labels, session-specific minutes, cutoff notes, frozen metadata, supplied
+row boundaries and plan-wide footers. The corrected schedule example uses the
+existing planner and schedule service, but is not a process UI scenario.
+No fixture is ready for activation solely because formatting is implemented;
+the process dependencies above remain required.
+
+Additional formatter JUnit checks cover years 0001/9999, a leap-day view whose
+generation date differs from its selected date, and unchanged English output
+under French/Arabic JVM defaults. Locale checks restore defaults and run in
+isolation. These checks leave process fixtures and readiness unchanged.
 
 Each fixture's `requiredComponents` lists the Type.method implementations
 needed for that scenario. Preflight reports all unfinished methods, blocks

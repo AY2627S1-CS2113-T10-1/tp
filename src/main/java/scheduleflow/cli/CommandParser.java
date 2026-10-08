@@ -26,7 +26,9 @@ public final class CommandParser {
     private static final String TIME_TOKEN = "[0-9]{4}";
     private static final String POSITIVE_INT_TOKEN = "[1-9][0-9]*";
 
-    // Excluding slash prevents extra prefixes from being swallowed into a multiword name.
+    /**
+     * Matches name text while excluding slash so extra prefixes cannot be swallowed into a multiword name.
+     */
     private static final String NAME_TOKEN = "[^/\\p{javaISOControl}]*";
     private static final Pattern TASK_ADD_PATTERN = Pattern.compile(
             "task +add +n/(?<name>" + NAME_TOKEN + ") +due/(?<date>" + DATE_TOKEN
