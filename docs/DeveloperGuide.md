@@ -50,6 +50,28 @@ numeric limits, case sensitivity, usage hints and unresolved `today`. These
 tests use fixed values and require no disk data or running application.
 
 
+### Recurring commitment addition
+
+`CommitmentService.add` creates an immutable candidate snapshot. It reuses
+`Commitment` for name, weekday, duration and interval validation, checks overlaps
+against the full weekly intervals (including outside study hours), and reports
+the conflicting commitment's ID and name. Adjacent intervals and duplicate
+names at nonoverlapping times are allowed.
+
+The service uses the stored next commitment ID, preserves task records and their
+counter, and increments only the candidate's commitment counter. A next ID of
+`Integer.MAX_VALUE` rejects addition because the next counter cannot be represented.
+Neither success nor failure changes the original snapshot. The dispatcher must
+save the candidate before publishing it through `AppState.commit`; persistence
+and plan invalidation are not performed by this service.
+
+`CommitmentServiceTest` covers normal additions, all weekdays, adjacency,
+overlap shapes and diagnostics, midnight/full-day commitments, invalid inputs,
+ID exhaustion, unchanged source data and discarded-candidate retries. A fixed-date
+planner integration test checks that an added commitment blocks study slots.
+Run `.\gradlew.bat test --tests scheduleflow.commitment.CommitmentServiceTest`.
+Deletion, listing and full CLI integration remain unfinished.
+
 ## Product scope
 ### Target user profile
 

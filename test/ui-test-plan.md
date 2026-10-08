@@ -46,6 +46,13 @@ Transcripts are generated in ignored `build/ui-transcripts/`.
 
 ## Starter readiness
 
+Commitment addition is now covered by `CommitmentServiceTest`, including
+overlap rejection, adjacency, midnight, ID exhaustion and unchanged input
+snapshots. A planner integration test verifies that an added commitment blocks
+study slots. UI-002 remains planned: deletion, listing, printing, application
+dispatch and persistence are still unfinished. No console or restart acceptance
+is established by these service tests; fixture expectations remain unchanged.
+
 All maintained cases are **planned pending implementation**. Preflight lists
 every ownership-marked stub and each unexecuted case and returns **BLOCKED**
 (exit 2). A build failure is FAILED (exit 1). Do not treat scaffold exceptions
