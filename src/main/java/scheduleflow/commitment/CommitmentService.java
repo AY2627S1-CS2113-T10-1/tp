@@ -2,7 +2,10 @@ package scheduleflow.commitment;
 
 import java.time.DayOfWeek;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
 
@@ -18,10 +21,24 @@ public final class CommitmentService {
 
     /**
      * Creates a candidate after checking overlap and counter overflow.
-     * This feature is intentionally unfinished in the shared starter.
+     * Preserves the original snapshot so callers can save before publishing the change.
+     *
+     * @throws ValidationException if the commitment is invalid, overlaps an existing series or IDs are exhausted
      */
     public Snapshot add(Snapshot state, String name, DayOfWeek day, LocalTime start, int minutes) {
-        throw new UnsupportedOperationException("TODO(Commitment): implement CommitmentService.add");
+        Objects.requireNonNull(state, "state");
+        if (state.nextCommitmentId() == Integer.MAX_VALUE) {
+            throw new ValidationException("Commitment IDs are exhausted.");
+        }
+        Commitment added = new Commitment(state.nextCommitmentId(), name, day, start, minutes);
+        for (Commitment existing : state.commitments()) {
+            if (added.overlaps(existing)) {
+                throw new ValidationException("Commitment overlaps " + existing.displayId() + ": " + existing.name());
+            }
+        }
+        List<Commitment> commitments = new ArrayList<>(state.commitments());
+        commitments.add(added);
+        return new Snapshot(state.tasks(), commitments, state.nextTaskId(), state.nextCommitmentId() + 1);
     }
 
     /**

@@ -175,6 +175,11 @@ The ID must belong to an existing task. A successful deletion saves the change a
 
 A commitment reserves the same period every week until it is deleted. Add separate entries for commitments on different weekdays.
 
+> **Implementation status:** Commitment addition is implemented and unit-tested
+> at the service level. Deletion, listing, automatic saving and console execution
+> still depend on unfinished components; the commands below describe intended
+> MVP behaviour.
+
 ### Adding a commitment
 
 ```text
