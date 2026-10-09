@@ -15,6 +15,44 @@ agents working on the project, as specified in the repository's root `AGENTS.md`
 
 ## Design & implementation
 
+### Basic saving and loading
+
+`StateCodec` converts the existing `Snapshot` to and from plain text.
+`FileStorage` loads UTF-8 or returns `Snapshot.empty()` for a definitely missing
+file. Saving creates missing parent directories, writes a sibling temporary
+file, then atomically replaces the target. There is no non-atomic fallback.
+Constructors perform no I/O; existing public interfaces remain unchanged.
+
+Version 1 uses one record per line:
+
+```text
+SCHEDULEFLOW|1
+NEXT|2|2
+TASK|1|2000-01-02T09:00|60|Read
+COMMITMENT|1|MONDAY|10:30|90|Class
+```
+
+`NEXT` holds the next task and commitment IDs, including after deletion.
+Tasks store ID, ISO local deadline, remaining minutes and name. Commitments
+store ID, full uppercase weekday, ISO local start time, duration and name.
+Names are last so literal pipes need no escaping. Encoding preserves each
+list's order and writes LF line endings. Decoding also accepts CRLF/CR and an
+omitted final newline. Java's date/time parsers and existing domain constructors
+validate the complete snapshot, including overlaps and counters. Past deadlines
+remain valid; plans are never stored. Invalid data raises `StorageException`
+without returning a partial snapshot or modifying the file.
+
+`StateCodecTest` covers the format and validation. `FileStorageTest` demonstrates
+a save followed by a fresh reader, replacement, missing/corrupt files, and
+deterministic filesystem failures with JUnit `@TempDir`. Run these tests with
+`.\gradlew.bat test --tests "scheduleflow.storage.*"` from the repository root.
+Unsupported-atomic-move and cleanup-failure injection remain untested.
+
+Console integration remains pending: Printing must load at startup, then save
+each candidate before `AppState.commit` and success output. These storage tests
+do not establish console restart or in-memory rollback. Use one writer per file;
+atomic replacement does not promise durability after power loss.
+
 ### Java documentation
 
 Use Javadoc for comments documenting types, constructors, methods and fields,
@@ -189,7 +227,7 @@ On Unix, replace `.\gradlew.bat` with `./gradlew`. If the default Gradle cache
 is unwritable, set `GRADLE_USER_HOME` to an accessible cache.
 
 The process UI cases in [the test plan](../test/ui-test-plan.md) remain planned
-until their application and storage dependencies are implemented. Parser and
+until their application and service dependencies are implemented. Parser and
 formatter unit tests establish their own behavior; a BLOCKED UI run (exit 2)
 does not establish console recovery, transaction rollback or release acceptance. The runner uses
 isolated temporary data and writes evidence under `build/ui-transcripts/`.

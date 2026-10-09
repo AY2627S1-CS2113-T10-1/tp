@@ -423,6 +423,11 @@ Goodbye for now!
 
 ## Saving and restoring data
 
+> **Implementation status:** Basic file saving and loading are implemented and
+> tested directly with JUnit. Automatic saving from commands and restoration at
+> application startup still require console integration. The behaviour below
+> describes the intended release, not a working console feature yet.
+
 Tasks, commitments, and the next ID counters are saved automatically after each successful addition or deletion and restored at startup. No manual save or load command is needed.
 
 - **Location:** `data/scheduleflow.txt`, relative to the folder from which you launch the application. Launch from the same folder to use the same data.

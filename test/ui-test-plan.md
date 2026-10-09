@@ -3,6 +3,13 @@
 The application loop is unfinished. Parsing is covered by `CommandParserTest`,
 and all text formatting by `TextRendererTest`; no process UI
 feature scenario has passed.
+
+Basic storage checkpoint: `StateCodec` and `FileStorage` are implemented with
+isolated JUnit tests. UI-001 through UI-005 remain planned because their Main,
+App and other console dependencies are unfinished. UI-004's unsupported-version
+message matches the codec, so its fixture needs no output change. Storage unit
+tests do not certify console restart or in-memory rollback.
+
 `ui-scenarios.json` is the executable source of truth for IDs, aims, setup,
 ordered commands, exact per-command output, exit codes and active/planned
 status. Review it after every code update. These initial CLI cases are not
@@ -50,9 +57,9 @@ Transcripts are generated in ignored `build/ui-transcripts/`.
 Commitment addition is now covered by `CommitmentServiceTest`, including
 overlap rejection, adjacency, midnight, ID exhaustion and unchanged input
 snapshots. A planner integration test verifies that an added commitment blocks
-study slots. UI-002 remains planned: deletion, listing, printing, application
-dispatch and persistence are still unfinished. No console or restart acceptance
-is established by these service tests; fixture expectations remain unchanged.
+study slots. UI-002 remains planned: deletion, listing, console I/O, application
+dispatch and persistence integration are still unfinished. No console or restart
+acceptance is established by these service tests; fixture expectations remain unchanged.
 
 All maintained cases are **planned pending implementation**. Preflight lists
 every ownership-marked stub and each unexecuted case and returns **BLOCKED**
@@ -83,9 +90,9 @@ unexecuted until the responsible modules are implemented.
 
 The shared declarations, `CommandParser.parse` and all `TextRenderer` methods
 are implemented. Review of UI-001 through UI-004 found that their application
-and storage dependencies still prevent activation. UI-005 adds the planned
+and service dependencies still prevent activation. UI-005 adds the planned
 process check for parsing errors and recovery, with exact usage hints. It also
-requires the pending application loop and startup storage. Run all
+requires the pending application loop and startup storage integration. Run all
 ready active scenarios when those dependencies are implemented; parser unit
 tests do not establish console recovery or unchanged persisted state.
 
