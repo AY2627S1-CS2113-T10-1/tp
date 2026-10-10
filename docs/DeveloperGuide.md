@@ -158,7 +158,33 @@ overlap shapes and diagnostics, midnight/full-day commitments, invalid inputs,
 ID exhaustion, unchanged source data and discarded-candidate retries. A fixed-date
 planner integration test checks that an added commitment blocks study slots.
 Run `.\gradlew.bat test --tests scheduleflow.commitment.CommitmentServiceTest`.
-Deletion, listing and full CLI integration remain unfinished.
+Full CLI integration remains unfinished.
+
+### Commitment deletion and listing
+
+`CommitmentService.delete` removes an entire weekly series by its stable numeric
+ID, returning an immutable candidate while preserving tasks, other commitments,
+their stored order and both ID counters. Nonpositive and unknown IDs raise
+`ValidationException`. Deleting the last series does not reset the counter.
+`list` returns an immutable Monday-to-Sunday view sorted by start time and then
+numeric ID, without reordering the snapshot or renumbering records. Valid
+snapshots cannot contain two commitments at the same weekday and start time,
+because their positive durations would overlap; the ID comparator is a final
+ordering safeguard.
+
+Defensive checks distinguish invalid user IDs from programmer errors (null
+snapshots). An assertion checks the unique-ID deletion invariant; input validation
+still works with assertions disabled. Gradle `run` and `test` enable assertions;
+use `java -ea -jar scheduleflow.jar` or IntelliJ's `-ea` VM option for other launches.
+The service uses `java.util.logging` at `FINE` level for rejected unknown IDs and
+created deletion candidates. Logs contain IDs, not names, and do not claim a save
+has occurred. Default logging leaves normal CLI output unchanged.
+
+Additional JUnit tests cover deletion by ID, missing/invalid IDs, counter retention,
+immutable sorted lists and null preconditions. Fixed-date planner checks verify
+that deleting a weekly series releases time on successive Mondays. A `@TempDir`
+storage integration test saves, deletes and reloads a series, checking that its ID
+is not reused. These direct service checks do not certify CLI restart or dispatch.
 
 ## Product scope
 ### Target user profile
