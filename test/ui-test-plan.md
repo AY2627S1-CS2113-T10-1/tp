@@ -57,9 +57,12 @@ Transcripts are generated in ignored `build/ui-transcripts/`.
 Commitment addition is now covered by `CommitmentServiceTest`, including
 overlap rejection, adjacency, midnight, ID exhaustion and unchanged input
 snapshots. A planner integration test verifies that an added commitment blocks
-study slots. UI-002 remains planned: deletion, listing, console I/O, application
-dispatch and persistence integration are still unfinished. No console or restart
-acceptance is established by these service tests; fixture expectations remain unchanged.
+study slots. Deletion and listing are also covered, including stable counters,
+unknown IDs, immutable weekday/time ordering and release of weekly planning slots.
+A temporary-file integration test verifies deletion and counters after reload.
+UI-002 remains planned: console I/O, application dispatch and persistence
+integration are still unfinished. No console or restart acceptance is established
+by these service tests; fixture expectations remain unchanged.
 
 All maintained cases are **planned pending implementation**. Preflight lists
 every ownership-marked stub and each unexecuted case and returns **BLOCKED**

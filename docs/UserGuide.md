@@ -175,10 +175,11 @@ The ID must belong to an existing task. A successful deletion saves the change a
 
 A commitment reserves the same period every week until it is deleted. Add separate entries for commitments on different weekdays.
 
-> **Implementation status:** Commitment addition is implemented and unit-tested
-> at the service level. Deletion, listing, automatic saving and console execution
-> still depend on unfinished components; the commands below describe intended
-> MVP behaviour.
+> **Implementation status:** Commitment addition, deletion and listing are
+> implemented and tested at the service level. Deletion has also been tested
+> with file save/reload and replanning. Automatic command saving and console
+> execution still require application integration; the commands below describe
+> intended MVP behaviour.
 
 ### Adding a commitment
 
@@ -235,6 +236,11 @@ commitment delete CNUMBER
 ```
 
 Removes the entire weekly series, not just one occurrence.
+
+Use the original `CNUMBER` shown by `commitment list`, not its position in the
+display. An unknown ID is rejected without changing commitments or ID counters.
+Deleting the final commitment leaves an empty list but does not reset its ID
+sequence; a later addition receives a new ID.
 
 ```text
 scheduleflow> commitment delete C1
