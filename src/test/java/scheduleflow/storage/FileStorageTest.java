@@ -13,9 +13,11 @@ import java.time.LocalTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import scheduleflow.commitment.CommitmentService;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
+import scheduleflow.task.TaskService;
 
 /**
  * Demonstrates saving and restoring real files in isolated temporary folders.
@@ -58,6 +60,55 @@ class FileStorageTest {
     }
 
     @Test
+    void saveAndLoad_serviceCandidates_preserveChangesAndIndependentCounters() throws Exception {
+        Path file = directory.resolve("data/scheduleflow.txt");
+        LocalDateTime now = LocalDateTime.of(2026, 10, 5, 7, 0);
+        TaskService tasks = new TaskService();
+        CommitmentService commitments = new CommitmentService();
+        Snapshot loaded = saveAndReload(file, tasks.add(Snapshot.empty(), "Old task", now.plusDays(1), 30, now));
+        loaded = saveAndReload(file, tasks.add(loaded, "复习 | café", now.plusDays(2), 90, now));
+        loaded = saveAndReload(file, commitments.add(loaded, "Old class", DayOfWeek.MONDAY, LocalTime.NOON, 60));
+        loaded = saveAndReload(file, commitments.add(loaded, "课程", DayOfWeek.TUESDAY, LocalTime.NOON, 60));
+        loaded = saveAndReload(file, tasks.delete(loaded, 1));
+        loaded = saveAndReload(file, commitments.delete(loaded, 1));
+
+        assertEquals(List.of(new Task(2, "复习 | café", now.plusDays(2), 90)), loaded.tasks());
+        assertEquals(List.of(new Commitment(2, "课程", DayOfWeek.TUESDAY, LocalTime.NOON, 60)),
+                loaded.commitments());
+        assertEquals(3, loaded.nextTaskId());
+        assertEquals(3, loaded.nextCommitmentId());
+
+        loaded = saveAndReload(file, tasks.delete(loaded, 2));
+        loaded = saveAndReload(file, commitments.delete(loaded, 2));
+        assertEquals(new Snapshot(List.of(), List.of(), 3, 3), loaded);
+        loaded = saveAndReload(file, tasks.add(loaded, "Next task", now.plusDays(3), 30, now));
+        loaded = saveAndReload(file, commitments.add(loaded, "Next class", DayOfWeek.WEDNESDAY, LocalTime.NOON, 30));
+        assertEquals(3, loaded.tasks().getFirst().id());
+        assertEquals(3, loaded.commitments().getFirst().id());
+        assertEquals(4, loaded.nextTaskId());
+        assertEquals(4, loaded.nextCommitmentId());
+    }
+
+    @Test
+    void load_validOverdueRecords_preservesOriginalBytesAndStoredOrder() throws Exception {
+        Path file = directory.resolve("scheduleflow.txt");
+        String original = "SCHEDULEFLOW|1\r\nNEXT|8|5\r\n"
+                + "TASK|3|2000-01-02T09:00|90|复习 | café\r\nTASK|1|2000-01-01T09:00|30|Older\r\n"
+                + "COMMITMENT|2|TUESDAY|12:00|60|课程";
+        Files.writeString(file, original);
+        byte[] bytes = Files.readAllBytes(file);
+        Snapshot expected = new Snapshot(List.of(
+                new Task(3, "复习 | café", LocalDateTime.of(2000, 1, 2, 9, 0), 90),
+                new Task(1, "Older", LocalDateTime.of(2000, 1, 1, 9, 0), 30)),
+                List.of(new Commitment(2, "课程", DayOfWeek.TUESDAY, LocalTime.NOON, 60)), 8, 5);
+
+        assertEquals(expected, new FileStorage(file, new StateCodec()).load());
+        assertEquals(expected, new FileStorage(file, new StateCodec()).load());
+        assertArrayEquals(bytes, Files.readAllBytes(file));
+        assertOnlyTargetRemains(file);
+    }
+
+    @Test
     void load_corruptTextOrUtf8_preservesFile() throws Exception {
         Path file = directory.resolve("scheduleflow.txt");
         Files.writeString(file, "SCHEDULEFLOW|1\nNEXT|2|1\nTASK|1|2000-01-01T09:00|30|Valid\nBROKEN\n");
@@ -96,6 +147,20 @@ class FileStorageTest {
         assertOnlyTargetRemains(target);
     }
 
+    /**
+     * Saves one service candidate and restores it through a fresh reader without console dependencies.
+     */
+    private Snapshot saveAndReload(Path file, Snapshot candidate) throws Exception {
+        new FileStorage(file, new StateCodec()).save(candidate);
+        Snapshot loaded = new FileStorage(file, new StateCodec()).load();
+        assertEquals(candidate, loaded);
+        assertOnlyTargetRemains(file);
+        return loaded;
+    }
+
+    /**
+     * Checks that successful writes and handled failures leave no temporary sibling files.
+     */
     private void assertOnlyTargetRemains(Path target) throws Exception {
         try (var files = Files.list(target.getParent())) {
             assertEquals(List.of(target), files.toList());

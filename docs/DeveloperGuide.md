@@ -48,6 +48,13 @@ deterministic filesystem failures with JUnit `@TempDir`. Run these tests with
 `.\gradlew.bat test --tests "scheduleflow.storage.*"` from the repository root.
 Unsupported-atomic-move and cleanup-failure injection remain untested.
 
+Additional `FileStorageTest` coverage saves and reloads candidates from the
+existing task and commitment services using fixed dates and temporary files.
+It checks mixed additions/deletions, Unicode names, remaining minutes and both
+ID sequences after deleting all records. A read-only restoration case checks
+overdue records, stored order and byte-for-byte preservation of a valid CRLF
+file without a final newline. These tests call storage directly, not the CLI.
+
 Console integration remains pending: Printing must load at startup, then save
 each candidate before `AppState.commit` and success output. These storage tests
 do not establish console restart or in-memory rollback. Use one writer per file;

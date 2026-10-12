@@ -10,6 +10,12 @@ App and other console dependencies are unfinished. UI-004's unsupported-version
 message matches the codec, so its fixture needs no output change. Storage unit
 tests do not certify console restart or in-memory rollback.
 
+Storage-only regression coverage also round-trips task and commitment service
+candidates through fresh file readers, retaining values and both ID sequences
+after deletion. Repeated loading of valid overdue records preserves the original
+file bytes. These direct JUnit checks do not activate any console scenario;
+Main, App, ConsoleUi and command dispatch remain Printing's integration work.
+
 `ui-scenarios.json` is the executable source of truth for IDs, aims, setup,
 ordered commands, exact per-command output, exit codes and active/planned
 status. Review it after every code update. These initial CLI cases are not
