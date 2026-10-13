@@ -17,15 +17,59 @@ import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
 import scheduleflow.planning.EarliestDeadlinePlanner;
 import scheduleflow.planning.Plan;
+import scheduleflow.planning.StudySession;
+import scheduleflow.planning.UnallocatedReason;
 import scheduleflow.storage.FileStorage;
 import scheduleflow.storage.StateCodec;
 import scheduleflow.storage.StorageException;
+import scheduleflow.task.TaskService;
 
 /**
  * Verifies commitment operations and immutable candidates using fixed data and isolated storage.
  */
 class CommitmentServiceTest {
     private final CommitmentService service = new CommitmentService();
+
+    @Test
+    void add_savedDurations_preservesEstimatesAndPartialAllocation(@TempDir Path directory) throws StorageException {
+        LocalDate monday = LocalDate.of(2026, 10, 5);
+        Snapshot tasks = new TaskService().add(Snapshot.empty(), "Draft", monday.atTime(10, 0),
+                90, monday.atTime(7, 0));
+        Snapshot candidate = service.add(tasks, "Lecture", DayOfWeek.MONDAY, LocalTime.of(8, 30), 90);
+        FileStorage storage = new FileStorage(directory.resolve("scheduleflow.txt"), new StateCodec());
+        storage.save(candidate);
+        Snapshot reloaded = new FileStorage(directory.resolve("scheduleflow.txt"), new StateCodec()).load();
+
+        assertEquals(candidate, reloaded);
+        Plan plan = new EarliestDeadlinePlanner().generate(reloaded, monday.atTime(7, 0));
+        assertEquals(List.of(new StudySession(1, monday.atTime(8, 0), monday.atTime(8, 30))), plan.sessions());
+        assertEquals(1, plan.unallocated().size());
+        assertEquals(60, plan.unallocated().getFirst().minutes());
+        assertEquals(UnallocatedReason.INSUFFICIENT_CAPACITY, plan.unallocated().getFirst().reason());
+        assertEquals(90, reloaded.tasks().getFirst().remainingMinutes());
+        assertEquals(90, reloaded.commitments().getFirst().durationMinutes());
+        assertEquals(600, reloaded.commitments().getFirst().endMinuteOfDay());
+        storage.save(plan.source());
+        assertEquals(candidate, storage.load());
+    }
+
+    @Test
+    void add_reloadedWeeklyDuration_blocksExactIntervalOnSuccessiveMondays(@TempDir Path directory)
+            throws StorageException {
+        LocalDate monday = LocalDate.of(2026, 10, 5);
+        Snapshot candidate = service.add(Snapshot.empty(), "Lecture", DayOfWeek.MONDAY, LocalTime.of(8, 0), 90);
+        FileStorage storage = new FileStorage(directory.resolve("scheduleflow.txt"), new StateCodec());
+        storage.save(candidate);
+        Snapshot reloaded = storage.load();
+        for (LocalDate date : List.of(monday, monday.plusWeeks(1))) {
+            Snapshot withTask = new TaskService().add(reloaded, "Draft", date.atTime(10, 0),
+                    30, date.atTime(7, 0));
+            Plan plan = new EarliestDeadlinePlanner().generate(withTask, date.atTime(7, 0));
+            assertTrue(plan.isComplete());
+            assertEquals(List.of(new StudySession(1, date.atTime(9, 30), date.atTime(10, 0))), plan.sessions());
+            assertEquals(candidate.commitments(), plan.source().commitments());
+        }
+    }
 
     @Test
     void delete_existingId_preservesOtherRecordsOrderAndCounters() {
