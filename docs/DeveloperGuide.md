@@ -72,7 +72,7 @@ rules are required by the root `AGENTS.md` and do not change command behaviour.
 `CommandParser.parse` implements all command formats in the User Guide and
 returns the existing nested `Command` records. The parser has no clock, storage
 or application-state dependency. `schedule today` produces `Command.ScheduleToday`;
-the dispatcher will resolve its date when application integration is implemented.
+the dispatcher resolves its date from the time captured for command execution.
 
 After stripping outer whitespace, the parser recognizes the command words and
 matches the entire input. Field patterns allow ordinary spaces and multiword
@@ -185,6 +185,26 @@ immutable sorted lists and null preconditions. Fixed-date planner checks verify
 that deleting a weekly series releases time on successive Mondays. A `@TempDir`
 storage integration test saves, deletes and reloads a series, checking that its ID
 is not reused. These direct service checks do not certify CLI restart or dispatch.
+
+### Command dispatch and live-state transactions
+
+`CommandDispatcher.execute` routes every nested `Command` type and captures
+`LocalDateTime.now(clock)` exactly once, including for `schedule today`.
+Mutation services validate and return candidates. The dispatcher resolves the
+added or removed record, calls `Storage.save`, then calls `AppState.commit` and
+formats success. A failed save propagates without publishing the candidate,
+consuming an ID or clearing the current plan. Shared public APIs are unchanged.
+
+Help, lists, schedule and exit preserve state and make no save call. Planning
+replaces only the temporary plan; partial and empty results remain usable.
+Schedule requests project that frozen plan; absence takes precedence over date
+validation. Exceptions from domain services remain their owners' validation.
+
+`CommandDispatcherTest` uses fixed clocks, a counting clock and fake storage
+to verify all routes, all four transaction paths and retries, save ordering,
+deadline boundaries, numeric IDs, partial/blocked plans, cutoff precision,
+range validation, zone-aware today and frozen/replaced plans. Console startup
+and packaged execution remain pending until the application loop is connected.
 
 ## Product scope
 ### Target user profile

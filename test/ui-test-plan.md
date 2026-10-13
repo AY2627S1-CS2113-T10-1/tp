@@ -1,5 +1,11 @@
 # ScheduleFlow UI test plan
 
+Dispatcher checkpoint: `CommandDispatcherTest` verifies all command routes,
+all four save/commit paths, rollback and retry IDs, plan invalidation/replacement,
+fixed-clock schedule projection and domain-error preservation. UI-001 through
+UI-005 remain planned because Main, App and ConsoleUi are still unfinished.
+This checkpoint does not claim process acceptance or startup/restart coverage.
+
 The application loop is unfinished. Parsing is covered by `CommandParserTest`,
 and all text formatting by `TextRendererTest`; no process UI
 feature scenario has passed.

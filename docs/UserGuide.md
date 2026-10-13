@@ -9,7 +9,7 @@ ScheduleFlow is a command line application for university students balancing cou
 
 Study hours are **08:00–22:00 every day**, including weekends. Work is scheduled in **30-minute slots**, and any work that does not fit is reported explicitly.
 
-> **Implementation status:** Command parsing and all text formatting are implemented and tested. Formatting covers help, tasks, commitments, complete/partial plans, schedules, errors, the absent-plan message and goodbye. It preserves complete names, original IDs and stored task durations, displays midnight commitment endpoints as `24:00`, and includes whole-plan unallocated work in schedule footers. The application loop and several services remain pending, so launch instructions and command transcripts describe intended MVP behaviour rather than a working console release. The worked schedule's output is verified through the existing planner, schedule service and formatter.
+> **Implementation status:** Command parsing, rendering and dispatch are implemented and tested. Dispatch saves each valid mutation before publishing it and clearing the current plan; errors preserve live state. Planning and schedule requests use the injected clock and existing services. The application loop and launcher remain pending, so launch instructions still describe intended console behaviour.
 
 ## Contents
 
