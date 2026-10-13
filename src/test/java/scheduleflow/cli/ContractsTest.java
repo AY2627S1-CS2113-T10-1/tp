@@ -48,6 +48,8 @@ class ContractsTest {
         assertEquals("bad", parse.getMessage());
         assertEquals("task list", parse.usage());
         assertThrows(NullPointerException.class, () -> new ParseException("bad", null));
+        assertEquals("message",
+                assertThrows(NullPointerException.class, () -> new ParseException(null, "task list")).getMessage());
         Exception cause = new Exception("disk");
         StorageException storage = new StorageException("save failed", cause);
         assertSame(cause, storage.getCause());

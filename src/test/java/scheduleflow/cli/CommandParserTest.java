@@ -25,6 +25,11 @@ class CommandParserTest {
     private final CommandParser parser = new CommandParser();
 
     @Test
+    void parse_nullLine_rejectsWithArgumentName() {
+        assertEquals("line", assertThrows(NullPointerException.class, () -> parser.parse(null)).getMessage());
+    }
+
+    @Test
     void parse_supportedCommands_returnsEveryCommandType() throws ParseException {
         assertEquals(new Command.Help(), parser.parse("help"));
         assertEquals(new Command.AddTask("CS2113 draft", LocalDateTime.of(2026, 10, 6, 18, 0), 180),
@@ -252,6 +257,9 @@ class CommandParserTest {
         assertEquals(new Command.ScheduleToday(), parser.parse("schedule today"));
     }
 
+    /**
+     * Checks that invalid syntax retains the relevant usage hint and a useful message.
+     */
     private void assertRejected(String input, String usage) {
         ParseException exception = assertThrows(ParseException.class, () -> parser.parse(input), input);
         assertEquals(usage, exception.usage(), input);

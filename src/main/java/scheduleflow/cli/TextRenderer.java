@@ -7,7 +7,10 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.TextStyle;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.StringJoiner;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Task;
 import scheduleflow.planning.Plan;
@@ -18,9 +21,18 @@ import scheduleflow.planning.StudySession;
 import scheduleflow.planning.UnallocatedWork;
 
 /**
- * Formats output without a trailing newline, clock reads, console I/O or state mutation.
+ * Formats output without a trailing newline, clock reads, direct console I/O or state mutation.
+ * Emits stage diagnostics only when its logger is configured for {@link Level#FINE}.
  */
 public final class TextRenderer {
+    /**
+     * Records formatting stages without including names or formatted responses.
+     */
+    private static final Logger LOGGER = Logger.getLogger(TextRenderer.class.getName());
+
+    /**
+     * Uses proleptic years and a fixed locale so dates remain stable across JVM defaults.
+     */
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm", Locale.ROOT);
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("uuuu-MM-dd", Locale.ROOT);
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT);
@@ -37,7 +49,8 @@ public final class TextRenderer {
      * Returns command help.
      */
     public String help() {
-        return String.join("\n", "=== ScheduleFlow Command Help ===",
+        LOGGER.log(Level.FINE, "Formatting command help");
+        return finish(String.join("\n", "=== ScheduleFlow Command Help ===",
                 "help - Show command help.",
                 "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES - Add a task.",
                 "task list - List stored tasks.",
@@ -47,30 +60,48 @@ public final class TextRenderer {
                 "commitment delete CNUMBER - Delete a weekly commitment.",
                 "plan - Generate or replace the study plan.",
                 "schedule today OR schedule YYYY-MM-DD - View a date in the current plan.",
-                "exit - Close the application.");
+                "exit - Close the application."));
     }
 
     /**
      * Formats the added task.
+     *
+     * @param task successfully saved task
+     * @return addition response using the stored estimate and deadline
+     * @throws NullPointerException if the task is null
      */
     public String taskAdded(Task task) {
-        return "Added " + task.displayId() + ": " + task.name() + "\nDue: " + DATE_TIME.format(task.deadline())
-                + " | Duration: " + task.remainingMinutes() + " min";
+        Objects.requireNonNull(task, "task");
+        LOGGER.log(Level.FINE, "Formatting task addition response");
+        return finish("Added " + task.displayId() + ": " + task.name() + "\nDue: " + DATE_TIME.format(task.deadline())
+                + " | Duration: " + task.remainingMinutes() + " min");
     }
 
     /**
      * Formats the removed task.
+     *
+     * @param task task removed by a successfully saved mutation
+     * @return deletion response retaining the original ID and name
+     * @throws NullPointerException if the task is null
      */
     public String taskDeleted(Task task) {
-        return "Deleted task " + task.displayId() + ": " + task.name();
+        Objects.requireNonNull(task, "task");
+        LOGGER.log(Level.FINE, "Formatting task deletion response");
+        return finish("Deleted task " + task.displayId() + ": " + task.name());
     }
 
     /**
      * Formats the already sorted task list.
+     *
+     * @param tasks tasks in service-supplied order, possibly empty
+     * @return list response without reordering or changing stored estimates
+     * @throws NullPointerException if the list or an element is null
      */
     public String tasks(List<Task> tasks) {
+        requireElements(tasks, "tasks");
+        LOGGER.log(Level.FINE, "Formatting task list");
         if (tasks.isEmpty()) {
-            return "No tasks found.";
+            return finish("No tasks found.");
         }
         StringJoiner lines = new StringJoiner("\n");
         lines.add("=== Actionable Tasks ===").add("ID | Name | Duration | Deadline");
@@ -78,31 +109,50 @@ public final class TextRenderer {
             lines.add(task.displayId() + " | " + task.name() + " | " + task.remainingMinutes()
                     + " min | " + DATE_TIME.format(task.deadline()));
         }
-        return lines.add("Total: " + tasks.size() + " task(s).").toString();
+        return finish(lines.add("Total: " + tasks.size() + " task(s).").toString());
     }
 
     /**
      * Formats the added commitment, including midnight as 24:00.
+     *
+     * @param commitment successfully saved weekly series
+     * @return addition response with a same-day endpoint
+     * @throws NullPointerException if the commitment is null
      */
     public String commitmentAdded(Commitment commitment) {
-        return "Added " + commitment.displayId() + ": " + commitment.name() + " | " + formatWeekday(commitment.day())
+        Objects.requireNonNull(commitment, "commitment");
+        LOGGER.log(Level.FINE, "Formatting commitment addition response");
+        return finish("Added " + commitment.displayId() + ": " + commitment.name()
+                + " | " + formatWeekday(commitment.day())
                 + " " + TIME.format(commitment.start()) + " - " + formatCommitmentEnd(commitment)
-                + " (" + commitment.durationMinutes() + " min)";
+                + " (" + commitment.durationMinutes() + " min)");
     }
 
     /**
      * Formats the removed commitment.
+     *
+     * @param commitment weekly series removed by a successfully saved mutation
+     * @return deletion response retaining the original ID and name
+     * @throws NullPointerException if the commitment is null
      */
     public String commitmentDeleted(Commitment commitment) {
-        return "Deleted commitment " + commitment.displayId() + ": " + commitment.name();
+        Objects.requireNonNull(commitment, "commitment");
+        LOGGER.log(Level.FINE, "Formatting commitment deletion response");
+        return finish("Deleted commitment " + commitment.displayId() + ": " + commitment.name());
     }
 
     /**
      * Formats the already sorted weekly commitments.
+     *
+     * @param commitments weekly series in service-supplied order, possibly empty
+     * @return weekday groups preserving supplied order within each group
+     * @throws NullPointerException if the list or an element is null
      */
     public String commitments(List<Commitment> commitments) {
+        requireElements(commitments, "commitments");
+        LOGGER.log(Level.FINE, "Formatting commitment list");
         if (commitments.isEmpty()) {
-            return "No commitments found.";
+            return finish("No commitments found.");
         }
         StringJoiner lines = new StringJoiner("\n");
         lines.add("=== Recurring Weekly Commitments ===");
@@ -118,18 +168,24 @@ public final class TextRenderer {
             }
             lines.add("");
         }
-        return lines.add("Total: " + commitments.size() + " recurring commitments across the week.").toString();
+        return finish(lines.add("Total: " + commitments.size() + " recurring commitments across the week.").toString());
     }
 
     /**
      * Formats complete or partial allocation results with whole-plan totals.
+     *
+     * @param plan generated result with frozen metadata and allocation rows
+     * @return summary and any whole-plan unallocated work
+     * @throws NullPointerException if the plan is null
      */
     public String plan(Plan plan) {
+        Objects.requireNonNull(plan, "plan");
+        LOGGER.log(Level.FINE, "Formatting plan summary");
         if (plan.source().tasks().isEmpty()) {
-            return "No tasks to schedule.";
+            return finish("No tasks to schedule.");
         }
         if (plan.isComplete()) {
-            return "Study plan generated successfully! Type 'schedule today' to view your sessions.";
+            return finish("Study plan generated successfully! Type 'schedule today' to view your sessions.");
         }
         long scheduled = plan.sessions().stream().mapToLong(StudySession::minutes).sum();
         long unallocated = plan.unallocated().stream().mapToLong(UnallocatedWork::minutes).sum();
@@ -137,13 +193,19 @@ public final class TextRenderer {
         lines.add("Study plan generated with unallocated work.");
         lines.add("Scheduled: " + scheduled + " min | Unallocated: " + unallocated + " min");
         appendUnallocated(lines, plan.unallocated());
-        return lines.toString();
+        return finish(lines.toString());
     }
 
     /**
      * Formats the frozen schedule and whole-plan unallocated footer.
+     *
+     * @param view complete projection for one date, supplied by the schedule service
+     * @return schedule preserving all supplied boundaries, order and metadata
+     * @throws NullPointerException if the view is null
      */
     public String schedule(ScheduleView view) {
+        Objects.requireNonNull(view, "view");
+        LOGGER.log(Level.FINE, "Formatting schedule metadata and rows");
         StringJoiner lines = new StringJoiner("\n");
         lines.add("=== Schedule for " + formatWeekday(view.date().getDayOfWeek())
                 + " (" + DATE.format(view.date()) + ") ===");
@@ -158,37 +220,77 @@ public final class TextRenderer {
             lines.add("").add("Unallocated work for the whole plan:");
             appendUnallocated(lines, view.unallocated());
         }
-        return lines.toString();
+        return finish(lines.toString());
     }
 
     /**
      * Returns the absent-plan message.
      */
     public String noPlan() {
-        return "No current plan. Run plan to generate one.";
+        LOGGER.log(Level.FINE, "Formatting absent-plan response");
+        return finish("No current plan. Run plan to generate one.");
     }
 
     /**
      * Formats a one-line user error.
+     *
+     * @param message explanation of the failure
+     * @return error response prefixed with {@code Error: }
+     * @throws NullPointerException if the message is null
      */
     public String error(String message) {
-        return "Error: " + message;
+        Objects.requireNonNull(message, "message");
+        LOGGER.log(Level.FINE, "Formatting error response");
+        return finish("Error: " + message);
     }
 
     /**
      * Formats a syntax error and its expected usage.
+     *
+     * @param exception syntax failure with a message and usage hint
+     * @return error response followed by the expected command format
+     * @throws NullPointerException if the exception is null
      */
     public String parseError(ParseException exception) {
-        return error(exception.getMessage()) + "\nExpected: " + exception.usage();
+        Objects.requireNonNull(exception, "exception");
+        LOGGER.log(Level.FINE, "Formatting syntax error and usage");
+        return finish(error(exception.getMessage()) + "\nExpected: " + exception.usage());
     }
 
     /**
      * Returns the normal goodbye message.
      */
     public String exit() {
-        return "Goodbye for now!";
+        LOGGER.log(Level.FINE, "Formatting goodbye response");
+        return finish("Goodbye for now!");
     }
 
+    /**
+     * Records successful formatting, including methods with early empty-result returns.
+     */
+    private String finish(String output) {
+        LOGGER.log(Level.FINE, "Response formatting completed");
+        return output;
+    }
+
+    /**
+     * Rejects null collections and elements before any response text is assembled.
+     *
+     * @param values supplied list to validate without modifying it
+     * @param name argument name used in failure messages
+     * @param <T> list element type
+     * @throws NullPointerException if the list or an element is null
+     */
+    private <T> void requireElements(List<T> values, String name) {
+        Objects.requireNonNull(values, name);
+        for (T value : values) {
+            Objects.requireNonNull(value, name + " element");
+        }
+    }
+
+    /**
+     * Uses English weekday names independently of the JVM's default locale.
+     */
     private String formatWeekday(DayOfWeek day) {
         return day.getDisplayName(TextStyle.FULL, Locale.ENGLISH);
     }
@@ -197,6 +299,7 @@ public final class TextRenderer {
      * Displays each supplied interval without clipping, merging or allocating it.
      */
     private String formatScheduleRow(ScheduleEntry entry) {
+        LOGGER.log(Level.FINE, "Formatting schedule interval: {0}", entry.kind());
         String range = TIME.format(entry.start()) + " - " + TIME.format(entry.end()) + " | [" + entry.kind() + "]";
         return switch (entry.kind()) {
             case BUSY -> range + " " + entry.reference() + ": " + entry.name();
@@ -210,6 +313,7 @@ public final class TextRenderer {
      * Shares the same ordered task rows between plan summaries and schedule footers.
      */
     private void appendUnallocated(StringJoiner lines, List<UnallocatedWork> unallocated) {
+        LOGGER.log(Level.FINE, "Formatting whole-plan unallocated work");
         for (UnallocatedWork work : unallocated) {
             String reason = switch (work.reason()) {
                 case DEADLINE_PASSED -> "deadline passed";

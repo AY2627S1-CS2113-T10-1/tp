@@ -1,133 +1,110 @@
 # ScheduleFlow UI test plan
 
-The application loop is unfinished. Parsing is covered by `CommandParserTest`,
-and all text formatting by `TextRendererTest`; no process UI
-feature scenario has passed.
+All eight maintained process scenarios are active. They exercise the packaged
+JAR in fresh temporary folders, with restart sessions sharing only their own
+saved data. Review this plan and `ui-scenarios.json` after each coherent code
+update. The fixtures are the executable source of truth for exact responses.
 
-Basic storage checkpoint: `StateCodec` and `FileStorage` are implemented with
-isolated JUnit tests. UI-001 through UI-005 remain planned because their Main,
-App and other console dependencies are unfinished. UI-004's unsupported-version
-message matches the codec, so its fixture needs no output change. Storage unit
-tests do not certify console restart or in-memory rollback.
+The defensive checks and optional stage diagnostics preserve these exact
+responses. All eight scenarios remain active with their existing expectations;
+normal launches must still produce empty stderr, including `WARNING` and
+`SEVERE` error paths. JUnit covers API misuse and captures enabled logging
+separately with isolated logger configuration; production-entry-point tests
+also check warning-only file logging and unchanged console responses.
 
 Storage-only regression coverage also round-trips task and commitment service
 candidates through fresh file readers, retaining values and both ID sequences
 after deletion. Repeated loading of valid overdue records preserves the original
-file bytes. These direct JUnit checks do not activate any console scenario;
-Main, App, ConsoleUi and command dispatch remain Printing's integration work.
+file bytes. These direct JUnit checks complement the active console scenarios
+and Printing's restart and rollback tests.
 
-`ui-scenarios.json` is the executable source of truth for IDs, aims, setup,
-ordered commands, exact per-command output, exit codes and active/planned
-status. Review it after every code update. These initial CLI cases are not
-complete release coverage; expand them alongside the behaviours described in
-the [User Guide](../docs/UserGuide.md) as features are implemented.
+Run from the repository root with Java 25 and Node.js 22 or later:
 
-Run with Java 25 and Node.js 22+:
-
-```text
-node .agents/skills/test-ui/scripts/run-ui-tests.mjs
+```powershell
+java -version
+.\gradlew.bat --version
+.\gradlew.bat build
 node --test test/ui-runner.test.mjs
+node .agents/skills/test-ui/scripts/run-ui-tests.mjs
 ```
 
-On Windows, the Gradle wrapper is `gradlew.bat`; on Unix it is `./gradlew`.
-The runner invokes `shadowJar` itself and checks Java 25. If the environment's
-default Gradle home is unwritable, set `GRADLE_USER_HOME` to your writable cache
-before running. Build timeout: 180 seconds. Startup, each command and exit:
-5 seconds each. The first failure terminates that application and the session.
-Transcripts are generated in ignored `build/ui-transcripts/`.
+Use `./gradlew` on Unix. If needed, set `GRADLE_USER_HOME` to a writable cache.
+In a restricted Windows environment, place `TEMP` and `TMP` in an ignored,
+writable workspace folder for the process runner. A local Gradle init script
+may set the test JVM's `java.io.tmpdir` to that folder; these verification
+settings and generated evidence must not enter commits.
+The restricted Windows sandbox can also delay Java's native random seeding
+for the first temporary save file beyond the runner's 5-second command limit.
+The final process checks passed outside that sandbox with unchanged command
+timeouts and expected output; Java 25 and isolated workspace data were retained.
 
 ## Exact comparison protocol
 
-- UTF-8 stdin/stdout/stderr. Convert CRLF to LF only; retain all other spaces,
-  punctuation, lines and ordering. No dynamic placeholders or regex matching.
-- `startup` is literal text before the first `scheduleflow> ` prompt (normally
-  empty). For startup failure, specify `exitCode` and no steps instead.
-- Each `steps` entry sends its `input` plus LF, waits for `output` plus LF and
-  the exact next prompt, and compares before sending any subsequent input.
-  `input: null` closes stdin. An `exitCode` expects termination instead of a
-  prompt; it must appear only on the last step. Set `newline: false` for a
-  prompt-only response to an ignored blank line; `output` must then be empty.
-  CRLF split across pipe chunks is buffered until comparison is possible.
-- Stderr must be empty during feature scenarios. Unexpected output, stderr,
-  exit or timeout fails the case. The transcript includes the failing position,
-  expected/actual output, captured stderr and process exit.
-- Every case starts in its own temporary directory. Optional `files` maps
-  relative paths to exact UTF-8 initial file contents. Multiple `sessions`
-  share that case directory for restart testing, but not a process; steps
-  inside each session share one live process. Cleanup never touches real data.
-- Lists supplied by `--commands` and `--expected-outputs` must have matching
-  lengths. Their final command must exit with status 0 (or use null for EOF).
+- Use UTF-8 stdin, stdout and stderr. Normalize CRLF to LF only; retain every
+  other space, punctuation mark, line and ordering. No dynamic placeholders.
+- `startup` is literal output before the first `scheduleflow> ` prompt, normally
+  empty. Startup failure specifies `exitCode` with no steps.
+- Each step sends its input plus LF and asserts the exact response and next
+  prompt before sending another command. A final `exitCode` expects process
+  termination. `input: null` closes stdin. For ignored blank lines, use empty
+  output and `newline: false` to assert a prompt-only response.
+- Stderr must be empty. Unexpected output, exit, timeout or stderr fails the
+  case. Stop at the first failure, fix it and run a new session.
+- Every case uses an isolated temporary directory. Optional `files` contain
+  exact UTF-8 startup data. Restart sessions share that directory, not a process.
+  Cleanup never touches the developer's data.
+- Build timeout is 180 seconds; startup, command and exit timeout is 5 seconds.
+  The runner builds current code with `shadowJar` and checks Java 25.
+- Transcripts in ignored `build/ui-transcripts/` contain build output, input,
+  stdout, stderr and process status. Use the exact printed transcript path.
+  Preserve evidence before running Gradle `clean`.
 
-## Starter readiness
+## Active packaged scenarios
 
-Commitment addition is now covered by `CommitmentServiceTest`, including
-overlap rejection, adjacency, midnight, ID exhaustion and unchanged input
-snapshots. A planner integration test verifies that an added commitment blocks
-study slots. Deletion and listing are also covered, including stable counters,
-unknown IDs, immutable weekday/time ordering and release of weekly planning slots.
-A temporary-file integration test verifies deletion and counters after reload.
-UI-002 remains planned: console I/O, application dispatch and persistence
-integration are still unfinished. No console or restart acceptance is established
-by these service tests; fixture expectations remain unchanged.
-
-All maintained cases are **planned pending implementation**. Preflight lists
-every ownership-marked stub and each unexecuted case and returns **BLOCKED**
-(exit 2). A build failure is FAILED (exit 1). Do not treat scaffold exceptions
-as successful feature checks. Once components exist, review and activate the
-cases; active failures must be fixed before commits. Foundation-only commits
-may proceed with passing Java tests/checks and recorded BLOCKED UI status.
-
-| ID | Coverage | Readiness |
+| ID | Coverage | Status |
 | --- | --- | --- |
-| UI-001 | Empty lists and absent plan | Planned |
-| UI-002 | Adjacency, midnight and commitment counters/restart | Planned |
-| UI-003 | EOF | Planned |
-| UI-004 | Unsupported store version | Planned; error wording chosen for fixture |
-| UI-005 | Syntax errors include usage and permit the next command | Planned; parser ready, console dependencies unfinished |
+| UI-001 | Missing file, empty lists and absent plan | Active |
+| UI-002 | Adjacency, midnight and commitment IDs after deletion/restart | Active |
+| UI-003 | EOF prints goodbye and exits 0 | Active |
+| UI-004 | Unsupported store version stops before prompting | Active |
+| UI-005 | Strict syntax, usage hints and recovery including `exit extra` | Active |
+| UI-006 | Blank lines, duration/alignment/overlap errors, unknown IDs and retry IDs | Active |
+| UI-007 | Unicode save/restart and temporary-plan loss | Active |
+| UI-008 | Truncated saved record stops startup with status 1 | Active |
 
-UI-004's error wording is a proposed exact regression baseline, not a new
-behaviour requirement; the Save/Printing owners may update it when agreeing
-their error text. No broad error wildcard is permitted.
+UI-001 through UI-005 were activated when their console dependencies became
+implemented. Preflight still reports ownership-marked stubs and blocks only
+dependent scenarios; ready active cases must run even if another component is
+unfinished. Exit 0 means active scenarios passed, exit 1 means FAILED, and
+exit 2 means BLOCKED. A planned or diagnostic scaffold case is never a pass.
 
-Time-sensitive deadline, planning and schedule behaviours require fixed-clock
-JUnit tests through the injected App/Planner APIs. Do not add a production
-clock flag or change Main's API to make these fixtures work. Add a test-only
-launcher and explicit fixtures if fixed-clock process tests are later needed.
-Save-failure rollback checks require fake storage or deterministic failure
-injection. Their release checks remain
-unexecuted until the responsible modules are implemented.
+## Fixed-clock acceptance and remaining checks
 
-The shared declarations, `CommandParser.parse` and all `TextRenderer` methods
-are implemented. Review of UI-001 through UI-004 found that their application
-and service dependencies still prevent activation. UI-005 adds the planned
-process check for parsing errors and recovery, with exact usage hints. It also
-requires the pending application loop and startup storage integration. Run all
-ready active scenarios when those dependencies are implemented; parser unit
-tests do not establish console recovery or unchanged persisted state.
+`CommandDispatcherTest` covers every command, single clock capture, every
+save/commit transaction and failed retry, unchanged snapshots/counters/plans,
+no saves for read-only commands, deadline limits, numeric ID ordering, partial
+and blocked plans, cutoff seconds, range limits, injected timezone, frozen
+plans and replacement. It checks the corrected earliest-slot schedule and
+preserves stored estimates. Existing optimizer tests verify conservation and
+nonoverlap across mixed inputs.
 
-Formatter coverage verifies exact empty/no-plan text, syntax-error usage hints,
-all command formats in help, weekday groups, midnight endpoints, stable IDs,
-stored durations, complete long/Unicode names and LF without trailing newlines.
-Plan/schedule checks cover empty, complete and partial results (including zero
-allocation), all unallocated reasons, whole-plan totals with long arithmetic,
-all labels, session-specific minutes, cutoff notes, frozen metadata, supplied
-row boundaries and plan-wide footers. The corrected schedule example uses the
-existing planner and schedule service, but is not a process UI scenario.
-No fixture is ready for activation solely because formatting is implemented;
-the process dependencies above remain required.
+`AppTest` covers first launch without file creation, one startup load, startup
+corruption with preserved bytes, parse/domain/save recovery, stable task IDs
+across real file restarts, overdue tasks, rollback with existing file bytes,
+empty-plan clipping/midnight output, invalidation, input IOException and
+exit/EOF without saving. `ConsoleUiTest` asserts flushes and exact framing.
+`MainTest` launches separate production-entry-point processes to check
+nonempty argument rejection, UTF-8 despite ASCII defaults, EOF and real saved
+restarts. The maintained UI cases verify the packaged manifest entry point.
 
-Additional formatter JUnit checks cover years 0001/9999, a leap-day view whose
-generation date differs from its selected date, and unchanged English output
-under French/Arabic JVM defaults. Locale checks restore defaults and run in
-isolation. These checks leave process fixtures and readiness unchanged.
+Time-sensitive task/planning checks use fixed clocks through injected APIs;
+there is no production clock flag. `FileStorageTest` covers deterministic
+filesystem and replacement failures. Injected temporary-write failures and
+unsupported-atomic-move release checks remain unexecuted; fake-storage rollback
+is not evidence of those provider failures.
 
-Each fixture's `requiredComponents` lists the Type.method implementations
-needed for that scenario. Preflight reports all unfinished methods, blocks
-only dependent cases, and still runs ready active cases. Ad-hoc lists without
-a dependency list conservatively require the full CLI. A ready planned case
-must be reviewed and activated by its owner; planned is never a pass.
-
-When Main.main is still an explicit stub, the runner also launches the real
-packaged JAR in a separate empty temporary directory, closes stdin, and records
-its actual startup output and exit. This is a diagnostic scaffold probe, never
-a feature pass. Once Main exists, active scenarios run the real packaged JAR.
+The supplied contract's section 7 uses a different persistence format and
+forced flushing from the committed Save module. These fixtures use the actual
+committed codec (plain names last and full weekday names). Printing preserves
+that module; contract-format interoperability remains a Save-owner handoff.
+See the Developer Guide for the exact differences.

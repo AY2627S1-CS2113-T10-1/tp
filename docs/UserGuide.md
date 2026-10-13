@@ -9,7 +9,7 @@ ScheduleFlow is a command line application for university students balancing cou
 
 Study hours are **08:00–22:00 every day**, including weekends. Work is scheduled in **30-minute slots**, and any work that does not fit is reported explicitly.
 
-> **Implementation status:** Command parsing and all text formatting are implemented and tested. Formatting covers help, tasks, commitments, complete/partial plans, schedules, errors, the absent-plan message and goodbye. It preserves complete names, original IDs and stored task durations, displays midnight commitment endpoints as `24:00`, and includes whole-plan unallocated work in schedule footers. The application loop and several services remain pending, so launch instructions and command transcripts describe intended MVP behaviour rather than a working console release. The worked schedule's output is verified through the existing planner, schedule service and formatter.
+> **Implementation status:** All supported commands are connected to the console application. Changes save before success is printed, IDs survive restarts, and plans remain temporary. Java tests cover transactions and fixed-clock planning; packaged console tests cover startup, recovery and saved restarts.
 
 ## Contents
 
@@ -59,7 +59,7 @@ Study hours are **08:00–22:00 every day**, including weekends. Work is schedul
 5. Add a task and a recurring commitment, generate a plan, then view today's schedule:
 
    ```text
-   task add n/CS2113 draft due/2026-10-06 1800 d/180
+   task add n/CS2113 draft due/2026-10-20 1800 d/180
    commitment add n/CS2113 lecture day/MON start/1000 d/120
    plan
    schedule today
@@ -116,9 +116,9 @@ task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES
 The deadline must be strictly later than the current local date and time and no later than midnight at the start of the same calendar date next year. The duration must be a positive multiple of 30 minutes. Deadlines do not need to fall on a half-hour boundary.
 
 ```text
-scheduleflow> task add n/CS2113 draft due/2026-10-06 1800 d/180
+scheduleflow> task add n/CS2113 draft due/2026-10-20 1800 d/180
 Added T1: CS2113 draft
-Due: 2026-10-06 18:00 | Duration: 180 min
+Due: 2026-10-20 18:00 | Duration: 180 min
 ```
 
 A missing deadline is rejected. For example:
@@ -143,8 +143,8 @@ Lists all stored tasks, including overdue tasks, in ascending numeric ID order. 
 scheduleflow> task list
 === Actionable Tasks ===
 ID | Name                | Duration | Deadline
-T1 | CS2113 draft        | 180 min  | 2026-10-06 18:00
-T2 | EE2026 preparation  | 90 min   | 2026-10-07 12:00
+T1 | CS2113 draft        | 180 min  | 2026-10-20 18:00
+T2 | EE2026 preparation  | 90 min   | 2026-10-21 12:00
 Total: 2 task(s).
 ```
 
@@ -175,11 +175,8 @@ The ID must belong to an existing task. A successful deletion saves the change a
 
 A commitment reserves the same period every week until it is deleted. Add separate entries for commitments on different weekdays.
 
-> **Implementation status:** Commitment addition, deletion and listing are
-> implemented and tested at the service level. Deletion has also been tested
-> with file save/reload and replanning. Automatic command saving and console
-> execution still require application integration; the commands below describe
-> intended MVP behaviour.
+Commitment addition, deletion and listing run directly at the console. Each
+successful change saves automatically and clears the current plan.
 
 ### Adding a commitment
 
@@ -429,10 +426,8 @@ Goodbye for now!
 
 ## Saving and restoring data
 
-> **Implementation status:** Basic file saving and loading are implemented and
-> tested directly with JUnit. Automatic saving from commands and restoration at
-> application startup still require console integration. The behaviour below
-> describes the intended release, not a working console feature yet.
+The application loads saved data before showing its first prompt and saves
+each successful task or commitment change automatically.
 
 Tasks, commitments, and the next ID counters are saved automatically after each successful addition or deletion and restored at startup. No manual save or load command is needed.
 
