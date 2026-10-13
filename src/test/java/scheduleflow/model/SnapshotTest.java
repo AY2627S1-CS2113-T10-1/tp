@@ -77,10 +77,16 @@ class SnapshotTest {
         assertEquals(17, snapshot.nextCommitmentId());
     }
 
+    /**
+     * Creates a fixed overdue task so snapshot validation cannot depend on the current date.
+     */
     private Task task(int id) {
         return new Task(id, "Repeated", LocalDateTime.of(2000, 1, 1, 12, 0), 30);
     }
 
+    /**
+     * Creates a one-hour Monday series for deterministic identity and overlap checks.
+     */
     private Commitment commitment(int id, int hour) {
         return new Commitment(id, "Repeated", DayOfWeek.MONDAY, LocalTime.of(hour, 0), 60);
     }

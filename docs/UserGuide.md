@@ -487,6 +487,11 @@ For example, use `task delete T1`, not `task delete 1`; use duration `60`, not `
 
 Keep a backup of the reported file, resolve access problems, or restore a known-good backup before restarting. A malformed or unreadable file is a startup error; the app will not overwrite it with an empty store.
 
+Optional storage diagnostics can help investigate save/load failures. Follow the
+[storage logging instructions](DeveloperGuide.md#storage-defensive-checks-and-diagnostics)
+to record processing stages in a separate log file. Normal launches remain quiet;
+these storage logs do not include your task names or saved file contents.
+
 ## Command summary
 
 | Action | Command |

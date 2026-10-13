@@ -3,16 +3,26 @@ package scheduleflow.storage;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 import scheduleflow.commitment.CommitmentService;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
@@ -22,9 +32,114 @@ import scheduleflow.task.TaskService;
 /**
  * Demonstrates saving and restoring real files in isolated temporary folders.
  */
+@Isolated
 class FileStorageTest {
     @TempDir
     private Path directory;
+
+    @Test
+    void constructor_nullDependencies_rejectsWithoutCreatingData() {
+        Path file = directory.resolve("data/scheduleflow.txt");
+        assertEquals("file", assertThrows(NullPointerException.class,
+                () -> new FileStorage(null, new StateCodec())).getMessage());
+        assertEquals("codec", assertThrows(NullPointerException.class,
+                () -> new FileStorage(file, null)).getMessage());
+        assertFalse(Files.exists(file.getParent()));
+    }
+
+    @Test
+    void save_nullSnapshot_preservesExistingBytesAndMissingDirectories() throws Exception {
+        Path file = directory.resolve("scheduleflow.txt");
+        Files.writeString(file, "SCHEDULEFLOW|1\nNEXT|3|2\n");
+        byte[] original = Files.readAllBytes(file);
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        assertEquals("state", assertThrows(NullPointerException.class, () -> storage.save(null)).getMessage());
+        assertArrayEquals(original, Files.readAllBytes(file));
+        assertOnlyTargetRemains(file);
+
+        Path missing = directory.resolve("missing/scheduleflow.txt");
+        assertThrows(NullPointerException.class, () -> new FileStorage(missing, new StateCodec()).save(null));
+        assertFalse(Files.exists(missing.getParent()));
+    }
+
+    @Test
+    void saveAndLoad_diagnostics_recordsStagesWithoutStoredValues() throws Throwable {
+        Path file = directory.resolve("private-file-name.txt");
+        Snapshot snapshot = new Snapshot(List.of(
+                new Task(1, "Private task name", LocalDateTime.of(2000, 1, 1, 9, 0), 30)), List.of(), 2, 1);
+        List<LogRecord> records = captureLogs(() -> {
+            FileStorage storage = new FileStorage(file, new StateCodec());
+            storage.save(snapshot);
+            assertEquals(snapshot, new FileStorage(file, new StateCodec()).load());
+        });
+        List<String> stages = records.stream().map(LogRecord::getMessage).toList();
+        assertTrue(stages.containsAll(List.of("Starting snapshot save", "Starting snapshot encoding",
+                "Snapshot encoding completed", "Preparing save directory", "Writing temporary saved data",
+                "Replacing saved data atomically", "Snapshot save completed", "Starting saved data load",
+                "Saved data read; validating snapshot", "Starting saved data decoding",
+                "Saved records decoded; validating snapshot invariants", "Saved data decoding completed",
+                "Saved data load completed")));
+        assertTrue(stages.indexOf("Snapshot encoding completed") < stages.indexOf("Writing temporary saved data"));
+        assertTrue(stages.indexOf("Replacing saved data atomically") < stages.indexOf("Snapshot save completed"));
+        assertTrue(stages.indexOf("Saved data decoding completed") < stages.indexOf("Saved data load completed"));
+        for (LogRecord record : records) {
+            assertEquals(Level.FINE, record.getLevel());
+            assertFalse(record.getMessage().contains("Private task name"));
+            assertFalse(record.getMessage().contains("private-file-name"));
+            assertNull(record.getParameters());
+            assertNull(record.getThrown());
+        }
+    }
+
+    @Test
+    void load_diagnostics_distinguishesMissingInvalidAndUnreadableData() throws Throwable {
+        Path file = directory.resolve("scheduleflow.txt");
+        List<LogRecord> absent = captureLogs(() ->
+                assertEquals(Snapshot.empty(), new FileStorage(file, new StateCodec()).load()));
+        assertTrue(absent.stream().anyMatch(record ->
+                record.getMessage().equals("Saved data absent; returning empty snapshot")));
+        for (String text : List.of("SCHEDULEFLOW|99\nNEXT|1|1\n",
+                "SCHEDULEFLOW|1\nNEXT|2|1\nTASK|private-invalid-id|2000-01-01T09:00|30|Private\n")) {
+            Files.writeString(file, text);
+            List<LogRecord> invalid = captureLogs(() ->
+                    assertThrows(StorageException.class, () -> new FileStorage(file, new StateCodec()).load()));
+            assertTrue(invalid.stream().anyMatch(record ->
+                    record.getMessage().equals("Saved data load rejected; invalid contents")));
+            assertFalse(invalid.stream().anyMatch(record -> record.getMessage().contains("completed")));
+            for (LogRecord record : invalid) {
+                assertFalse(record.getMessage().contains("private-invalid-id"));
+                assertNull(record.getThrown());
+                assertNull(record.getParameters());
+            }
+            assertEquals(text, Files.readString(file));
+        }
+        List<LogRecord> unreadable = captureLogs(() -> {
+            StorageException failure = assertThrows(StorageException.class,
+                    () -> new FileStorage(directory, new StateCodec()).load());
+            assertTrue(failure.getCause() instanceof IOException);
+        });
+        assertTrue(unreadable.stream().anyMatch(record ->
+                record.getMessage().equals("Saved data load failed during file access")));
+        assertFalse(unreadable.stream().anyMatch(record -> record.getMessage().equals("Saved data load completed")));
+    }
+
+    @Test
+    void save_failedReplacement_logsCleanupWithoutSuccess() throws Throwable {
+        Path target = Files.createDirectory(directory.resolve("scheduleflow.txt"));
+        Path sentinel = target.resolve("keep.txt");
+        Files.writeString(sentinel, "original content");
+        List<LogRecord> records = captureLogs(() -> {
+            StorageException failure = assertThrows(StorageException.class,
+                    () -> new FileStorage(target, new StateCodec()).save(Snapshot.empty()));
+            assertTrue(failure.getCause() instanceof IOException);
+        });
+        List<String> stages = records.stream().map(LogRecord::getMessage).toList();
+        assertTrue(stages.contains("Snapshot save failed; attempting temporary file cleanup"));
+        assertTrue(stages.contains("Temporary saved data cleanup completed"));
+        assertFalse(stages.contains("Snapshot save completed"));
+        assertEquals("original content", Files.readString(sentinel));
+        assertOnlyTargetRemains(target);
+    }
 
     @Test
     void load_missingFile_returnsEmptyWithoutCreatingDirectories() throws StorageException {
@@ -145,6 +260,50 @@ class FileStorageTest {
         assertThrows(StorageException.class, () -> new FileStorage(target, new StateCodec()).save(Snapshot.empty()));
         assertEquals("original content", Files.readString(sentinel));
         assertOnlyTargetRemains(target);
+    }
+
+    /**
+     * Captures storage diagnostics in memory and restores the shared namespace even if the action fails.
+     * The isolated test class prevents concurrent tests from observing the temporary logger settings.
+     *
+     * @param action storage operation and assertions to exercise with diagnostics enabled
+     * @return emitted storage and codec records in occurrence order
+     * @throws Throwable if the test action fails
+     */
+    private List<LogRecord> captureLogs(Executable action) throws Throwable {
+        Logger logger = Logger.getLogger("scheduleflow.storage");
+        Level originalLevel = logger.getLevel();
+        boolean originalUseParents = logger.getUseParentHandlers();
+        List<LogRecord> records = new ArrayList<>();
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                if (isLoggable(record)) {
+                    records.add(record);
+                }
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        try {
+            handler.setLevel(Level.FINE);
+            logger.setLevel(Level.FINE);
+            logger.setUseParentHandlers(false);
+            logger.addHandler(handler);
+            action.execute();
+            return records;
+        } finally {
+            logger.removeHandler(handler);
+            handler.close();
+            logger.setLevel(originalLevel);
+            logger.setUseParentHandlers(originalUseParents);
+        }
     }
 
     /**
