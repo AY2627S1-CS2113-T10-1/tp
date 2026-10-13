@@ -54,12 +54,6 @@ Transcripts are generated in ignored `build/ui-transcripts/`.
 
 ## Starter readiness
 
-Issue #13 duration verification: direct service integration tests now cover
-recorded task/commitment minutes after file reload, partial allocation without
-reducing stored estimates, and exact weekly blocking on successive Mondays.
-The existing process fixtures remain unchanged and planned: they still require
-console integration. These JUnit checks are not CLI acceptance passes.
-
 Commitment addition is now covered by `CommitmentServiceTest`, including
 overlap rejection, adjacency, midnight, ID exhaustion and unchanged input
 snapshots. A planner integration test verifies that an added commitment blocks
