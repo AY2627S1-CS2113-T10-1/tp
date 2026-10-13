@@ -2,12 +2,21 @@ package scheduleflow.task;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
+import org.junit.jupiter.api.parallel.Isolated;
+import scheduleflow.common.InputRules;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
@@ -17,12 +26,120 @@ import scheduleflow.planning.TimeRules;
 /**
  * Verifies task candidates, deadline limits and stable identity without I/O or a live clock.
  */
+@Isolated
 class TaskServiceTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 9, 21, 7, 0);
     private static final LocalDateTime DEADLINE = NOW.plusDays(1).withHour(18);
     private static final Commitment LECTURE = new Commitment(3, "Lecture", DayOfWeek.MONDAY,
             LocalTime.of(10, 0), 120);
     private final TaskService service = new TaskService();
+
+    @Test
+    void methods_nullDependencies_reportNamedPreconditions() {
+        assertEquals("state", assertThrows(NullPointerException.class,
+                () -> service.add(null, "Draft", DEADLINE, 30, NOW)).getMessage());
+        assertEquals("now", assertThrows(NullPointerException.class,
+                () -> service.add(Snapshot.empty(), "Draft", DEADLINE, 30, null)).getMessage());
+        assertEquals("state", assertThrows(NullPointerException.class, () -> service.delete(null, 1)).getMessage());
+        assertEquals("state", assertThrows(NullPointerException.class, () -> service.list(null)).getMessage());
+    }
+
+    @Test
+    void add_nextCommandDate_movesRollingHorizonForward() {
+        LocalDateTime deadline = LocalDateTime.of(2027, 9, 22, 0, 0);
+        Snapshot original = Snapshot.empty();
+
+        assertThrows(ValidationException.class, () -> service.add(original, "Draft", deadline, 30, NOW));
+        assertEquals(deadline, service.add(original, "Draft", deadline, 30, NOW.plusDays(1))
+                .tasks().getFirst().deadline());
+        assertEquals(Snapshot.empty(), original);
+    }
+
+    @Test
+    void add_rejectedValues_preservePopulatedSnapshotAndRetryId() {
+        Task existing = new Task(2, "Existing", DEADLINE, 60);
+        Snapshot original = new Snapshot(List.of(existing), List.of(LECTURE), 5, 8);
+
+        assertThrows(ValidationException.class, () -> service.add(original, "Bad/name", DEADLINE, 30, NOW));
+        assertThrows(ValidationException.class, () -> service.add(original, "Draft", DEADLINE, 45, NOW));
+        assertThrows(ValidationException.class, () -> service.add(original, "Draft", NOW, 30, NOW));
+        assertEquals(new Snapshot(List.of(existing), List.of(LECTURE), 5, 8), original);
+        assertEquals(5, service.add(original, "Retry", DEADLINE, 30, NOW).tasks().getLast().id());
+    }
+
+    @Test
+    void methods_enabledLogging_recordsCandidateStagesWithoutPublishing() throws Throwable {
+        List<LogRecord> records = captureLogs(TaskService.class, () -> {
+            Snapshot added = service.add(Snapshot.empty(), "Private task", DEADLINE, 30, NOW);
+            service.list(added);
+            service.delete(added, 1);
+        });
+
+        assertEquals(List.of("Starting task addition", "Task fields validated; checking deadline range",
+                "Task deadline validated; creating addition candidate",
+                "Task addition candidate created; not yet saved or published",
+                "Starting task listing; sorting by numeric ID", "Task listing completed; source snapshot unchanged",
+                "Starting task deletion", "Task ID resolved; creating deletion candidate",
+                "Task deletion candidate created; not yet saved or published"),
+                records.stream().map(LogRecord::getMessage).toList());
+        assertPrivateStageRecords(records);
+    }
+
+    @Test
+    void methods_rejectedOperations_logRejectionWithoutFalseSuccess() throws Throwable {
+        Snapshot original = new Snapshot(List.of(), List.of(LECTURE), 5, 8);
+        for (Executable addition : List.<Executable>of(
+                () -> service.add(original, "Private task/invalid", DEADLINE, 30, NOW),
+                () -> service.add(original, "Private task", NOW, 30, NOW),
+                () -> service.add(original, "Private task", DEADLINE, 45, NOW),
+                () -> service.add(original, "Private task", NOW.plusYears(2), 30, NOW),
+                () -> service.add(new Snapshot(List.of(), List.of(), Integer.MAX_VALUE, 1),
+                        "Private task", DEADLINE, 30, NOW))) {
+            List<LogRecord> records = captureLogs(TaskService.class,
+                    () -> assertThrows(ValidationException.class, addition));
+            assertEquals("Starting task addition", records.getFirst().getMessage());
+            assertEquals("Task addition rejected; source snapshot unchanged", records.getLast().getMessage());
+            assertTrue(records.stream().noneMatch(record -> record.getMessage().contains("candidate created")));
+            assertPrivateStageRecords(records);
+        }
+        List<LogRecord> deletion = captureLogs(TaskService.class,
+                () -> assertThrows(ValidationException.class, () -> service.delete(original, 1)));
+        assertEquals(List.of("Starting task deletion",
+                "Task deletion rejected; unknown ID and source snapshot unchanged"),
+                deletion.stream().map(LogRecord::getMessage).toList());
+        assertEquals(new Snapshot(List.of(), List.of(LECTURE), 5, 8), original);
+    }
+
+    @Test
+    void validators_enabledLogging_recordsStagesWithoutInvalidCompletion() throws Throwable {
+        List<LogRecord> valid = captureLogs(InputRules.class, () -> {
+            InputRules.normalizeName("Private task");
+            InputRules.requireDuration(30);
+        });
+        assertEquals(List.of("Starting name validation", "Name validation completed",
+                "Starting duration validation", "Duration validation completed"),
+                valid.stream().map(LogRecord::getMessage).toList());
+        List<LogRecord> invalid = captureLogs(InputRules.class, () -> {
+            assertThrows(ValidationException.class, () -> InputRules.normalizeName("Private task/invalid"));
+            assertThrows(ValidationException.class, () -> InputRules.normalizeName("   "));
+            assertThrows(ValidationException.class, () -> InputRules.requireDuration(45));
+        });
+        assertEquals(List.of("Starting name validation", "Name validation rejected; null or forbidden character",
+                "Starting name validation", "Name validation rejected; blank name", "Starting duration validation",
+                "Duration validation rejected; nonpositive or unaligned duration"),
+                invalid.stream().map(LogRecord::getMessage).toList());
+        List<LogRecord> model = captureLogs(Task.class, () -> {
+            new Task(1, "Private task", DEADLINE, 30);
+            assertThrows(ValidationException.class, () -> new Task(0, "Private task", DEADLINE, 30));
+        });
+        assertEquals(List.of("Starting task structural validation",
+                "Task identity and name validated; checking deadline structure", "Task structural validation completed",
+                "Starting task structural validation", "Task structural validation rejected"),
+                model.stream().map(LogRecord::getMessage).toList());
+        assertPrivateStageRecords(valid);
+        assertPrivateStageRecords(invalid);
+        assertPrivateStageRecords(model);
+    }
 
     @Test
     void add_validTask_appendsAndPreservesOtherRecords() {
@@ -175,5 +292,55 @@ class TaskServiceTest {
         assertEquals(List.of(ten, two, seven), original.tasks());
         assertThrows(UnsupportedOperationException.class, () -> listed.clear());
         assertEquals(List.of(), service.list(Snapshot.empty()));
+    }
+
+    /**
+     * Captures one logger's diagnostics and restores all changed settings even when the action fails.
+     */
+    private List<LogRecord> captureLogs(Class<?> source, Executable action) throws Throwable {
+        Logger logger = Logger.getLogger(source.getName());
+        Level originalLevel = logger.getLevel();
+        boolean originalUseParents = logger.getUseParentHandlers();
+        List<LogRecord> records = new ArrayList<>();
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                records.add(record);
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        try {
+            logger.setLevel(Level.FINE);
+            logger.setUseParentHandlers(false);
+            logger.addHandler(handler);
+            action.execute();
+            return List.copyOf(records);
+        } finally {
+            logger.removeHandler(handler);
+            handler.close();
+            logger.setLevel(originalLevel);
+            logger.setUseParentHandlers(originalUseParents);
+        }
+    }
+
+    /**
+     * Checks that opt-in stage logs omit domain values and exception payloads.
+     */
+    private void assertPrivateStageRecords(List<LogRecord> records) {
+        assertTrue(!records.isEmpty());
+        for (LogRecord record : records) {
+            assertEquals(Level.FINE, record.getLevel());
+            assertEquals(null, record.getParameters());
+            assertEquals(null, record.getThrown());
+            assertTrue(!record.getMessage().contains("Private task"));
+            assertTrue(!record.getMessage().contains(DEADLINE.toString()));
+        }
     }
 }

@@ -32,6 +32,63 @@ acceptance. Consult the UI test plan for process-level readiness and coverage.
 
 ## Design & implementation
 
+### Task operations and defensive checks
+
+`Task` owns structural validation: positive IDs, normalized nonblank names,
+minute-precision deadlines in years 0001-9999 and positive 30-minute duration
+multiples. It uses `InputRules`, the shared name/duration authority, and permits
+overdue or out-of-horizon saved deadlines. `ValidationException` carries the
+user-facing explanation and rejects a null message as programmer misuse.
+
+`TaskService.add` checks the captured command time, accepting
+`now < deadline <= TimeRules.horizonEnd(now)`. The horizon moves with each
+command date, including the February 29 adjustment. Additions append to the
+stored task order and advance only the task counter. The last allocatable ID
+is `2147483646`; the next counter can be `2147483647`, at which point additions
+are rejected before incrementing. Duplicate names are valid. Deletion removes
+one known ID without resetting counters; listing returns an immutable copy in
+numeric ID order and includes overdue work without reducing estimates.
+
+Services reject null snapshots or command times with named
+`NullPointerException` preconditions. Invalid domain values and unknown IDs use
+`ValidationException`; runtime checks also work with assertions disabled.
+Assertions check normalization and candidate postconditions: preserved records,
+the exact add/delete count change and unchanged unrelated counters/commitments.
+They diagnose implementation defects rather than replace user-input validation.
+Neither services nor models save candidates, read the clock or invalidate plans;
+the dispatcher saves before publishing and reporting success.
+
+Task-owned types document their contracts with Javadoc. `TaskService`, `Task`
+and `InputRules` log processing stages and rejected validation at `FINE`,
+without names, deadlines, durations or exception payloads. Candidate completion
+means only that a candidate is ready, not that it has been saved. Default
+console launches remain quiet; the application owns session severity. No
+logging handlers or global settings are installed by these types.
+
+For Task diagnostics, use a local logging configuration outside the repository:
+
+```properties
+handlers=java.util.logging.FileHandler
+.level=OFF
+scheduleflow.task.level=FINE
+scheduleflow.model.Task.level=FINE
+scheduleflow.common.InputRules.level=FINE
+java.util.logging.FileHandler.level=FINE
+java.util.logging.FileHandler.pattern=scheduleflow-task-%u.log
+java.util.logging.FileHandler.encoding=UTF-8
+java.util.logging.FileHandler.formatter=java.util.logging.SimpleFormatter
+```
+
+Launch with
+`java -ea -Djava.util.logging.config.file=logging.properties -jar scheduleflow.jar`.
+Gradle tests already enable assertions. Task JUnit tests cover structural rules,
+deadline boundaries and rolling horizons, duplicate names, numeric ordering,
+identity exhaustion, immutable mixed snapshots and retry IDs. Logging tests use
+isolated in-memory handlers, restore settings in `finally` and check stage order,
+privacy and absence of false completion after rejection. Run the owned tests with
+`./gradlew test --tests 'scheduleflow.task.*' --tests 'scheduleflow.common.*' --tests 'scheduleflow.model.TaskTest'`.
+The existing packaged UI fixtures require no changed output expectations.
+
 ### Basic saving and loading
 
 `StateCodec` converts the existing `Snapshot` to and from plain text.
