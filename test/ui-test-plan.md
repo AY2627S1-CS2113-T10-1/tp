@@ -5,6 +5,11 @@ JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
 
+The defensive checks and optional stage diagnostics preserve these exact
+responses. All eight scenarios remain active with their existing expectations;
+normal launches must still produce empty stderr. JUnit covers API misuse and
+captures enabled logging separately with isolated logger configuration.
+
 Run from the repository root with Java 25 and Node.js 22 or later:
 
 ```powershell

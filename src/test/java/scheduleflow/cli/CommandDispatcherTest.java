@@ -40,6 +40,43 @@ class CommandDispatcherTest {
     private final TextRenderer renderer = new TextRenderer();
 
     @Test
+    void execute_nullArguments_rejectsBeforeClockReadsOrSaves() {
+        CountingClock clock = new CountingClock();
+        AppState state = new AppState(Snapshot.empty());
+        FakeStorage storage = new FakeStorage(state.snapshot());
+        CommandDispatcher dispatcher = dispatcher(storage, clock);
+        assertEquals("command",
+                assertThrows(NullPointerException.class, () -> dispatcher.execute(null, state)).getMessage());
+        assertEquals("state",
+                assertThrows(NullPointerException.class,
+                        () -> dispatcher.execute(new Command.Help(), null)).getMessage());
+        assertEquals(0, clock.reads);
+        assertEquals(0, storage.saveCalls);
+        assertSame(storage.saved, state.snapshot());
+    }
+
+    @Test
+    void execute_invalidPlannerResults_preservesExistingSnapshotAndPlan() {
+        Snapshot snapshot = populatedSnapshot();
+        AppState state = new AppState(snapshot);
+        Plan original = new EarliestDeadlinePlanner().generate(snapshot, NOW);
+        state.replacePlan(original);
+        FakeStorage storage = new FakeStorage(snapshot);
+        Planner missing = (source, now) -> null;
+        CommandDispatcher missingResult = new CommandDispatcher(new TaskService(), new CommitmentService(), storage,
+                missing, new ScheduleService(), renderer, CLOCK);
+        assertEquals("generated plan", assertThrows(NullPointerException.class,
+                () -> missingResult.execute(new Command.GeneratePlan(), state)).getMessage());
+        Planner stale = (source, now) -> new EarliestDeadlinePlanner().generate(Snapshot.empty(), now);
+        CommandDispatcher staleResult = new CommandDispatcher(new TaskService(), new CommitmentService(), storage,
+                stale, new ScheduleService(), renderer, CLOCK);
+        assertThrows(IllegalArgumentException.class, () -> staleResult.execute(new Command.GeneratePlan(), state));
+        assertSame(snapshot, state.snapshot());
+        assertSame(original, state.currentPlan().orElseThrow());
+        assertEquals(0, storage.saveCalls);
+    }
+
+    @Test
     void execute_allCommands_routesAndCapturesClockExactlyOnce() throws Exception {
         CountingClock clock = new CountingClock();
         FakeStorage storage = new FakeStorage(Snapshot.empty());

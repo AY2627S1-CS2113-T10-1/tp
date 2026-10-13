@@ -105,8 +105,9 @@ tests use fixed values and require no disk data or running application.
 
 `TextRenderer` formats help, task and commitment success messages, lists, plan
 results, schedules, errors, the absent-plan message and goodbye. It returns
-LF-separated strings without a trailing newline and performs no I/O, clock reads
-or state changes. Task rows
+LF-separated strings without a trailing newline and performs no direct console
+I/O, clock reads or state changes. Optional stage diagnostics use the logger
+configuration described below. Task rows
 preserve the service's supplied order and stored duration. Commitment groups
 appear Monday through Sunday, preserve supplied order within each group and
 omit empty weekdays. Names remain visible in full, including Unicode.
@@ -229,6 +230,60 @@ empty-plan clipping/midnight output, invalidation and input failure.
 `MainTest` runs separate Java processes in temporary folders to check status,
 argument rejection, UTF-8 under ASCII JVM defaults and persisted restarts.
 Active process UI cases run the packaged JAR with exact per-command assertions.
+
+### Defensive boundaries and diagnostics
+
+Public console APIs reject null dependencies and arguments with named
+`NullPointerException` messages. `TextRenderer` also rejects null list elements
+before assembling text, and `ParseException` requires a message and usage hint.
+These checks remain active without Java assertions. Domain validation stays in
+the existing services; command records continue to carry values without
+duplicating their business rules.
+
+`AppState.replacePlan` rejects a plan whose source differs from the current
+snapshot with `IllegalArgumentException`, preserving any existing plan. An
+equal snapshot from another instance is accepted. The dispatcher rejects a null
+planner result before publication. Missing records after validated service
+operations raise descriptive `IllegalStateException` failures rather than an
+unexplained lookup error. These programming failures propagate to the caller.
+
+Assertions check complete grammar matches, save-before-publication ordering,
+plan invalidation and live-plan source consistency. Gradle `test` and `run`
+enable assertions; use `java -ea -jar scheduleflow.jar` for a packaged launch.
+Assertions supplement runtime checks and never replace input validation.
+
+`java.util.logging` records startup, input, parsing, dispatch, validation,
+saving, publication, formatting and termination stages at `FINE`. Failed loads,
+reads, syntax checks and saves also produce diagnostics. A failed save never
+produces a successful publication record. Routine diagnostics are below the
+default logger level, preserving exact stdout and empty stderr in normal use.
+Stage messages omit raw command text, names and formatted output; failure
+records may include the exception and its diagnostic details.
+
+To enable diagnostics without interleaving them with console responses, create
+a local `logging.properties` file in the launch folder:
+
+```properties
+handlers=java.util.logging.FileHandler
+.level=INFO
+scheduleflow.level=FINE
+java.util.logging.FileHandler.level=FINE
+java.util.logging.FileHandler.pattern=scheduleflow-%u.log
+java.util.logging.FileHandler.encoding=UTF-8
+java.util.logging.FileHandler.formatter=java.util.logging.SimpleFormatter
+```
+
+Launch with
+`java -ea -Djava.util.logging.config.file=logging.properties -jar scheduleflow.jar`.
+Keep this local configuration and generated logs outside the repository.
+Constructors emit no stage logs or I/O.
+
+Regression tests cover null inputs/elements, stale and equal-source plans,
+invalid planner results, preserved state on rejection and diagnostic order on
+successful and failed transactions. `AppTest` captures records in memory,
+restores logger settings in `finally` and uses `@Isolated` to protect other
+tests. Existing exact-output tests and all eight active packaged scenarios
+verify normal console behaviour.
 
 ### Supplied contract and Save-module differences
 

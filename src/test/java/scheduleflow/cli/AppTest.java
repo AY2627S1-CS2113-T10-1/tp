@@ -18,9 +18,15 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
 import scheduleflow.storage.FileStorage;
@@ -31,12 +37,68 @@ import scheduleflow.storage.StorageException;
 /**
  * Verifies startup, recoverable errors and restart through the real parser, dispatcher and services.
  */
+@Isolated("Diagnostic checks temporarily change the application logger configuration.")
 class AppTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 9, 21, 7, 0);
     private static final Clock CLOCK = Clock.fixed(NOW.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
     private static final String ADD_TASK = "task add n/Draft due/2026-09-22 1800 d/30";
     @TempDir
     private Path directory;
+
+    @Test
+    void run_diagnostics_traceStagesAndDoNotClaimFailedSaveWasCommitted() {
+        FakeStorage storage = new FakeStorage(Snapshot.empty());
+        storage.failOnSave = 2;
+        List<LogRecord> records = captureLogs(() -> {
+            Result result = run(ADD_TASK + "\n" + ADD_TASK + "\nexit\n", storage);
+            assertEquals(0, result.status());
+            assertTrue(result.output().contains("Added T1: Draft"));
+            assertTrue(result.output().contains("Error: Save rejected"));
+            assertFalse(result.output().contains("Added T2:"));
+        });
+        List<String> stages = records.stream().map(LogRecord::getMessage).toList();
+        assertTrue(stages.containsAll(List.of("Starting application session", "Loading saved snapshot",
+                "Saved snapshot loaded", "Starting command loop", "Writing command prompt",
+                "Command prompt flushed", "Reading command input", "Command input read",
+                "Starting command parsing", "Command words recognized; validating syntax",
+                "Checking complete field pattern", "Command time captured", "Validating task addition",
+                "Writing command response", "Command response flushed", "Command response delivered",
+                "Ending session after exit command")));
+        assertTrue(stages.indexOf("Saving validated candidate")
+                < stages.indexOf("Candidate saved; publishing live state"));
+        assertTrue(stages.indexOf("Candidate saved; publishing live state")
+                < stages.indexOf("Saved snapshot published and temporary plan cleared"));
+        assertTrue(stages.indexOf("Saved candidate committed") < stages.indexOf("Formatting task addition response"));
+        assertTrue(stages.contains("Response formatting completed"));
+        assertEquals(1, stages.stream().filter("Saved candidate committed"::equals).count());
+        assertTrue(stages.contains("Candidate save failed; live state was not published"));
+        assertTrue(stages.contains("Command validation or save rejected"));
+        assertEquals(1, storage.saved.tasks().size());
+        assertEquals(2, storage.saved.nextTaskId());
+        assertTrue(records.stream().allMatch(record -> record.getLevel().equals(Level.FINE)));
+        assertFalse(stages.stream().anyMatch(message -> message.contains("Draft") || message.contains(ADD_TASK)));
+    }
+
+    @Test
+    void run_diagnostics_traceSyntaxStartupAndInputFailures() {
+        List<LogRecord> syntax = captureLogs(() -> assertEquals(0,
+                run("exit extra\nexit\n", new FakeStorage(Snapshot.empty())).status()));
+        assertTrue(syntax.stream().anyMatch(record -> record.getMessage().equals("Command syntax rejected")));
+        FakeStorage rejectedLoad = new FakeStorage(Snapshot.empty());
+        rejectedLoad.failLoad = true;
+        List<LogRecord> startup = captureLogs(() -> assertEquals(1, run("exit\n", rejectedLoad).status()));
+        assertTrue(startup.stream().anyMatch(record -> record.getMessage().equals("Startup load failed")));
+        assertFalse(startup.stream().anyMatch(record -> record.getMessage().equals("Starting command loop")));
+        BufferedReader input = new BufferedReader(new StringReader("")) {
+            @Override
+            public String readLine() throws IOException {
+                throw new IOException("Input disconnected");
+            }
+        };
+        List<LogRecord> failure = captureLogs(() -> assertEquals(1,
+                run(input, new FakeStorage(Snapshot.empty())).status()));
+        assertTrue(failure.stream().anyMatch(record -> record.getMessage().equals("Command input failed")));
+    }
 
     @Test
     void run_firstLaunch_listsEmptyWithoutCreatingData() {
@@ -253,6 +315,47 @@ class AppTest {
             }
         };
         assertThrows(IllegalStateException.class, () -> run("exit\n", broken));
+    }
+
+    /**
+     * Captures application diagnostics in memory and restores shared logger settings even on failure.
+     * The class is isolated so other tests cannot observe the temporary configuration.
+     *
+     * @param session controlled session or assertions to execute with diagnostics enabled
+     * @return log records emitted during the session
+     */
+    private List<LogRecord> captureLogs(Runnable session) {
+        Logger logger = Logger.getLogger("scheduleflow");
+        Level originalLevel = logger.getLevel();
+        boolean originalUseParents = logger.getUseParentHandlers();
+        List<LogRecord> records = new ArrayList<>();
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                records.add(record);
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        try {
+            handler.setLevel(Level.FINE);
+            logger.setLevel(Level.FINE);
+            logger.setUseParentHandlers(false);
+            logger.addHandler(handler);
+            session.run();
+            return records;
+        } finally {
+            logger.removeHandler(handler);
+            handler.close();
+            logger.setLevel(originalLevel);
+            logger.setUseParentHandlers(originalUseParents);
+        }
     }
 
     /**

@@ -3,6 +3,7 @@ package scheduleflow;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -20,6 +21,11 @@ import org.junit.jupiter.api.io.TempDir;
 class MainTest {
     @TempDir
     private Path directory;
+
+    @Test
+    void main_nullArgumentArray_rejectsBeforeProcessExit() {
+        assertEquals("args", assertThrows(NullPointerException.class, () -> Main.main(null)).getMessage());
+    }
 
     @Test
     void main_unexpectedArguments_rejectsBeforeReadingCorruptStore() throws Exception {

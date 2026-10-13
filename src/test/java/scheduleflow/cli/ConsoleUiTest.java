@@ -16,6 +16,15 @@ import org.junit.jupiter.api.Test;
  */
 class ConsoleUiTest {
     @Test
+    void write_nullText_rejectsWithoutWritingOrFlushing() {
+        FlushWriter output = new FlushWriter();
+        ConsoleUi ui = new ConsoleUi(new BufferedReader(new StringReader("")), new PrintWriter(output));
+        assertEquals("text", assertThrows(NullPointerException.class, () -> ui.write(null)).getMessage());
+        assertEquals("", output.toString());
+        assertEquals(0, output.flushes);
+    }
+
+    @Test
     void promptAndWrite_flushExactTextAndNewlines() {
         FlushWriter output = new FlushWriter();
         ConsoleUi ui = new ConsoleUi(new BufferedReader(new StringReader("")), new PrintWriter(output));
