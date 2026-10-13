@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.logging.Logger;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Task;
@@ -13,6 +14,8 @@ import scheduleflow.model.Task;
  * Projects an existing frozen plan into one day's complete study window.
  */
 public final class ScheduleService {
+    private static final Logger LOGGER = Logger.getLogger(ScheduleService.class.getName());
+
     /**
      * Creates the ScheduleService dependencies without performing I/O.
      */
@@ -27,6 +30,8 @@ public final class ScheduleService {
         LocalDate firstDate = plan.generatedAt().toLocalDate();
         LocalDate lastDate = plan.horizonEnd().toLocalDate().minusDays(1);
         if (date == null || date.isBefore(firstDate) || date.isAfter(lastDate)) {
+            LOGGER.fine(() -> "Rejected schedule date " + date + "; allowed range: "
+                    + firstDate + " to " + lastDate);
             throw new ValidationException("Schedule date must be between " + firstDate + " and " + lastDate
                     + ". Run plan again to refresh the planning range.");
         }
@@ -38,7 +43,10 @@ public final class ScheduleService {
                 start = start.plusMinutes(TimeRules.SLOT_MINUTES)) {
             appendMerged(entries, classifySlot(plan, start, cutoff));
         }
-        return new ScheduleView(date, plan.generatedAt(), entries, plan.unallocated());
+        ScheduleView view = new ScheduleView(date, plan.generatedAt(), entries, plan.unallocated());
+        LOGGER.fine(() -> "Projected schedule for " + date + " from plan generated at " + plan.generatedAt()
+                + "; merged entries: " + entries.size() + "; unallocated tasks: " + plan.unallocated().size());
+        return view;
     }
 
     /**
@@ -75,6 +83,7 @@ public final class ScheduleService {
                 return task;
             }
         }
+        LOGGER.fine(() -> "Cannot project plan: session refers to unknown task ID T" + taskId);
         throw new ValidationException("Plan session refers to unknown task ID: T" + taskId);
     }
 
