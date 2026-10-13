@@ -1,11 +1,14 @@
 package scheduleflow.cli;
 
+import java.io.IOException;
 import java.time.Clock;
 import java.util.Objects;
 import scheduleflow.commitment.CommitmentService;
+import scheduleflow.common.ValidationException;
 import scheduleflow.planning.EarliestDeadlinePlanner;
 import scheduleflow.planning.ScheduleService;
 import scheduleflow.storage.Storage;
+import scheduleflow.storage.StorageException;
 import scheduleflow.task.TaskService;
 
 /**
@@ -32,9 +35,49 @@ public final class App {
 
     /**
      * Loads once and runs commands, returning zero for normal exit or one for startup/input failure.
-     * This feature is intentionally unfinished in the shared starter.
      */
     public int run() {
-        throw new UnsupportedOperationException("TODO(Printing): implement App.run");
+        AppState state;
+        try {
+            state = new AppState(storage.load());
+        } catch (StorageException exception) {
+            ui.write(renderer.error(exception.getMessage()));
+            return 1;
+        }
+        try {
+            return runCommands(state);
+        } catch (IOException exception) {
+            ui.write(renderer.error("Cannot read input: " + exception.getMessage()));
+            return 1;
+        }
+    }
+
+    /**
+     * Continues after ordinary user errors and exits without saving on exit or end of input.
+     * Unexpected programming exceptions propagate so defects are not disguised as user errors.
+     */
+    private int runCommands(AppState state) throws IOException {
+        while (true) {
+            ui.prompt();
+            String line = ui.readLine();
+            if (line == null) {
+                ui.write(renderer.exit());
+                return 0;
+            }
+            if (line.isBlank()) {
+                continue;
+            }
+            try {
+                CommandResponse response = dispatcher.execute(parser.parse(line), state);
+                ui.write(response.output());
+                if (response.shouldExit()) {
+                    return 0;
+                }
+            } catch (ParseException exception) {
+                ui.write(renderer.parseError(exception));
+            } catch (ValidationException | StorageException exception) {
+                ui.write(renderer.error(exception.getMessage()));
+            }
+        }
     }
 }

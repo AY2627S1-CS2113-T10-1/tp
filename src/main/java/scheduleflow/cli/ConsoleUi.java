@@ -22,25 +22,26 @@ public final class ConsoleUi {
 
     /**
      * Writes and flushes the prompt without a newline.
-     * This feature is intentionally unfinished in the shared starter.
      */
     public void prompt() {
-        throw new UnsupportedOperationException("TODO(Printing): implement ConsoleUi.prompt");
+        output.print("scheduleflow> ");
+        output.flush();
     }
 
     /**
      * Reads a line, returning null only for end of input.
-     * This feature is intentionally unfinished in the shared starter.
+     *
+     * @throws IOException if input cannot be read
      */
     public String readLine() throws IOException {
-        throw new UnsupportedOperationException("TODO(Printing): implement ConsoleUi.readLine");
+        return input.readLine();
     }
 
     /**
      * Writes text followed by a newline and flushes.
-     * This feature is intentionally unfinished in the shared starter.
      */
     public void write(String text) {
-        throw new UnsupportedOperationException("TODO(Printing): implement ConsoleUi.write");
+        output.println(Objects.requireNonNull(text, "text"));
+        output.flush();
     }
 }

@@ -48,9 +48,9 @@ deterministic filesystem failures with JUnit `@TempDir`. Run these tests with
 `.\gradlew.bat test --tests "scheduleflow.storage.*"` from the repository root.
 Unsupported-atomic-move and cleanup-failure injection remain untested.
 
-Console integration remains pending: Printing must load at startup, then save
-each candidate before `AppState.commit` and success output. These storage tests
-do not establish console restart or in-memory rollback. Use one writer per file;
+Console integration loads once at startup, then saves
+each candidate before `AppState.commit` and success output. `AppTest` verifies
+restart and rollback alongside the storage tests. Use one writer per file;
 atomic replacement does not promise durability after power loss.
 
 ### Java documentation
@@ -87,14 +87,14 @@ limit dates to years 0001–9999. Positive decimal integer tokens reject signs,
 leading zeroes and non-ASCII digits; overflow is translated to `ParseException`.
 Each parse failure includes the recognized command's exact usage, or
 `Type help to see available commands` for an unknown command. A direct blank
-parser input is rejected; ignoring blank lines belongs to the future App loop.
+parser input is rejected; the App loop ignores blank lines before parsing.
 
 Parsing does not create domain records or validate nonblank names, duration
 multiples, commitment alignment/end times, future deadlines, overlaps or ID
 existence. Those remain the responsibility of the existing domain constructors
 and services. No other member's implementation or shared public API is changed.
 The existing command records and `ParseException` satisfy the parsing contract.
-Application integration remains deferred.
+Application integration uses these existing parser and service boundaries.
 
 `CommandParserTest` verifies every command, all weekdays, multiword/Unicode names,
 whitespace, strict leap dates and year boundaries, times, field rejection,
@@ -128,7 +128,7 @@ labels. Any UNPLANNED row adds the cutoff note. A nonempty remainder list adds a
 blank line and the whole-plan footer. The formatter never allocates, clips,
 merges, repairs or reorders schedule rows, and never recalculates generation
 time or date ranges. Range validation remains with `ScheduleService`; the
-dispatcher will handle absent plans during application integration.
+dispatcher handles absent plans before schedule projection.
 
 `TextRendererTest` checks messages, fields/order, long/Unicode names, midnight,
 empty/complete/partial plans, all reasons, totals above `Integer.MAX_VALUE`,
@@ -158,7 +158,7 @@ overlap shapes and diagnostics, midnight/full-day commitments, invalid inputs,
 ID exhaustion, unchanged source data and discarded-candidate retries. A fixed-date
 planner integration test checks that an added commitment blocks study slots.
 Run `.\gradlew.bat test --tests scheduleflow.commitment.CommitmentServiceTest`.
-Full CLI integration remains unfinished.
+The dispatcher and console tests also exercise these operations.
 
 ### Commitment deletion and listing
 
@@ -203,8 +203,43 @@ validation. Exceptions from domain services remain their owners' validation.
 `CommandDispatcherTest` uses fixed clocks, a counting clock and fake storage
 to verify all routes, all four transaction paths and retries, save ordering,
 deadline boundaries, numeric IDs, partial/blocked plans, cutoff precision,
-range validation, zone-aware today and frozen/replaced plans. Console startup
-and packaged execution remain pending until the application loop is connected.
+range validation, zone-aware today and frozen/replaced plans.
+
+### Application lifecycle and executable entry point
+
+`App.run` loads once and stops with status 1 before prompting if storage rejects
+the load. Each loop prompts and reads a line, ignores blanks, parses, dispatches
+and prints the response. Parse errors include usage; domain and save errors
+print one error and allow another command. Input failure returns 1; exit and
+EOF return 0 with goodbye and no save. Unexpected programming exceptions
+propagate. Constructors do no I/O, and process termination stays in `Main`.
+
+`ConsoleUi` flushes the exact `scheduleflow> ` prompt without a newline and
+flushes each response with a final newline. `Main` supplies explicit UTF-8
+streams, `Clock.systemDefaultZone()` and `FileStorage` at
+`data/scheduleflow.txt` relative to the launch folder. Extra arguments print
+`Error: Usage: java -jar scheduleflow.jar (no arguments)` and exit 1 before
+loading. The existing Shadow JAR manifest already names `scheduleflow.Main`.
+Build with `.\gradlew.bat shadowJar`; output is `build/libs/scheduleflow.jar`.
+
+`AppTest` covers empty/corrupt startup, load counts, syntax/domain/save recovery,
+unchanged file bytes on a rejected save, stable restart IDs, overdue tasks,
+empty-plan clipping/midnight output, invalidation and input failure.
+`ConsoleUiTest` checks framing, flushes, Unicode lines, EOF and read errors.
+`MainTest` runs separate Java processes in temporary folders to check status,
+argument rejection, UTF-8 under ASCII JVM defaults and persisted restarts.
+Active process UI cases run the packaged JAR with exact per-command assertions.
+
+### Supplied contract and Save-module differences
+
+The supplied implementation contract's section 7 specifies Base64 names before
+the date fields, three-letter weekdays, canonical numeric/date tokens, sorted
+encoded rows and `FileChannel.force(true)`. The committed Save module uses
+plain names last, full weekday names, Java token parsers, snapshot order and
+`Files.writeString` before atomic replacement. Printing preserves that existing
+module and its public APIs; the format documented above and tested restarts
+use the committed codec. Contract-format interoperability and forced flushing
+require coordination with the Save owner and are outside this printer change.
 
 ## Product scope
 ### Target user profile
@@ -272,8 +307,11 @@ For the formatter alone, use
 On Unix, replace `.\gradlew.bat` with `./gradlew`. If the default Gradle cache
 is unwritable, set `GRADLE_USER_HOME` to an accessible cache.
 
-The process UI cases in [the test plan](../test/ui-test-plan.md) remain planned
-until their application and service dependencies are implemented. Parser and
-formatter unit tests establish their own behavior; a BLOCKED UI run (exit 2)
-does not establish console recovery, transaction rollback or release acceptance. The runner uses
-isolated temporary data and writes evidence under `build/ui-transcripts/`.
+The process UI cases in [the test plan](../test/ui-test-plan.md) are active.
+They verify empty startup, commitment transactions/restart, EOF, syntax/domain
+recovery, Unicode and corrupt startup through the packaged JAR. Fixed-clock
+JUnit cases verify task and planning acceptance through injected APIs. The
+runner uses isolated temporary data and writes evidence under
+`build/ui-transcripts/`. No production clock flag was added. Unsupported atomic
+replacement and injected temporary-write failures remain unexecuted release
+checks; existing storage tests cover deterministic replacement failure.
