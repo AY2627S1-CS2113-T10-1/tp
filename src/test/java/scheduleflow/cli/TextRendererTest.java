@@ -2,6 +2,7 @@ package scheduleflow.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.DayOfWeek;
@@ -9,6 +10,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import org.junit.jupiter.api.Test;
@@ -37,6 +39,40 @@ class TextRendererTest {
     private static final LocalDate DATE = LocalDate.of(2026, 9, 21);
     private static final LocalDateTime NOW = DATE.atTime(7, 0);
     private final TextRenderer renderer = new TextRenderer();
+
+    @Test
+    void publicMethods_nullInputs_rejectWithArgumentNames() {
+        assertEquals("task", assertThrows(NullPointerException.class, () -> renderer.taskAdded(null)).getMessage());
+        assertEquals("task", assertThrows(NullPointerException.class, () -> renderer.taskDeleted(null)).getMessage());
+        assertEquals("tasks", assertThrows(NullPointerException.class, () -> renderer.tasks(null)).getMessage());
+        assertEquals("commitment",
+                assertThrows(NullPointerException.class, () -> renderer.commitmentAdded(null)).getMessage());
+        assertEquals("commitment",
+                assertThrows(NullPointerException.class, () -> renderer.commitmentDeleted(null)).getMessage());
+        assertEquals("commitments",
+                assertThrows(NullPointerException.class, () -> renderer.commitments(null)).getMessage());
+        assertEquals("plan", assertThrows(NullPointerException.class, () -> renderer.plan(null)).getMessage());
+        assertEquals("view", assertThrows(NullPointerException.class, () -> renderer.schedule(null)).getMessage());
+        assertEquals("message", assertThrows(NullPointerException.class, () -> renderer.error(null)).getMessage());
+        assertEquals("exception",
+                assertThrows(NullPointerException.class, () -> renderer.parseError(null)).getMessage());
+    }
+
+    @Test
+    void lists_nullElements_rejectWithoutModifyingSuppliedLists() {
+        Task task = new Task(1, "A", DEADLINE, 30);
+        List<Task> tasks = Arrays.asList(task, null);
+        Commitment commitment = new Commitment(1, "A", DayOfWeek.MONDAY, LocalTime.of(10, 0), 30);
+        List<Commitment> commitments = Arrays.asList(commitment, null);
+        assertEquals("tasks element",
+                assertThrows(NullPointerException.class, () -> renderer.tasks(tasks)).getMessage());
+        assertEquals("commitments element",
+                assertThrows(NullPointerException.class, () -> renderer.commitments(commitments)).getMessage());
+        assertEquals(Arrays.asList(task, null), tasks);
+        assertEquals(Arrays.asList(commitment, null), commitments);
+        assertOutput("No tasks found.", renderer.tasks(List.of()));
+        assertOutput("No commitments found.", renderer.commitments(List.of()));
+    }
 
     @Test
     void help_allCommands_includesFormatsAndDescriptions() {
@@ -321,25 +357,40 @@ class TextRendererTest {
                 renderer.schedule(unplanned));
     }
 
+    /**
+     * Constructs a frozen result with the fixed horizon and supplied allocation rows.
+     */
     private Plan createPlan(Snapshot source, List<StudySession> sessions, List<UnallocatedWork> unallocated) {
         return new Plan(NOW, TimeRules.horizonEnd(NOW), source, sessions, unallocated);
     }
 
+    /**
+     * Retains task metadata while selecting its remaining minutes and reason.
+     */
     private UnallocatedWork createWork(Task task, int minutes, UnallocatedReason reason) {
         return new UnallocatedWork(task.id(), task.name(), task.deadline(), minutes, reason);
     }
 
+    /**
+     * Constructs one interval on the fixed test date without projecting or merging it.
+     */
     private ScheduleEntry createEntry(int startHour, int startMinute, int endHour, int endMinute,
             SlotKind kind, String reference, String name) {
         return new ScheduleEntry(DATE.atTime(startHour, startMinute), DATE.atTime(endHour, endMinute),
                 kind, reference, name);
     }
 
+    /**
+     * Checks exact content together with the formatter's line-ending contract.
+     */
     private void assertOutput(String expected, String actual) {
         assertEquals(expected, actual);
         assertFraming(actual);
     }
 
+    /**
+     * Requires LF-only separators and leaves the final newline to the console UI.
+     */
     private void assertFraming(String output) {
         assertFalse(output.contains("\r"));
         assertFalse(output.endsWith("\n"));

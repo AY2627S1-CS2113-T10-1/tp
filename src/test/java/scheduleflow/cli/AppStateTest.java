@@ -66,6 +66,33 @@ class AppStateTest {
         assertSame(plan, state.currentPlan().orElseThrow());
     }
 
+    @Test
+    void replacePlan_differentSource_rejectsWithoutChangingSnapshotOrExistingPlan() {
+        Snapshot snapshot = Snapshot.empty();
+        AppState state = new AppState(snapshot);
+        Plan original = plan(snapshot, NOW);
+        state.replacePlan(original);
+        Snapshot different = new Snapshot(List.of(new Task(1, "A", NOW.plusDays(1), 30)), List.of(), 2, 1);
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> state.replacePlan(plan(different, NOW)));
+        assertEquals("Plan source must match the current snapshot.", failure.getMessage());
+        assertSame(snapshot, state.snapshot());
+        assertSame(original, state.currentPlan().orElseThrow());
+    }
+
+    @Test
+    void replacePlan_equalSourceFromDifferentInstance_acceptsPlan() {
+        Snapshot snapshot = Snapshot.empty();
+        AppState state = new AppState(snapshot);
+        Plan replacement = plan(new Snapshot(List.of(), List.of(), 1, 1), NOW);
+        state.replacePlan(replacement);
+        assertSame(snapshot, state.snapshot());
+        assertSame(replacement, state.currentPlan().orElseThrow());
+    }
+
+    /**
+     * Supplies a fixed-time plan without allocating work or accessing saved data.
+     */
     private Plan plan(Snapshot snapshot, LocalDateTime now) {
         return new Plan(now, TimeRules.horizonEnd(now), snapshot, List.of(), List.of());
     }

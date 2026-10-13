@@ -9,6 +9,8 @@ import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -16,6 +18,11 @@ import java.util.regex.Pattern;
  * Parses the complete case-sensitive command grammar without inspecting application state.
  */
 public final class CommandParser {
+    /**
+     * Records recognition and syntax-checking stages without logging raw command text.
+     */
+    private static final Logger LOGGER = Logger.getLogger(CommandParser.class.getName());
+
     private static final String HELP_USAGE = "Type help to see available commands";
     private static final String TASK_ADD_USAGE = "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES";
     private static final String TASK_DELETE_USAGE = "task delete TNUMBER";
@@ -58,16 +65,24 @@ public final class CommandParser {
      * Parses one nonblank line, translating syntax, number and date errors to ParseException.
      * Leaves domain validation and resolving today's date to command execution.
      * The application skips blank lines; direct blank input is an unrecognized command.
+     *
+     * @param line complete input line
+     * @return immutable command with syntactically valid transport values
+     * @throws ParseException if syntax, a number or a date/time is invalid
+     * @throws NullPointerException if the line is null
      */
     public Command parse(String line) throws ParseException {
         String input = Objects.requireNonNull(line, "line").strip();
+        LOGGER.log(Level.FINE, "Starting command parsing");
         String command = identifyCommand(input);
         String usage = findUsage(command);
+        LOGGER.log(Level.FINE, "Command words recognized; validating syntax");
         if (input.codePoints().anyMatch(Character::isISOControl)) {
+            LOGGER.log(Level.FINE, "Rejected embedded control characters");
             throw new ParseException("Use ordinary spaces instead of embedded control characters", usage);
         }
         try {
-            return switch (command) {
+            Command result = switch (command) {
                 case "help" -> parseNoArguments(input, command, new Command.Help());
                 case "task add" -> parseAddTask(input);
                 case "task list" -> parseNoArguments(input, command, new Command.ListTasks());
@@ -82,10 +97,17 @@ public final class CommandParser {
                 case "exit" -> parseNoArguments(input, command, new Command.Exit());
                 default -> throw new ParseException("Unknown command", HELP_USAGE);
             };
+            LOGGER.log(Level.FINE, "Command parsing completed: {0}", result.getClass().getSimpleName());
+            return result;
         } catch (DateTimeParseException exception) {
+            LOGGER.log(Level.FINE, "Rejected invalid date or time");
             throw new ParseException("Invalid date or time", usage);
         } catch (NumberFormatException exception) {
+            LOGGER.log(Level.FINE, "Rejected integer overflow");
             throw new ParseException("Number must fit in a positive 32-bit integer", usage);
+        } catch (ParseException exception) {
+            LOGGER.log(Level.FINE, "Command syntax rejected");
+            throw exception;
         }
     }
 
@@ -100,6 +122,9 @@ public final class CommandParser {
         return words[0];
     }
 
+    /**
+     * Selects the expected syntax for recognized command words or the help hint.
+     */
     private String findUsage(String command) {
         return switch (command) {
             case "task add" -> TASK_ADD_USAGE;
@@ -112,6 +137,9 @@ public final class CommandParser {
         };
     }
 
+    /**
+     * Requires an exact command with ordinary spaces and no trailing arguments.
+     */
     private Command parseNoArguments(String input, String command, Command result) throws ParseException {
         if (!input.replaceAll(" +", " ").equals(command)) {
             throw new ParseException("This command accepts no arguments", command);
@@ -119,6 +147,9 @@ public final class CommandParser {
         return result;
     }
 
+    /**
+     * Extracts task fields after a complete grammar match, leaving business rules to the service.
+     */
     private Command.AddTask parseAddTask(String input) throws ParseException {
         Matcher fields = match(TASK_ADD_PATTERN, input, TASK_ADD_USAGE);
         LocalDateTime deadline = LocalDateTime.parse(fields.group("date") + " " + fields.group("time"),
@@ -127,6 +158,9 @@ public final class CommandParser {
         return new Command.AddTask(fields.group("name").strip(), deadline, Integer.parseInt(fields.group("minutes")));
     }
 
+    /**
+     * Extracts weekly-series fields and maps the supported three-letter weekday tokens.
+     */
     private Command.AddCommitment parseAddCommitment(String input) throws ParseException {
         Matcher fields = match(COMMITMENT_ADD_PATTERN, input, COMMITMENT_ADD_USAGE);
         DayOfWeek day = switch (fields.group("day")) {
@@ -143,6 +177,9 @@ public final class CommandParser {
                 LocalTime.parse(fields.group("time"), TIME_FORMAT), Integer.parseInt(fields.group("minutes")));
     }
 
+    /**
+     * Keeps {@code today} unresolved or parses an explicit date without consulting a clock.
+     */
     private Command parseSchedule(String input) throws ParseException {
         String value = match(SCHEDULE_PATTERN, input, SCHEDULE_USAGE).group("date");
         if (value.equals("today")) {
@@ -158,9 +195,11 @@ public final class CommandParser {
      */
     private Matcher match(Pattern pattern, String input, String usage) throws ParseException {
         Matcher fields = pattern.matcher(input);
+        LOGGER.log(Level.FINE, "Checking complete field pattern");
         if (!fields.matches()) {
             throw new ParseException("Invalid command format or missing fields", usage);
         }
+        assert fields.start() == 0 && fields.end() == input.length() : "Grammar must match the complete input";
         return fields;
     }
 

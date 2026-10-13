@@ -4,7 +4,7 @@
     {
       "requiredComponents": ["Main.main","App.run","ConsoleUi.prompt","ConsoleUi.readLine","ConsoleUi.write","FileStorage.load","StateCodec.decode","CommandParser.parse","CommandDispatcher.execute","TaskService.list","CommitmentService.list","TextRenderer.tasks","TextRenderer.commitments","TextRenderer.noPlan","TextRenderer.exit"],
       "id": "UI-001", "aim": "First launch has empty lists and no plan",
-      "status": "planned", "setup": "No data file; Printing and Save implemented",
+      "status": "active", "setup": "No data file; Printing and Save implemented",
       "sessions": [{ "startup": "", "steps": [
         { "input": "task list", "output": "No tasks found." },
         { "input": "commitment list", "output": "No commitments found." },
@@ -15,7 +15,7 @@
     {
       "requiredComponents": ["Main.main","App.run","ConsoleUi.prompt","ConsoleUi.readLine","ConsoleUi.write","FileStorage.load","FileStorage.save","StateCodec.decode","StateCodec.encode","CommandParser.parse","CommandDispatcher.execute","CommitmentService.add","CommitmentService.delete","CommitmentService.list","TextRenderer.commitmentAdded","TextRenderer.commitmentDeleted","TextRenderer.commitments","TextRenderer.noPlan","TextRenderer.exit"],
       "id": "UI-002", "aim": "Midnight, adjacency and counters survive deletion and restart",
-      "status": "planned", "setup": "No data file; Commitment, Save and Printing implemented",
+      "status": "active", "setup": "No data file; Commitment, Save and Printing implemented",
       "sessions": [
         { "startup": "", "steps": [
           { "input": "commitment add n/Late day/MON start/2330 d/30", "output": "Added C1: Late | Monday 23:30 - 24:00 (30 min)" },
@@ -35,7 +35,7 @@
     {
       "requiredComponents": ["Main.main","App.run","ConsoleUi.prompt","ConsoleUi.readLine","ConsoleUi.write","FileStorage.load","StateCodec.decode","TextRenderer.exit"],
       "id": "UI-003", "aim": "EOF terminates normally",
-      "status": "planned", "setup": "No data file; Save and Printing implemented",
+      "status": "active", "setup": "No data file; Save and Printing implemented",
       "sessions": [{ "startup": "", "steps": [
         { "input": null, "output": "Goodbye for now!", "exitCode": 0 }
       ] }]
@@ -43,14 +43,14 @@
     {
       "requiredComponents": ["Main.main","App.run","FileStorage.load","StateCodec.decode","ConsoleUi.write","TextRenderer.error"],
       "id": "UI-004", "aim": "Corrupt store terminates before prompting",
-      "status": "planned", "setup": "Unsupported version; Save and Printing implemented and error wording agreed",
+      "status": "active", "setup": "Unsupported version; Save and Printing implemented",
       "files": { "data/scheduleflow.txt": "SCHEDULEFLOW|99\nNEXT|1|1\n" },
       "sessions": [{ "startup": "Error: Unsupported file version: 99\n", "steps": [], "exitCode": 1 }]
     },
     {
       "requiredComponents": ["Main.main","App.run","ConsoleUi.prompt","ConsoleUi.readLine","ConsoleUi.write","FileStorage.load","StateCodec.decode","CommandParser.parse","CommandDispatcher.execute","TextRenderer.parseError","TextRenderer.exit"],
       "id": "UI-005", "aim": "Syntax errors include command usage and allow subsequent commands",
-      "status": "planned", "setup": "No data file; parser ready, Save and remaining Printing dependencies needed",
+      "status": "active", "setup": "No data file; parser and console integration implemented",
       "sessions": [{ "startup": "", "steps": [
         { "input": "task add n/A due/2026-02-30 0900 d/30", "output": "Error: Invalid date or time\nExpected: task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES" },
         { "input": "task add n/A n/B due/2026-10-06 0900 d/30", "output": "Error: Invalid command format or missing fields\nExpected: task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES" },
@@ -61,6 +61,43 @@
         { "input": "exit extra", "output": "Error: This command accepts no arguments\nExpected: exit" },
         { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
       ] }]
+    },
+    {
+      "id": "UI-006", "aim": "Blank lines and domain errors recover without consuming commitment IDs",
+      "status": "active", "setup": "No data file; full console implemented",
+      "sessions": [{ "startup": "", "steps": [
+        { "input": "   ", "output": "", "newline": false },
+        { "input": "commitment add n/Bad day/MON start/1015 d/30", "output": "Error: Commitment start must be on a half-hour boundary." },
+        { "input": "commitment add n/Bad day/MON start/1000 d/45", "output": "Error: Duration must be a positive multiple of 30 minutes." },
+        { "input": "commitment add n/Class day/MON start/1000 d/120", "output": "Added C1: Class | Monday 10:00 - 12:00 (120 min)" },
+        { "input": "commitment add n/Overlap day/MON start/1130 d/60", "output": "Error: Commitment overlaps C1: Class" },
+        { "input": "commitment delete C9", "output": "Error: Unknown commitment ID: C9" },
+        { "input": "task delete T9", "output": "Error: Unknown task ID: T9" },
+        { "input": "commitment add n/Adjacent day/MON start/1200 d/30", "output": "Added C2: Adjacent | Monday 12:00 - 12:30 (30 min)" },
+        { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+      ] }]
+    },
+    {
+      "id": "UI-007", "aim": "Unicode commitments persist across packaged application restarts",
+      "status": "active", "setup": "No data file; full console implemented",
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "commitment add n/学习 Café day/TUE start/1000 d/30", "output": "Added C1: 学习 Café | Tuesday 10:00 - 10:30 (30 min)" },
+          { "input": "plan", "output": "No tasks to schedule." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "commitment list", "output": "=== Recurring Weekly Commitments ===\n[Tuesday]\nC1. 10:00 - 10:30 | 学习 Café\n\nTotal: 1 recurring commitments across the week." },
+          { "input": "schedule today", "output": "No current plan. Run plan to generate one." },
+          { "input": null, "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
+      "id": "UI-008", "aim": "Truncated saved record stops startup before prompting",
+      "status": "active", "setup": "Invalid record; Save and Printing implemented",
+      "files": { "data/scheduleflow.txt": "SCHEDULEFLOW|1\nNEXT|2|1\nTASK|1\n" },
+      "sessions": [{ "startup": "Error: Missing saved record fields.\n", "steps": [], "exitCode": 1 }]
     }
   ]
 }
