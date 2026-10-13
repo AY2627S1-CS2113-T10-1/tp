@@ -9,6 +9,23 @@ user-visible behaviour in the User Guide. Describe verified behaviour accurately
 and clearly mark planned features. This requirement also applies to all AI
 agents working on the project, as specified in the repository's root `AGENTS.md`.
 
+## Duration verification (issue #13)
+
+Duration recording belongs to the existing add operations; no additional
+command or production API is needed. `InputRules.requireDuration` validates
+positive multiples of 30 for both models, and `Commitment` additionally rejects
+intervals crossing midnight. Existing task and commitment service tests cover
+invalid durations and boundary values.
+
+Two additional `CommitmentServiceTest` integration checks exercise the existing
+task, commitment, storage and planner APIs together with fixed dates and isolated
+files. A saved/reloaded 90-minute task retains its full estimate when only 30
+minutes fit around a 90-minute commitment; the plan reports the other 60 minutes.
+Saving the plan source preserves both estimates. A second check confirms a
+reloaded 90-minute weekly commitment blocks exactly that interval on successive
+Mondays. These direct service checks complement, but do not replace, console
+acceptance. Consult the UI test plan for process-level readiness and coverage.
+
 ## Acknowledgements
 
 {list here sources of all reused/adapted ideas, code, documentation, and third-party libraries -- include links to the original source as well}
