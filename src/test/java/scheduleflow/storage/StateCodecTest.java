@@ -13,10 +13,15 @@ import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
 
 /**
- * Checks text conversion independently of files and the unfinished console.
+ * Checks text conversion independently of files and console integration.
  */
 class StateCodecTest {
     private final StateCodec codec = new StateCodec();
+
+    @Test
+    void encode_nullSnapshot_reportsNamedPrecondition() {
+        assertEquals("state", assertThrows(NullPointerException.class, () -> codec.encode(null)).getMessage());
+    }
 
     @Test
     void encode_emptySnapshot_writesHeaderAndCounters() {

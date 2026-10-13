@@ -65,10 +65,68 @@ deterministic filesystem failures with JUnit `@TempDir`. Run these tests with
 `.\gradlew.bat test --tests "scheduleflow.storage.*"` from the repository root.
 Unsupported-atomic-move and cleanup-failure injection remain untested.
 
+Additional `FileStorageTest` coverage saves and reloads candidates from the
+existing task and commitment services using fixed dates and temporary files.
+It checks mixed additions/deletions, Unicode names, remaining minutes and both
+ID sequences after deleting all records. A read-only restoration case checks
+overdue records, stored order and byte-for-byte preservation of a valid CRLF
+file without a final newline. These tests call storage directly, not the CLI.
+
 Console integration loads once at startup, then saves
 each candidate before `AppState.commit` and success output. `AppTest` verifies
 restart and rollback alongside the storage tests. Use one writer per file;
 atomic replacement does not promise durability after power loss.
+
+### Storage defensive checks and diagnostics
+
+The Save-owned types document their inputs, failure contracts and private
+validation helpers with Javadoc. `FileStorage.save` and `StateCodec.encode`
+reject null snapshots with a named `NullPointerException` before filesystem
+changes. Invalid saved text still raises `StorageException`, preserving the
+original parsing or I/O cause where available; failed cleanup remains a
+suppressed exception on the original save failure. `Snapshot` continues to
+validate IDs, counters and weekly overlaps with runtime exceptions.
+
+Java assertions check the codec's one-record-per-line invariant and the save
+temporary file's distinct sibling location. They detect implementation defects,
+not user-input errors, and perform no I/O or mutations. Gradle tests and `run`
+enable assertions; use `java -ea -jar scheduleflow.jar` for a packaged launch.
+Null, format and filesystem checks also work when assertions are disabled.
+
+`FileStorage` and `StateCodec` use `java.util.logging` at `FINE` level for load,
+decode, encode, directory preparation, temporary writing, atomic replacement
+and cleanup. Success is recorded only after that stage succeeds. Storage-layer
+failures are also `FINE` diagnostics; the application owns session severity and
+user-facing error reporting. This avoids duplicate warnings and keeps default
+console output unchanged. Storage log records omit paths, saved values and
+exception payloads; the thrown exception retains its diagnostic details.
+Constructors neither log nor perform I/O.
+
+For storage-only diagnostics, use this local `logging.properties` file in a
+launch folder outside the repository:
+
+```properties
+handlers=java.util.logging.FileHandler
+.level=INFO
+scheduleflow.storage.level=FINE
+scheduleflow.cli.level=OFF
+java.util.logging.FileHandler.level=FINE
+java.util.logging.FileHandler.pattern=scheduleflow-storage-%u.log
+java.util.logging.FileHandler.encoding=UTF-8
+java.util.logging.FileHandler.formatter=java.util.logging.SimpleFormatter
+```
+
+Launch with
+`java -ea -Djava.util.logging.config.file=logging.properties -jar scheduleflow.jar`.
+No logging handlers or global settings are installed by storage itself.
+
+`FileStorageTest` captures logs in memory to verify stage ordering, missing and
+invalid files, I/O failures, cleanup and absence of false success or stored
+values in diagnostics. It restores logger settings in `finally` and uses
+`@Isolated` to avoid leaking configuration to concurrent tests. Null-input
+regressions check preserved bytes and no directory creation. Codec and snapshot
+tests retain coverage of malformed text, counters, overlaps and immutable data.
+Unsupported atomic moves and cleanup-failure injection remain untested.
 
 ### Java documentation
 

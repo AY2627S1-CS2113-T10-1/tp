@@ -12,6 +12,18 @@ normal launches must still produce empty stderr, including `WARNING` and
 separately with isolated logger configuration; production-entry-point tests
 also check warning-only file logging and unchanged console responses.
 
+Storage-only regression coverage also round-trips task and commitment service
+candidates through fresh file readers, retaining values and both ID sequences
+after deletion. Repeated loading of valid overdue records preserves the original
+file bytes. These direct JUnit checks complement the active console scenarios
+and Printing's restart and rollback tests.
+
+Save's defensive-check tests also verify null snapshots are rejected before
+file changes, and capture opt-in storage diagnostics for success, corrupt input
+and cleanup after failed replacement. All eight process fixtures retain their exact
+expectations: storage uses `FINE` logging and default launches remain quiet.
+Assertions supplement runtime validation; they do not replace file-error checks.
+
 Run from the repository root with Java 25 and Node.js 22 or later:
 
 ```powershell
