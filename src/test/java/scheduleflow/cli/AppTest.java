@@ -75,7 +75,11 @@ class AppTest {
         assertTrue(stages.contains("Command validation or save rejected"));
         assertEquals(1, storage.saved.tasks().size());
         assertEquals(2, storage.saved.nextTaskId());
-        assertTrue(records.stream().allMatch(record -> record.getLevel().equals(Level.FINE)));
+        assertTrue(records.stream().anyMatch(record -> record.getLevel().equals(Level.FINE)));
+        assertLogged(records, Level.INFO, "Starting application session");
+        assertLogged(records, Level.INFO, "Ending session after exit command");
+        assertLogged(records, Level.WARNING, "Command validation or save rejected");
+        assertFalse(records.stream().anyMatch(record -> record.getLevel().equals(Level.SEVERE)));
         assertFalse(stages.stream().anyMatch(message -> message.contains("Draft") || message.contains(ADD_TASK)));
     }
 
@@ -83,11 +87,11 @@ class AppTest {
     void run_diagnostics_traceSyntaxStartupAndInputFailures() {
         List<LogRecord> syntax = captureLogs(() -> assertEquals(0,
                 run("exit extra\nexit\n", new FakeStorage(Snapshot.empty())).status()));
-        assertTrue(syntax.stream().anyMatch(record -> record.getMessage().equals("Command syntax rejected")));
+        assertLogged(syntax, Level.WARNING, "Command syntax rejected");
         FakeStorage rejectedLoad = new FakeStorage(Snapshot.empty());
         rejectedLoad.failLoad = true;
         List<LogRecord> startup = captureLogs(() -> assertEquals(1, run("exit\n", rejectedLoad).status()));
-        assertTrue(startup.stream().anyMatch(record -> record.getMessage().equals("Startup load failed")));
+        assertLogged(startup, Level.SEVERE, "Startup load failed");
         assertFalse(startup.stream().anyMatch(record -> record.getMessage().equals("Starting command loop")));
         BufferedReader input = new BufferedReader(new StringReader("")) {
             @Override
@@ -97,7 +101,31 @@ class AppTest {
         };
         List<LogRecord> failure = captureLogs(() -> assertEquals(1,
                 run(input, new FakeStorage(Snapshot.empty())).status()));
-        assertTrue(failure.stream().anyMatch(record -> record.getMessage().equals("Command input failed")));
+        assertLogged(failure, Level.SEVERE, "Command input failed");
+    }
+
+    @Test
+    void run_warningThreshold_retainsFailuresAndFiltersSessionAndStageEvents() {
+        FakeStorage storage = new FakeStorage(Snapshot.empty());
+        storage.failOnSave = 1;
+        List<LogRecord> recoverable = captureLogs(Level.WARNING, () -> {
+            Result result = run("exit extra\n" + ADD_TASK + "\nexit\n", storage);
+            assertEquals(0, result.status());
+            assertTrue(result.output().contains("Error: This command accepts no arguments"));
+            assertTrue(result.output().contains("Error: Save rejected"));
+            assertTrue(result.output().endsWith("Goodbye for now!\n"));
+        });
+        assertEquals(2, recoverable.size());
+        assertLogged(recoverable, Level.WARNING, "Command syntax rejected");
+        assertLogged(recoverable, Level.WARNING, "Command validation or save rejected");
+        assertEquals(Snapshot.empty(), storage.saved);
+
+        FakeStorage rejectedLoad = new FakeStorage(Snapshot.empty());
+        rejectedLoad.failLoad = true;
+        List<LogRecord> fatal = captureLogs(Level.WARNING,
+                () -> assertEquals(1, run("exit\n", rejectedLoad).status()));
+        assertEquals(1, fatal.size());
+        assertLogged(fatal, Level.SEVERE, "Startup load failed");
     }
 
     @Test
@@ -325,6 +353,17 @@ class AppTest {
      * @return log records emitted during the session
      */
     private List<LogRecord> captureLogs(Runnable session) {
+        return captureLogs(Level.FINE, session);
+    }
+
+    /**
+     * Captures only records at the selected minimum severity and restores shared logger settings.
+     *
+     * @param minimum least severe level accepted by the logger and handler
+     * @param session controlled session or assertions to execute with diagnostics enabled
+     * @return log records passing the selected threshold
+     */
+    private List<LogRecord> captureLogs(Level minimum, Runnable session) {
         Logger logger = Logger.getLogger("scheduleflow");
         Level originalLevel = logger.getLevel();
         boolean originalUseParents = logger.getUseParentHandlers();
@@ -332,7 +371,9 @@ class AppTest {
         Handler handler = new Handler() {
             @Override
             public void publish(LogRecord record) {
-                records.add(record);
+                if (isLoggable(record)) {
+                    records.add(record);
+                }
             }
 
             @Override
@@ -344,8 +385,8 @@ class AppTest {
             }
         };
         try {
-            handler.setLevel(Level.FINE);
-            logger.setLevel(Level.FINE);
+            handler.setLevel(minimum);
+            logger.setLevel(minimum);
             logger.setUseParentHandlers(false);
             logger.addHandler(handler);
             session.run();
@@ -358,6 +399,20 @@ class AppTest {
         }
     }
 
+    /**
+     * Requires a diagnostic to retain both its classification and original exception details.
+     *
+     * @param records captured diagnostics to inspect
+     * @param level expected severity
+     * @param message expected stage description
+     */
+    private void assertLogged(List<LogRecord> records, Level level, String message) {
+        LogRecord record = records.stream().filter(value -> value.getLevel().equals(level)
+                && value.getMessage().equals(message)).findFirst().orElseThrow();
+        if (level.intValue() >= Level.WARNING.intValue()) {
+            assertTrue(record.getThrown() instanceof Exception);
+        }
+    }
     /**
      * Runs a complete session with fixed time and isolated input/output.
      */

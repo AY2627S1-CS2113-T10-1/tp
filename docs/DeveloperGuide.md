@@ -252,11 +252,25 @@ plan invalidation and live-plan source consistency. Gradle `test` and `run`
 enable assertions; use `java -ea -jar scheduleflow.jar` for a packaged launch.
 Assertions supplement runtime checks and never replace input validation.
 
-`java.util.logging` records startup, input, parsing, dispatch, validation,
-saving, publication, formatting and termination stages at `FINE`. Failed loads,
-reads, syntax checks and saves also produce diagnostics. A failed save never
-produces a successful publication record. Routine diagnostics are below the
-default logger level, preserving exact stdout and empty stderr in normal use.
+`java.util.logging` classifies diagnostics by their effect on the session:
+
+- `FINE` records detailed input, parsing, dispatch, validation, saving,
+  publication and formatting stages.
+- `INFO` records session startup and normal termination after exit or EOF.
+- `WARNING` records rejected syntax, domain validation and save failures that
+  allow the user to try another command.
+- `SEVERE` records startup-load and input failures that stop the session.
+
+A failed save never produces a successful publication record. Failure records
+retain their original exception, so a file handler can record its cause and
+stack trace alongside the severity.
+
+For a default executable launch, `Main` sets the `scheduleflow.cli` logger
+namespace to `OFF`, preserving exact stdout and empty stderr even for errors.
+An explicit `java.util.logging.config.file` or `java.util.logging.config.class`
+setting, or a configured `scheduleflow`/`scheduleflow.cli` namespace level,
+takes precedence. Other component logger settings are preserved. Code that
+embeds `App` directly uses the caller's normal Java logging configuration.
 Stage messages omit raw command text, names and formatted output; failure
 records may include the exception and its diagnostic details.
 
@@ -275,6 +289,9 @@ java.util.logging.FileHandler.formatter=java.util.logging.SimpleFormatter
 
 Launch with
 `java -ea -Djava.util.logging.config.file=logging.properties -jar scheduleflow.jar`.
+To record only warnings and failures, change both `scheduleflow.level` and
+`java.util.logging.FileHandler.level` to `WARNING`; `SEVERE` records are still
+included while `INFO` and `FINE` are filtered out.
 Keep this local configuration and generated logs outside the repository.
 Constructors emit no stage logs or I/O.
 
@@ -282,8 +299,11 @@ Regression tests cover null inputs/elements, stale and equal-source plans,
 invalid planner results, preserved state on rejection and diagnostic order on
 successful and failed transactions. `AppTest` captures records in memory,
 restores logger settings in `finally` and uses `@Isolated` to protect other
-tests. Existing exact-output tests and all eight active packaged scenarios
-verify normal console behaviour.
+tests. It checks severity classification, retained exceptions and filtering at
+the `WARNING` threshold. `MainTest` checks quiet default launches for recoverable
+and fatal errors, and an explicit warning-only file configuration. Existing
+exact-output tests and all eight active packaged scenarios verify normal
+console behaviour. The User Guide's command and error behaviour remains valid.
 
 ### Supplied contract and Save-module differences
 

@@ -7,8 +7,10 @@ update. The fixtures are the executable source of truth for exact responses.
 
 The defensive checks and optional stage diagnostics preserve these exact
 responses. All eight scenarios remain active with their existing expectations;
-normal launches must still produce empty stderr. JUnit covers API misuse and
-captures enabled logging separately with isolated logger configuration.
+normal launches must still produce empty stderr, including `WARNING` and
+`SEVERE` error paths. JUnit covers API misuse and captures enabled logging
+separately with isolated logger configuration; production-entry-point tests
+also check warning-only file logging and unchanged console responses.
 
 Run from the repository root with Java 25 and Node.js 22 or later:
 

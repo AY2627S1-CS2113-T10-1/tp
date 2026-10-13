@@ -26,6 +26,11 @@ public final class Main {
     private static final Logger LOGGER = Logger.getLogger(Main.class.getName());
 
     /**
+     * Retains the console logger namespace so its launch-time configuration survives garbage collection.
+     */
+    private static final Logger CLI_LOGGER = Logger.getLogger("scheduleflow.cli");
+
+    /**
      * Prevents instantiation of the executable entry point.
      */
     private Main() {
@@ -34,12 +39,14 @@ public final class Main {
     /**
      * Starts the application with data/scheduleflow.txt and exits with App's status.
      * Rejects command line arguments before loading saved data.
+     * Keeps diagnostics opt-in unless a logging configuration or namespace level is supplied.
      *
      * @param args command line arguments, which must be empty for a normal launch
      * @throws NullPointerException if the argument array is null
      */
     public static void main(String[] args) {
         Objects.requireNonNull(args, "args");
+        configureDiagnostics();
         LOGGER.log(Level.FINE, "Starting application dependencies");
         ConsoleUi ui = new ConsoleUi(new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8)),
                 new PrintWriter(System.out, true, StandardCharsets.UTF_8));
@@ -54,5 +61,19 @@ public final class Main {
         assert status == 0 || status == 1 : "Application status must indicate success or failure";
         LOGGER.log(Level.FINE, "Application stopped with status {0}", status);
         System.exit(status);
+    }
+
+    /**
+     * Keeps default console launches quiet while respecting explicit Java logging configuration.
+     * Changes only the console namespace; other component loggers retain their existing settings.
+     */
+    private static void configureDiagnostics() {
+        if (System.getProperty("java.util.logging.config.file") != null
+                || System.getProperty("java.util.logging.config.class") != null) {
+            return;
+        }
+        if (CLI_LOGGER.getLevel() == null && Logger.getLogger("scheduleflow").getLevel() == null) {
+            CLI_LOGGER.setLevel(Level.OFF);
+        }
     }
 }

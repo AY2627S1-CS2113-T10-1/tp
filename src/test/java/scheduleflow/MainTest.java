@@ -65,14 +65,68 @@ class MainTest {
         assertFalse(Files.exists(directory.resolve("data")));
     }
 
+    @Test
+    void main_defaultDiagnostics_recoverableAndFatalErrorsKeepStderrEmpty() throws Exception {
+        ProcessResult recoverable = launch("exit extra\nexit\n", List.of());
+        assertEquals(0, recoverable.status());
+        assertEquals("scheduleflow> Error: This command accepts no arguments\nExpected: exit\n"
+                + "scheduleflow> Goodbye for now!\n", recoverable.output());
+        assertEquals("", recoverable.error());
+        Path data = directory.resolve("data/scheduleflow.txt");
+        Files.createDirectories(data.getParent());
+        byte[] original = "SCHEDULEFLOW|99\n".getBytes(StandardCharsets.UTF_8);
+        Files.write(data, original);
+        ProcessResult fatal = launch("exit\n", List.of());
+        assertEquals(1, fatal.status());
+        assertEquals("Error: Unsupported file version: 99\n", fatal.output());
+        assertEquals("", fatal.error());
+        assertArrayEquals(original, Files.readAllBytes(data));
+    }
+
+    @Test
+    void main_warningFileConfiguration_preservesSeverityAndConsoleFraming() throws Exception {
+        Path configuration = directory.resolve("logging.properties");
+        Files.writeString(configuration, String.join("\n",
+                "handlers=java.util.logging.FileHandler", ".level=INFO", "scheduleflow.cli.level=WARNING",
+                "java.util.logging.FileHandler.level=WARNING",
+                "java.util.logging.FileHandler.pattern=diagnostics-%u.log",
+                "java.util.logging.FileHandler.encoding=UTF-8",
+                "java.util.logging.FileHandler.formatter=java.util.logging.SimpleFormatter"), StandardCharsets.UTF_8);
+        ProcessResult result = launch("exit extra\nexit\n", List.of(),
+                List.of("-Djava.util.logging.config.file=" + configuration));
+        assertEquals(0, result.status());
+        assertEquals("scheduleflow> Error: This command accepts no arguments\nExpected: exit\n"
+                + "scheduleflow> Goodbye for now!\n", result.output());
+        assertEquals("", result.error());
+        String log = Files.readString(directory.resolve("diagnostics-0.log"), StandardCharsets.UTF_8);
+        assertTrue(log.contains("Command syntax rejected"));
+        assertTrue(log.contains("ParseException: This command accepts no arguments"));
+        assertFalse(log.contains("Starting application session"));
+        assertFalse(log.contains("Starting command parsing"));
+    }
+
     /**
      * Launches the actual entry point using Java 25 and redirects output to avoid pipe-buffer deadlocks.
      */
     private ProcessResult launch(String input, List<String> arguments) throws Exception {
+        return launch(input, arguments, List.of());
+    }
+
+    /**
+     * Launches an isolated process with optional JVM configuration and the supplied application input.
+     *
+     * @param input complete UTF-8 session input
+     * @param arguments application arguments supplied after the main class
+     * @param vmArguments JVM options supplied before the classpath
+     * @return process status and captured console streams
+     * @throws Exception if process startup, input or output collection fails
+     */
+    private ProcessResult launch(String input, List<String> arguments, List<String> vmArguments) throws Exception {
         Path classes = Path.of(Main.class.getProtectionDomain().getCodeSource().getLocation().toURI());
         List<String> command = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin", "java")
-                .toString(), "-Dfile.encoding=US-ASCII", "-Dstdout.encoding=US-ASCII", "-cp", classes.toString(),
-                "scheduleflow.Main"));
+                .toString(), "-Dfile.encoding=US-ASCII", "-Dstdout.encoding=US-ASCII"));
+        command.addAll(vmArguments);
+        command.addAll(List.of("-cp", classes.toString(), "scheduleflow.Main"));
         command.addAll(arguments);
         Path output = directory.resolve("stdout.txt");
         Path error = directory.resolve("stderr.txt");

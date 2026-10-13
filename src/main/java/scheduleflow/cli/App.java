@@ -19,6 +19,8 @@ import scheduleflow.task.TaskService;
 public final class App {
     /**
      * Records lifecycle stages and recoverable failures without logging raw input.
+     * Uses {@code INFO} for sessions, {@code WARNING} for recoverable errors and
+     * {@code SEVERE} for failures that stop the session; detailed stages remain at {@code FINE}.
      */
     private static final Logger LOGGER = Logger.getLogger(App.class.getName());
 
@@ -66,21 +68,21 @@ public final class App {
      * @return 0 for exit or EOF, or 1 for a storage-load or input failure
      */
     public int run() {
-        LOGGER.log(Level.FINE, "Starting application session");
+        LOGGER.log(Level.INFO, "Starting application session");
         AppState state;
         try {
             LOGGER.log(Level.FINE, "Loading saved snapshot");
             state = new AppState(storage.load());
             LOGGER.log(Level.FINE, "Saved snapshot loaded");
         } catch (StorageException exception) {
-            LOGGER.log(Level.FINE, "Startup load failed", exception);
+            LOGGER.log(Level.SEVERE, "Startup load failed", exception);
             ui.write(renderer.error(exception.getMessage()));
             return 1;
         }
         try {
             return runCommands(state);
         } catch (IOException exception) {
-            LOGGER.log(Level.FINE, "Command input failed", exception);
+            LOGGER.log(Level.SEVERE, "Command input failed", exception);
             ui.write(renderer.error("Cannot read input: " + exception.getMessage()));
             return 1;
         }
@@ -100,7 +102,7 @@ public final class App {
             ui.prompt();
             String line = ui.readLine();
             if (line == null) {
-                LOGGER.log(Level.FINE, "Ending session after EOF");
+                LOGGER.log(Level.INFO, "Ending session after EOF");
                 ui.write(renderer.exit());
                 return 0;
             }
@@ -114,14 +116,14 @@ public final class App {
                 ui.write(response.output());
                 LOGGER.log(Level.FINE, "Command response delivered");
                 if (response.shouldExit()) {
-                    LOGGER.log(Level.FINE, "Ending session after exit command");
+                    LOGGER.log(Level.INFO, "Ending session after exit command");
                     return 0;
                 }
             } catch (ParseException exception) {
-                LOGGER.log(Level.FINE, "Command syntax rejected", exception);
+                LOGGER.log(Level.WARNING, "Command syntax rejected", exception);
                 ui.write(renderer.parseError(exception));
             } catch (ValidationException | StorageException exception) {
-                LOGGER.log(Level.FINE, "Command validation or save rejected", exception);
+                LOGGER.log(Level.WARNING, "Command validation or save rejected", exception);
                 ui.write(renderer.error(exception.getMessage()));
             }
         }
