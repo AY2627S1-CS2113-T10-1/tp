@@ -49,10 +49,12 @@ Study hours are **08:00–22:00 every day**, including weekends. Work is schedul
 3. Open a terminal in that folder and launch the application:
 
    ```shell
-   java -jar scheduleflow.jar
+   java -ea -jar scheduleflow.jar
    ```
 
-   The application takes no additional command line arguments.
+   `-ea` enables the program's internal assertions. The application takes no
+   additional command line arguments. Generated distribution launchers enable
+   assertions automatically.
 
 4. At the `scheduleflow>` prompt, type `help` and press Enter. Do not type the prompt itself.
 
@@ -114,7 +116,6 @@ For a task, duration is the estimated remaining work, which may be split into
 several sessions. For a commitment, it is the length of each weekly occurrence
 from its start time, and that occurrence must not cross midnight. Planning
 does not reduce either stored value. Saving and loading preserve both values.
-See the implementation-status notes for console availability.
 
 Every stored task represents unfinished work. Its duration is your estimate of the work still required. Generating a plan or letting time pass does not reduce that estimate.
 

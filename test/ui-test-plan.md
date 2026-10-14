@@ -1,12 +1,12 @@
 # ScheduleFlow UI test plan
 
-All eight maintained process scenarios are active. They exercise the packaged
+All twelve maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
 
 The defensive checks and optional stage diagnostics preserve these exact
-responses. All eight scenarios remain active with their existing expectations;
+responses. The original eight scenarios retain their existing expectations;
 normal launches must still produce empty stderr, including `WARNING` and
 `SEVERE` error paths. JUnit covers API misuse and captures enabled logging
 separately with isolated logger configuration; production-entry-point tests
@@ -20,11 +20,11 @@ and Printing's restart and rollback tests.
 
 Save's defensive-check tests also verify null snapshots are rejected before
 file changes, and capture opt-in storage diagnostics for success, corrupt input
-and cleanup after failed replacement. All eight process fixtures retain their exact
+and cleanup after failed replacement. The original eight fixtures retain their exact
 expectations: storage uses `FINE` logging and default launches remain quiet.
 Assertions supplement runtime validation; they do not replace file-error checks.
 
-Commitment hardening retains all eight fixtures and their expected responses.
+Commitment hardening retains the original eight fixtures and their expected responses.
 Isolated JUnit checks cover add/delete/list diagnostic stages, rejected operations
 without false success, private-value omission and named null preconditions.
 Existing interval and immutable-candidate tests exercise internal assertions;
@@ -38,6 +38,7 @@ java -version
 .\gradlew.bat build
 node --test test/ui-runner.test.mjs
 node .agents/skills/test-ui/scripts/run-ui-tests.mjs
+node --test test/release.test.mjs
 ```
 
 Use `./gradlew` on Unix. If needed, set `GRADLE_USER_HOME` to a writable cache.
@@ -83,6 +84,19 @@ timeouts and expected output; Java 25 and isolated workspace data were retained.
 | UI-006 | Blank lines, duration/alignment/overlap errors, unknown IDs and retry IDs | Active |
 | UI-007 | Unicode save/restart and temporary-plan loss | Active |
 | UI-008 | Truncated saved record stops startup with status 1 | Active |
+| UI-009 | Restored overdue/out-of-horizon tasks, numeric listing, deletion and restart | Active |
+| UI-010 | Exhausted task and commitment ID sequences reject additions without overflow | Active |
+| UI-011 | Overlapping saved commitments reject the whole store before prompting | Active |
+| UI-012 | Unallocated duration totals beyond a signed 32-bit integer | Active |
+
+The original eight scenarios retain their exact expectations. UI-009 through
+UI-012 add release acceptance without a production clock flag. Their saved
+deadlines are deliberately far past or beyond the current planning horizon.
+The separately invoked `test/release.test.mjs` runs all twelve cases with
+`-ea`, checks the normal ZIP includes the exact JAR, and launches its native
+script with default assertions. Run it after `build`; it does not build
+artifacts itself. Its exact transcript path is printed under
+`build/ui-transcripts/`, alongside the local skill runner's evidence.
 
 UI-001 through UI-005 were activated when their console dependencies became
 implemented. Preflight still reports ownership-marked stubs and blocks only
@@ -99,6 +113,8 @@ and blocked plans, cutoff seconds, range limits, injected timezone, frozen
 plans and replacement. It checks the corrected earliest-slot schedule and
 preserves stored estimates. Existing optimizer tests verify conservation and
 nonoverlap across mixed inputs.
+Release JUnit checks also cover a task split across days with a partial
+remainder and allocation through the last study window of a leap-day horizon.
 
 `AppTest` covers first launch without file creation, one startup load, startup
 corruption with preserved bytes, parse/domain/save recovery, stable task IDs

@@ -98,6 +98,53 @@
       "status": "active", "setup": "Invalid record; Save and Printing implemented",
       "files": { "data/scheduleflow.txt": "SCHEDULEFLOW|1\nNEXT|2|1\nTASK|1\n" },
       "sessions": [{ "startup": "Error: Missing saved record fields.\n", "steps": [], "exitCode": 1 }]
+    },
+    {
+      "id": "UI-009", "aim": "Restored tasks retain numeric order, unallocated work and deletion across restart",
+      "status": "active", "setup": "Valid overdue and out-of-horizon tasks in deliberately unsorted storage order",
+      "files": { "data/scheduleflow.txt": "SCHEDULEFLOW|1\nNEXT|11|1\nTASK|10|2000-01-01T09:00|60|Later ID\nTASK|3|9999-12-31T23:59|90|Future\nTASK|2|2000-01-01T09:00|30|Earlier ID\n" },
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT2 | Earlier ID | 30 min | 2000-01-01 09:00\nT3 | Future | 90 min | 9999-12-31 23:59\nT10 | Later ID | 60 min | 2000-01-01 09:00\nTotal: 3 task(s)." },
+          { "input": "plan", "output": "Study plan generated with unallocated work.\nScheduled: 0 min | Unallocated: 180 min\nT2: Earlier ID | Unallocated: 30 min | Reason: deadline passed\nT10: Later ID | Unallocated: 60 min | Reason: deadline passed\nT3: Future | Unallocated: 90 min | Reason: outside planning horizon" },
+          { "input": "task add n/Invalid due/2000-01-01 0900 d/30", "output": "Error: Deadline must be in the future." },
+          { "input": "task delete T10", "output": "Deleted task T10: Later ID" },
+          { "input": "schedule today", "output": "No current plan. Run plan to generate one." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT2 | Earlier ID | 30 min | 2000-01-01 09:00\nT3 | Future | 90 min | 9999-12-31 23:59\nTotal: 2 task(s)." },
+          { "input": "task delete T10", "output": "Error: Unknown task ID: T10" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
+      "id": "UI-010", "aim": "Exhausted task and commitment counters reject additions without overflow",
+      "status": "active", "setup": "Empty valid store with both next-ID counters at Integer.MAX_VALUE",
+      "files": { "data/scheduleflow.txt": "SCHEDULEFLOW|1\nNEXT|2147483647|2147483647\n" },
+      "sessions": [{ "startup": "", "steps": [
+        { "input": "task add n/More due/2000-01-01 0900 d/30", "output": "Error: No more task IDs are available." },
+        { "input": "commitment add n/More day/MON start/1000 d/30", "output": "Error: Commitment IDs are exhausted." },
+        { "input": "task list", "output": "No tasks found." },
+        { "input": "commitment list", "output": "No commitments found." },
+        { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+      ] }]
+    },
+    {
+      "id": "UI-011", "aim": "Overlapping saved commitments reject the complete store before prompting",
+      "status": "active", "setup": "Two individually valid Monday commitments with overlapping intervals",
+      "files": { "data/scheduleflow.txt": "SCHEDULEFLOW|1\nNEXT|1|3\nCOMMITMENT|1|MONDAY|10:00|60|First\nCOMMITMENT|2|MONDAY|10:30|60|Second\n" },
+      "sessions": [{ "startup": "Error: Invalid saved data: Commitments overlap: C1 and C2\n", "steps": [], "exitCode": 1 }]
+    },
+    {
+      "id": "UI-012", "aim": "Large restored task estimates produce whole-plan totals without integer overflow",
+      "status": "active", "setup": "Two overdue tasks with estimates near Integer.MAX_VALUE",
+      "files": { "data/scheduleflow.txt": "SCHEDULEFLOW|1\nNEXT|3|1\nTASK|1|2000-01-01T09:00|2147483640|First\nTASK|2|2000-01-01T09:00|2147483640|Second\n" },
+      "sessions": [{ "startup": "", "steps": [
+        { "input": "plan", "output": "Study plan generated with unallocated work.\nScheduled: 0 min | Unallocated: 4294967280 min\nT1: First | Unallocated: 2147483640 min | Reason: deadline passed\nT2: Second | Unallocated: 2147483640 min | Reason: deadline passed" },
+        { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+      ] }]
     }
   ]
 }

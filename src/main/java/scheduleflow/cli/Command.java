@@ -14,11 +14,6 @@ public sealed interface Command {
      * Requests command help.
      */
     record Help() implements Command {
-        /**
-         * Creates a help request without consulting application state.
-         */
-        public Help {
-        }
     }
 
     /**
@@ -40,22 +35,12 @@ public sealed interface Command {
      * Requests all unfinished tasks.
      */
     record ListTasks() implements Command {
-        /**
-         * Creates a request for stored tasks without reading them.
-         */
-        public ListTasks {
-        }
     }
 
     /**
      * Carries the numeric suffix of a task ID.
      */
     record DeleteTask(int id) implements Command {
-        /**
-         * Retains the supplied ID for validation by the task service.
-         */
-        public DeleteTask {
-        }
     }
 
     /**
@@ -78,44 +63,24 @@ public sealed interface Command {
      * Requests all recurring weekly commitments.
      */
     record ListCommitments() implements Command {
-        /**
-         * Creates a weekly-series list request without reading application state.
-         */
-        public ListCommitments {
-        }
     }
 
     /**
      * Carries the numeric suffix of a commitment ID.
      */
     record DeleteCommitment(int id) implements Command {
-        /**
-         * Retains the supplied ID for validation by the commitment service.
-         */
-        public DeleteCommitment {
-        }
     }
 
     /**
      * Requests replacement of the temporary plan.
      */
     record GeneratePlan() implements Command {
-        /**
-         * Creates a plan-generation request without capturing time or allocating work.
-         */
-        public GeneratePlan {
-        }
     }
 
     /**
      * Defers resolving today until dispatch captures the clock.
      */
     record ScheduleToday() implements Command {
-        /**
-         * Creates a request whose date will be resolved from the dispatcher's clock.
-         */
-        public ScheduleToday {
-        }
     }
 
     /**
@@ -136,10 +101,5 @@ public sealed interface Command {
      * Requests normal exit without another save.
      */
     record Exit() implements Command {
-        /**
-         * Creates a termination request without saving data or exiting the process.
-         */
-        public Exit {
-        }
     }
 }
