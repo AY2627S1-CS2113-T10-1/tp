@@ -144,6 +144,12 @@ Expected: task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES
 
 A successful addition saves the task and clears any current plan. Run `plan` again to include it.
 
+Rejected task additions leave existing tasks, commitments, ID counters and the
+current plan unchanged. Correct the input and retry; the failed attempt does not
+consume an ID. Optional [Task diagnostics](DeveloperGuide.md#task-operations-and-defensive-checks)
+record validation and candidate-processing stages in a separate log file, without
+task names, deadlines or durations. Normal launches keep the same console output.
+
 ### Listing tasks
 
 ```text
