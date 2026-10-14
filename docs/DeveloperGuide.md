@@ -306,18 +306,56 @@ because their positive durations would overlap; the ID comparator is a final
 ordering safeguard.
 
 Defensive checks distinguish invalid user IDs from programmer errors (null
-snapshots). An assertion checks the unique-ID deletion invariant; input validation
-still works with assertions disabled. Gradle `run` and `test` enable assertions;
-use `java -ea -jar scheduleflow.jar` or IntelliJ's `-ea` VM option for other launches.
-The service uses `java.util.logging` at `FINE` level for rejected unknown IDs and
-created deletion candidates. Logs contain IDs, not names, and do not claim a save
-has occurred. Default logging leaves normal CLI output unchanged.
+snapshots). Runtime validation works independently of Java assertions.
 
 Additional JUnit tests cover deletion by ID, missing/invalid IDs, counter retention,
 immutable sorted lists and null preconditions. Fixed-date planner checks verify
 that deleting a weekly series releases time on successive Mondays. A `@TempDir`
 storage integration test saves, deletes and reloads a series, checking that its ID
 is not reused. These direct service checks do not certify CLI restart or dispatch.
+
+### Commitment defensive checks and diagnostics
+
+Commitment-owned APIs document parameters, results and failure contracts.
+Services reject null snapshots with a named `NullPointerException`; invalid
+fields, overlaps, exhausted IDs and invalid deletion IDs retain their existing
+`ValidationException` messages. These runtime checks remain active without assertions.
+The commitment service constructor performs no logging or I/O. The model
+delegates name and duration checks to the shared validators, which own their
+separate opt-in diagnostics; it installs no logging handlers.
+
+Assertions verify addition preserves existing series and advances only the
+commitment counter, deletion removes the requested series while preserving tasks
+and both counters, and listing retains every series. The model checks that a
+computed endpoint stays within its validated day. These checks detect internal
+defects; they do not replace input validation or modify data. Gradle `run` and
+`test` enable assertions; use `java -ea -jar scheduleflow.jar` for a packaged run.
+
+`CommitmentService` uses opt-in `FINE` logs for add, overlap checking, candidate
+creation, deletion, listing and rejected validation. Messages omit names,
+schedules, IDs and exception payloads. Candidate completion explicitly does not
+claim persistence or publication. The service installs no logging configuration;
+normal console responses remain unchanged.
+
+For commitment-only diagnostics, put this configuration in a local
+`logging.properties` outside the repository:
+
+```properties
+handlers=java.util.logging.FileHandler
+.level=OFF
+scheduleflow.commitment.level=FINE
+java.util.logging.FileHandler.level=FINE
+java.util.logging.FileHandler.pattern=scheduleflow-commitment-%u.log
+java.util.logging.FileHandler.encoding=UTF-8
+java.util.logging.FileHandler.formatter=java.util.logging.SimpleFormatter
+```
+
+Launch with
+`java -ea -Djava.util.logging.config.file=logging.properties -jar scheduleflow.jar`.
+JUnit captures diagnostic order, rejection without false success and absence of
+private values with isolated in-memory handlers, restoring logger settings in
+`finally`. Existing boundary and immutable-candidate tests exercise the
+assertions. Run `./gradlew test --tests 'scheduleflow.commitment.*' --tests 'scheduleflow.model.CommitmentTest'`.
 
 ### Command dispatch and live-state transactions
 

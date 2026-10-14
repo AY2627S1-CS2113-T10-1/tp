@@ -24,6 +24,12 @@ and cleanup after failed replacement. All eight process fixtures retain their ex
 expectations: storage uses `FINE` logging and default launches remain quiet.
 Assertions supplement runtime validation; they do not replace file-error checks.
 
+Commitment hardening retains all eight fixtures and their expected responses.
+Isolated JUnit checks cover add/delete/list diagnostic stages, rejected operations
+without false success, private-value omission and named null preconditions.
+Existing interval and immutable-candidate tests exercise internal assertions;
+the packaged scenarios still check quiet defaults and unchanged validation text.
+
 Run from the repository root with Java 25 and Node.js 22 or later:
 
 ```powershell

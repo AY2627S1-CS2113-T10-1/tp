@@ -1,6 +1,8 @@
 package scheduleflow.commitment;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -8,9 +10,15 @@ import java.nio.file.Path;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
@@ -27,8 +35,120 @@ import scheduleflow.task.TaskService;
 /**
  * Verifies commitment operations and immutable candidates using fixed data and isolated storage.
  */
+@Isolated("Logging checks temporarily configure the commitment service logger.")
 class CommitmentServiceTest {
     private final CommitmentService service = new CommitmentService();
+
+    @Test
+    void operations_loggingEnabled_recordsStagesWithoutPrivateValues() {
+        List<LogRecord> records = captureLogs(() -> {
+            Snapshot added = service.add(Snapshot.empty(), "Private lecture", DayOfWeek.MONDAY, LocalTime.NOON, 90);
+            assertEquals(added.commitments(), service.list(added));
+            assertTrue(service.delete(added, 1).commitments().isEmpty());
+        });
+        assertEquals(List.of("Starting commitment addition",
+                "Commitment fields validated; checking weekly overlaps",
+                "Weekly overlaps checked; creating addition candidate",
+                "Commitment addition candidate created; not yet saved or published",
+                "Starting commitment listing; sorting by weekday, start and ID",
+                "Commitment listing completed; source snapshot unchanged",
+                "Starting commitment deletion", "Commitment ID resolved; creating deletion candidate",
+                "Commitment deletion candidate created; not yet saved or published"),
+                records.stream().map(LogRecord::getMessage).toList());
+        for (LogRecord record : records) {
+            assertEquals(Level.FINE, record.getLevel());
+            assertNull(record.getThrown());
+            assertNull(record.getParameters());
+            assertFalse(record.getMessage().contains("Private lecture"));
+        }
+    }
+
+    @Test
+    void add_rejectedInputs_logsRejectionWithoutCandidateSuccess() {
+        Snapshot original = service.add(Snapshot.empty(), "Private lecture", DayOfWeek.MONDAY, LocalTime.NOON, 60);
+        Snapshot exhausted = new Snapshot(List.of(), List.of(), 1, Integer.MAX_VALUE);
+        List<Runnable> attempts = List.of(
+                () -> service.add(original, "Private overlap", DayOfWeek.MONDAY, LocalTime.NOON, 30),
+                () -> service.add(original, "Private invalid", DayOfWeek.TUESDAY, LocalTime.NOON, 45),
+                () -> service.add(exhausted, "Private exhausted", DayOfWeek.TUESDAY, LocalTime.NOON, 30));
+        for (Runnable attempt : attempts) {
+            List<LogRecord> records = captureLogs(() -> assertThrows(ValidationException.class, attempt::run));
+            List<String> messages = records.stream().map(LogRecord::getMessage).toList();
+            assertEquals("Starting commitment addition", messages.getFirst());
+            assertEquals("Commitment addition rejected; source snapshot unchanged", messages.getLast());
+            assertTrue(messages.stream().noneMatch(message -> message.contains("candidate created")));
+            for (LogRecord record : records) {
+                assertFalse(record.getMessage().contains("Private"));
+                assertNull(record.getThrown());
+                assertNull(record.getParameters());
+            }
+        }
+        assertEquals(1, original.commitments().size());
+        assertEquals(2, original.nextCommitmentId());
+    }
+
+    @Test
+    void delete_rejectedIds_logsFailureWithoutCandidateSuccess() {
+        for (int id : new int[] {0, -1, 99}) {
+            List<LogRecord> records = captureLogs(() ->
+                    assertThrows(ValidationException.class, () -> service.delete(Snapshot.empty(), id)));
+            assertEquals(List.of("Starting commitment deletion", id <= 0
+                    ? "Commitment deletion rejected; nonpositive ID"
+                    : "Commitment deletion rejected; unknown ID"),
+                    records.stream().map(LogRecord::getMessage).toList());
+        }
+    }
+
+    @Test
+    void operations_nullSourcesAndConstruction_doNotLogProcessing() {
+        List<LogRecord> records = captureLogs(() -> {
+            new CommitmentService();
+            List<Runnable> operations = List.of(
+                    () -> service.add(null, "Lecture", DayOfWeek.MONDAY, LocalTime.NOON, 30),
+                    () -> service.delete(null, 1), () -> service.list(null));
+            for (Runnable operation : operations) {
+                NullPointerException exception = assertThrows(NullPointerException.class, operation::run);
+                assertEquals("state", exception.getMessage());
+            }
+        });
+        assertTrue(records.isEmpty());
+    }
+
+    /**
+     * Captures only this service's diagnostics and restores shared logger configuration even on failure.
+     */
+    private List<LogRecord> captureLogs(Runnable action) {
+        Logger logger = Logger.getLogger(CommitmentService.class.getName());
+        Level previousLevel = logger.getLevel();
+        boolean previousParents = logger.getUseParentHandlers();
+        List<LogRecord> records = new ArrayList<>();
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                records.add(record);
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        try {
+            logger.setLevel(Level.FINE);
+            logger.setUseParentHandlers(false);
+            logger.addHandler(handler);
+            action.run();
+            return records;
+        } finally {
+            logger.removeHandler(handler);
+            handler.close();
+            logger.setLevel(previousLevel);
+            logger.setUseParentHandlers(previousParents);
+        }
+    }
 
     @Test
     void add_savedDurations_preservesEstimatesAndPartialAllocation(@TempDir Path directory) throws StorageException {
