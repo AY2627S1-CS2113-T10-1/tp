@@ -9,13 +9,22 @@ import scheduleflow.planning.TimeRules;
 
 /**
  * Stores a weekly half-open busy interval which may end at, but never cross, midnight.
+ * Validates the complete interval, including time outside study hours, without I/O.
+ *
+ * @param id stable positive identifier
+ * @param name nonblank description normalized using the shared name rules
+ * @param day nonnull recurrence weekday
+ * @param start nonnull local time aligned to a half-hour boundary
+ * @param durationMinutes positive multiple of 30 ending no later than midnight
  */
 public record Commitment(int id, String name, DayOfWeek day, LocalTime start, int durationMinutes) {
     private static final int MINUTES_PER_HOUR = 60;
     private static final int MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR;
 
     /**
-     * Creates an aligned commitment and normalizes its name.
+     * Creates an aligned commitment and normalizes its name using the shared validation rules.
+     *
+     * @throws ValidationException if any field or the same-day interval is invalid
      */
     public Commitment {
         if (id <= 0 || day == null || start == null) {
@@ -42,13 +51,21 @@ public record Commitment(int id, String name, DayOfWeek day, LocalTime start, in
 
     /**
      * Returns the exclusive endpoint, using 1440 for midnight rather than wrapping to zero.
+     *
+     * @return minute of day in the range 30 through 1440
      */
     public int endMinuteOfDay() {
-        return start.getHour() * MINUTES_PER_HOUR + start.getMinute() + durationMinutes;
+        int endpoint = start.getHour() * MINUTES_PER_HOUR + start.getMinute() + durationMinutes;
+        assert endpoint > 0 && endpoint <= MINUTES_PER_DAY : "A validated interval must end within its day";
+        return endpoint;
     }
 
     /**
      * Tests intersection on the same weekday; adjacent endpoints do not overlap.
+     *
+     * @param other validated series to compare
+     * @return whether the two half-open weekly intervals intersect
+     * @throws NullPointerException if other is null
      */
     public boolean overlaps(Commitment other) {
         Objects.requireNonNull(other, "other");

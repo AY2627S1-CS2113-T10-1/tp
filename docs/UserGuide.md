@@ -218,6 +218,11 @@ This blocks 10:00–12:00 every Monday.
 
 A successful addition saves the commitment and clears the current plan.
 
+Rejected additions leave existing commitments and IDs unchanged. Optional
+[commitment diagnostics](DeveloperGuide.md#commitment-defensive-checks-and-diagnostics)
+record processing stages separately without commitment names or schedules.
+Normal launches keep the same console output.
+
 ### Listing commitments
 
 ```text

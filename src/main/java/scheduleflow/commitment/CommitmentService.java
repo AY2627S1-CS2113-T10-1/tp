@@ -15,6 +15,10 @@ import scheduleflow.model.Snapshot;
  * Creates weekly commitment candidates without saving or changing live state.
  */
 public final class CommitmentService {
+    /**
+     * Records opt-in stages without names, schedules or exception payloads.
+     * Candidate creation is not a claim that data has been saved or published.
+     */
     private static final Logger LOGGER = Logger.getLogger(CommitmentService.class.getName());
 
     /**
@@ -27,55 +31,106 @@ public final class CommitmentService {
      * Creates a candidate after checking overlap and counter overflow.
      * Preserves the original snapshot so callers can save before publishing the change.
      *
+     * @param state immutable source snapshot
+     * @param name description normalized by the commitment constructor
+     * @param day weekday on which the series repeats
+     * @param start half-hour-aligned local start time
+     * @param minutes positive multiple of 30 that ends no later than midnight
+     * @return a new snapshot with the series appended and only its counter advanced
+     * @throws NullPointerException if state is null
      * @throws ValidationException if the commitment is invalid, overlaps an existing series or IDs are exhausted
      */
     public Snapshot add(Snapshot state, String name, DayOfWeek day, LocalTime start, int minutes) {
         Objects.requireNonNull(state, "state");
+        LOGGER.fine("Starting commitment addition");
+        try {
+            return createAddition(state, name, day, start, minutes);
+        } catch (ValidationException exception) {
+            LOGGER.fine("Commitment addition rejected; source snapshot unchanged");
+            throw exception;
+        }
+    }
+
+    /**
+     * Validates fields and overlap before constructing an unsaved addition candidate.
+     * Keeps the public operation's rejection logging separate from candidate construction.
+     */
+    private Snapshot createAddition(Snapshot state, String name, DayOfWeek day, LocalTime start, int minutes) {
         if (state.nextCommitmentId() == Integer.MAX_VALUE) {
             throw new ValidationException("Commitment IDs are exhausted.");
         }
         Commitment added = new Commitment(state.nextCommitmentId(), name, day, start, minutes);
+        LOGGER.fine("Commitment fields validated; checking weekly overlaps");
         for (Commitment existing : state.commitments()) {
             if (added.overlaps(existing)) {
                 throw new ValidationException("Commitment overlaps " + existing.displayId() + ": " + existing.name());
             }
         }
         List<Commitment> commitments = new ArrayList<>(state.commitments());
+        LOGGER.fine("Weekly overlaps checked; creating addition candidate");
         commitments.add(added);
-        return new Snapshot(state.tasks(), commitments, state.nextTaskId(), state.nextCommitmentId() + 1);
+        Snapshot candidate = new Snapshot(state.tasks(), commitments, state.nextTaskId(), state.nextCommitmentId() + 1);
+        assert candidate.commitments().getLast().equals(added)
+                && candidate.commitments().subList(0, candidate.commitments().size() - 1).equals(state.commitments())
+                : "Addition must append exactly one series and preserve existing records";
+        assert candidate.tasks().equals(state.tasks()) && candidate.nextTaskId() == state.nextTaskId()
+                && candidate.nextCommitmentId() == state.nextCommitmentId() + 1
+                : "Addition must preserve tasks and advance only the commitment counter";
+        LOGGER.fine("Commitment addition candidate created; not yet saved or published");
+        return candidate;
     }
 
     /**
      * Removes a known weekly series from a candidate without reusing its ID.
      * Leaves source records and both counters unchanged until the caller publishes the candidate.
      *
+     * @param state immutable source snapshot
+     * @param commitmentId positive numeric suffix of the series identifier
+     * @return a new snapshot without that series, retaining both counters
+     * @throws NullPointerException if state is null
      * @throws ValidationException if the ID is nonpositive or does not identify a stored commitment
      */
     public Snapshot delete(Snapshot state, int commitmentId) {
         Objects.requireNonNull(state, "state");
+        LOGGER.fine("Starting commitment deletion");
         if (commitmentId <= 0) {
+            LOGGER.fine("Commitment deletion rejected; nonpositive ID");
             throw new ValidationException("Commitment ID must be positive.");
         }
         List<Commitment> remaining = state.commitments().stream()
                 .filter(commitment -> commitment.id() != commitmentId).toList();
         if (remaining.size() == state.commitments().size()) {
-            LOGGER.fine(() -> "Rejected deletion of unknown commitment C" + commitmentId);
+            LOGGER.fine("Commitment deletion rejected; unknown ID");
             throw new ValidationException("Unknown commitment ID: C" + commitmentId);
         }
         // Snapshot guarantees unique IDs, so a successful deletion must remove exactly one series.
         assert remaining.size() == state.commitments().size() - 1 : "Deletion must remove exactly one commitment";
+        LOGGER.fine("Commitment ID resolved; creating deletion candidate");
         Snapshot candidate = new Snapshot(state.tasks(), remaining, state.nextTaskId(), state.nextCommitmentId());
-        LOGGER.fine(() -> "Created deletion candidate for commitment C" + commitmentId);
+        assert candidate.commitments().stream().noneMatch(commitment -> commitment.id() == commitmentId)
+                : "Deletion must remove the requested series";
+        assert candidate.tasks().equals(state.tasks()) && candidate.nextTaskId() == state.nextTaskId()
+                && candidate.nextCommitmentId() == state.nextCommitmentId()
+                : "Deletion must preserve tasks and both counters";
+        LOGGER.fine("Commitment deletion candidate created; not yet saved or published");
         return candidate;
     }
 
     /**
      * Returns an immutable view ordered by weekday, start and numeric ID.
      * Preserves stored order and identifiers; empty snapshots produce an empty list.
+     *
+     * @param state immutable source snapshot
+     * @return all stored series in weekly chronological order
+     * @throws NullPointerException if state is null
      */
     public List<Commitment> list(Snapshot state) {
         Objects.requireNonNull(state, "state");
-        return state.commitments().stream().sorted(Comparator.comparing(Commitment::day)
+        LOGGER.fine("Starting commitment listing; sorting by weekday, start and ID");
+        List<Commitment> commitments = state.commitments().stream().sorted(Comparator.comparing(Commitment::day)
                 .thenComparing(Commitment::start).thenComparingInt(Commitment::id)).toList();
+        assert commitments.size() == state.commitments().size() : "Listing must retain every stored series";
+        LOGGER.fine("Commitment listing completed; source snapshot unchanged");
+        return commitments;
     }
 }
