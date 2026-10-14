@@ -114,7 +114,6 @@ For a task, duration is the estimated remaining work, which may be split into
 several sessions. For a commitment, it is the length of each weekly occurrence
 from its start time, and that occurrence must not cross midnight. Planning
 does not reduce either stored value. Saving and loading preserve both values.
-See the implementation-status notes for console availability.
 
 Every stored task represents unfinished work. Its duration is your estimate of the work still required. Generating a plan or letting time pass does not reduce that estimate.
 

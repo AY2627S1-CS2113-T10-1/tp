@@ -28,9 +28,44 @@ acceptance. Consult the UI test plan for process-level readiness and coverage.
 
 ## Acknowledgements
 
-{list here sources of all reused/adapted ideas, code, documentation, and third-party libraries -- include links to the original source as well}
+The build uses [Gradle](https://gradle.org/),
+[Shadow](https://gradleup.com/shadow/) for executable JAR packaging,
+[JUnit 5](https://junit.org/junit5/) for Java tests and
+[Checkstyle](https://checkstyle.org/) for coding-standard checks. Versions are
+declared in `build.gradle` and `gradle/wrapper/gradle-wrapper.properties`.
+The repository-local skills attribute the SE Education coding and Git
+conventions and CS2113 code-quality guidelines used by this project.
 
 ## Design & implementation
+
+### Command transport
+
+The sealed `Command` interface contains the eleven supported command records.
+Records that only carry values use Java's generated canonical constructors;
+redundant empty compact constructors have been removed. Records with required
+reference fields retain their null checks. Parsing and the services still own
+syntax and business validation respectively. `CommandParserTest` and
+`ContractsTest` cover construction and dispatch vocabulary without changing
+the public record components or constructor signatures.
+
+### Planning and schedule projection
+
+`EarliestDeadlinePlanner` creates chronological half-hour slots from the
+captured command time through the rolling calendar-year horizon. It excludes
+recurring commitments, sorts tasks by deadline then numeric ID, and assigns
+each eligible task to its earliest free slots. Overdue and out-of-horizon
+tasks keep their full work estimate as unallocated; eligible tasks retain any
+sessions that fit before their deadline. Adjacent slots for one task merge
+within a day. Source task estimates remain unchanged.
+
+`ScheduleService` projects the frozen plan across the complete 08:00-22:00
+window. Each slot is classified as busy, assigned to a task, before the
+generation cutoff, or free, in that order. Merging preserves commitment and
+task identities. `Plan`, `StudySession`, `UnallocatedWork`, `ScheduleEntry` and
+`ScheduleView` validate their own fields and retain immutable result lists;
+allocation relationships remain the planner's responsibility. Fixed-date
+planner and projection tests verify deadline order, conservation of minutes,
+cutoff rounding, clipping, midnight commitments and allowed schedule dates.
 
 ### Task operations and defensive checks
 
@@ -489,26 +524,48 @@ require coordination with the Save owner and are outside this printer change.
 ## Product scope
 ### Target user profile
 
-{Describe the target user profile}
+University students who need to fit unfinished coursework around weekly
+classes and other recurring commitments, and who are comfortable entering
+commands in a terminal.
 
 ### Value proposition
 
-{Describe the value proposition: what problem does it solve?}
+Turn remaining-work estimates, deadlines and weekly busy intervals into a
+study schedule. Report work that cannot fit so students can revise their
+estimates or commitments before the deadline.
 
 ## User Stories
 
 |Version| As a ... | I want to ... | So that I can ...|
 |--------|----------|---------------|------------------|
-|v1.0|new user|see usage instructions|refer to them when I forget how to use the application|
-|v2.0|user|find a to-do item by name|locate a to-do without having to go through the entire list|
+|Current|new user|see command help|refer to the supported syntax when I need it|
+|Current|student|add and list tasks with deadlines and estimates|keep track of unfinished coursework|
+|Current|student|add and remove recurring commitments|reserve my weekly busy periods|
+|Current|student|generate a plan and view a date's schedule|find available time before my deadlines|
+|Current|student|see unallocated work|recognize when my available time is insufficient|
+|Current|returning user|restore saved tasks and commitments|continue without reentering my data|
 
 ## Non-Functional Requirements
 
-{Give non-functional requirements}
+- Run with Java 25 and UTF-8 source, saved data and console streams.
+- Keep runtime operation local and offline, with no external service required.
+- Save each successful mutation by atomic replacement before publishing it in
+  memory or printing success. Use one running instance per saved-data file.
+- Reject invalid input and corrupt saved data without publishing partial state.
+- Keep normal diagnostics quiet; allow opt-in logs through Java logging.
+- Verify behavior with deterministic JUnit tests and isolated console sessions.
+- Atomic replacement requires filesystem support and does not guarantee
+  durability after power loss.
 
 ## Glossary
 
-* *glossary item* - Definition
+* *Task* - An unfinished item with a deadline and a remaining-work estimate.
+* *Commitment* - A busy interval repeated on one weekday until deleted.
+* *Snapshot* - Immutable tasks, commitments and their independent next-ID counters.
+* *Plan* - Temporary allocations and unallocated work derived from a snapshot.
+* *Planning horizon* - The calendar range ending at midnight on the same date
+  next year, with February 29 adjusted to February 28 when necessary.
+* *Slot* - A 30-minute interval within the daily study window.
 
 ## Instructions for manual testing
 
