@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -20,6 +21,10 @@ import scheduleflow.model.Task;
 class EarliestDeadlinePlannerTest {
     private static final LocalDate MONDAY = LocalDate.of(2026, 9, 21);
     private static final LocalDateTime EARLY_MORNING = MONDAY.atTime(7, 0);
+    /**
+     * Records the fourteen-hour daily study window promised in the User Guide.
+     */
+    private static final int STUDY_MINUTES_PER_DAY = 14 * 60;
     private final EarliestDeadlinePlanner planner = new EarliestDeadlinePlanner();
 
     @Test
@@ -122,6 +127,47 @@ class EarliestDeadlinePlannerTest {
                     .mapToInt(UnallocatedWork::minutes).sum();
             assertEquals(task.remainingMinutes(), allocated + remaining);
         }
+    }
+
+    @Test
+    void generate_workAcrossDays_preservesSessionsAndPartialRemainder() {
+        LocalDateTime now = MONDAY.atTime(21, 0);
+        Task task = task(1, "Essay", MONDAY.plusDays(1).atTime(9, 0), 150);
+        Snapshot source = snapshot(List.of(task), List.of());
+
+        Plan result = planner.generate(source, now);
+
+        assertEquals(List.of(
+                new StudySession(1, MONDAY.atTime(21, 0), MONDAY.atTime(22, 0)),
+                new StudySession(1, MONDAY.plusDays(1).atTime(8, 0), MONDAY.plusDays(1).atTime(9, 0))),
+                result.sessions());
+        assertEquals(List.of(new UnallocatedWork(1, "Essay", task.deadline(), 30,
+                UnallocatedReason.INSUFFICIENT_CAPACITY)), result.unallocated());
+        assertEquals(150, source.tasks().getFirst().remainingMinutes());
+        assertSame(source, result.source());
+    }
+
+    @Test
+    void generate_leapDayHorizon_usesEveryFutureWindowThroughFinalDate() {
+        LocalDateTime now = LocalDate.of(2024, 2, 29).atTime(22, 0);
+        LocalDateTime deadline = LocalDate.of(2025, 2, 28).atStartOfDay();
+        int futureDays = Math.toIntExact(Duration.between(now.toLocalDate().plusDays(1).atStartOfDay(),
+                deadline).toDays());
+        int availableMinutes = futureDays * STUDY_MINUTES_PER_DAY;
+        Task task = task(1, "Long project", deadline, availableMinutes + 30);
+        Snapshot source = snapshot(List.of(task), List.of());
+
+        Plan result = planner.generate(source, now);
+
+        assertEquals(deadline, result.horizonEnd());
+        assertEquals(futureDays, result.sessions().size());
+        assertEquals(LocalDate.of(2024, 3, 1).atTime(8, 0), result.sessions().getFirst().start());
+        assertEquals(LocalDate.of(2025, 2, 27).atTime(22, 0), result.sessions().getLast().end());
+        assertEquals(availableMinutes, result.sessions().stream().mapToInt(StudySession::minutes).sum());
+        assertTrue(result.sessions().stream().allMatch(session -> session.minutes() == STUDY_MINUTES_PER_DAY));
+        assertEquals(List.of(new UnallocatedWork(1, "Long project", deadline, 30,
+                UnallocatedReason.INSUFFICIENT_CAPACITY)), result.unallocated());
+        assertEquals(availableMinutes + 30, source.tasks().getFirst().remainingMinutes());
     }
 
     private static Task task(int id, String name, LocalDateTime deadline, int minutes) {

@@ -49,10 +49,12 @@ Study hours are **08:00–22:00 every day**, including weekends. Work is schedul
 3. Open a terminal in that folder and launch the application:
 
    ```shell
-   java -jar scheduleflow.jar
+   java -ea -jar scheduleflow.jar
    ```
 
-   The application takes no additional command line arguments.
+   `-ea` enables the program's internal assertions. The application takes no
+   additional command line arguments. Generated distribution launchers enable
+   assertions automatically.
 
 4. At the `scheduleflow>` prompt, type `help` and press Enter. Do not type the prompt itself.
 

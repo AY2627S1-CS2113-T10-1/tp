@@ -43,6 +43,7 @@ test {
 
 application {
     mainClass = 'scheduleflow.Main'
+    applicationDefaultJvmArgs = ['-ea']
 }
 
 jar {
@@ -56,6 +57,21 @@ shadowJar {
     archiveFileName = 'scheduleflow.jar'
     manifest {
         attributes 'Main-Class': 'scheduleflow.Main'
+    }
+}
+
+// The lean JAR is disabled, so normal distributions must also use the executable Shadow JAR.
+startScripts {
+    classpath = files(tasks.named('shadowJar'))
+}
+
+distributions {
+    main {
+        contents {
+            from(tasks.named('shadowJar')) {
+                into 'lib'
+            }
+        }
     }
 }
 
