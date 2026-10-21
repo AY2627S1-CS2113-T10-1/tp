@@ -101,6 +101,10 @@ settings into all candidates. `SetHours`, `ShowHours` and `ResetHours` commands
 use the agreed `hours TARGET /start HH:mm /end HH:mm` grammar, full lowercase
 weekday names and strict ISO dates. The dispatcher saves a changed snapshot
 before publication and plan invalidation; failed saves retain the old plan.
+Reset dispatch uses a separate confirmation from setting hours. The renderer
+identifies whether the restored window comes from a recurring weekday setting
+or the default and prints its endpoints. Dispatcher tests cover both sources
+and resetting an unset date; UI-013 checks the exact reset confirmations.
 
 Both slot allocation and schedule projection resolve the window from the
 snapshot. `TimeRules.eligibleStart` has a window-aware overload; the original

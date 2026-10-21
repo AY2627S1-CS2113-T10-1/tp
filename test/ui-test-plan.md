@@ -90,6 +90,9 @@ timeouts and expected output; Java 25 and isolated workspace data were retained.
 | UI-012 | Unallocated duration totals beyond a signed 32-bit integer | Active |
 | UI-013 | Study hours precedence, validation, resets, plan invalidation and saved restarts | Active |
 
+UI-013 asserts reset confirmations name the restored source (recurring weekday
+or default hours) and show its start and end times, rather than a generic save message.
+
 The original eight scenarios retain their exact expectations. UI-009 through
 UI-012 add release acceptance without a production clock flag. Their saved
 deadlines are deliberately far past or beyond the current planning horizon.

@@ -21,9 +21,9 @@
           { "input": "hours tuesday", "output": "Study hours for tuesday: 09:00 - 22:00" },
           { "input": "hours 2026-10-27", "output": "Study hours for 2026-10-27: 14:00 - 19:00" },
           { "input": "plan", "output": "No tasks to schedule." },
-          { "input": "hours reset 2026-10-27", "output": "Study hours for 2026-10-27: 09:00 - 22:00\nSaved study hours. Run plan to regenerate." },
+          { "input": "hours reset 2026-10-27", "output": "Reset study hours for 2026-10-27.\nUsing recurring weekday hours: 09:00 - 22:00.\nRun plan to regenerate." },
           { "input": "schedule today", "output": "No current plan. Run plan to generate one." },
-          { "input": "hours reset tuesday", "output": "Study hours for tuesday: 08:00 - 22:00\nSaved study hours. Run plan to regenerate." },
+          { "input": "hours reset tuesday", "output": "Reset study hours for tuesday.\nUsing default hours: 08:00 - 22:00.\nRun plan to regenerate." },
           { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
         ] },
         { "startup": "", "steps": [

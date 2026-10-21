@@ -306,6 +306,11 @@ Resetting a date restores its weekday hours (or the default). Resetting a
 weekday restores its default but preserves date overrides. Resetting an unset
 target is allowed. Viewing hours does not require or change a plan.
 
+Reset confirmations explicitly show the restored hours. For example,
+`hours reset tuesday` reports `Using default hours: 08:00 - 22:00.`
+A date reset reports `Using recurring weekday hours` instead when that weekday
+has a configured setting, followed by its actual start and end times.
+
 Times must use `HH:mm` and fall on `:00` or `:30`, from `00:00` through `23:30`.
 Start must be strictly before end on the same day. Overnight, zero-length and
 `24:00` windows are unsupported. Each day has one continuous study window;

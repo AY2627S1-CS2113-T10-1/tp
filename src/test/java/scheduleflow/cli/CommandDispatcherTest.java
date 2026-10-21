@@ -71,11 +71,18 @@ class CommandDispatcherTest {
         assertThrows(ValidationException.class, () -> dispatcher.execute(
                 parser.parse("hours tuesday /start 22:00 /end 09:00"), state));
         assertSame(plan, state.currentPlan().orElseThrow());
-        dispatcher.execute(parser.parse("hours reset 2026-10-27"), state);
+        assertEquals("Reset study hours for 2026-10-27.\nUsing recurring weekday hours: 09:00 - 22:00.\n"
+                + "Run plan to regenerate.",
+                dispatcher.execute(parser.parse("hours reset 2026-10-27"), state).output());
         assertTrue(state.currentPlan().isEmpty());
         assertEquals("Study hours for 2026-10-27: 09:00 - 22:00",
                 dispatcher.execute(parser.parse("hours 2026-10-27"), state).output());
         assertEquals(state.snapshot(), storage.saved);
+        assertEquals("Reset study hours for tuesday.\nUsing default hours: 08:00 - 22:00.\nRun plan to regenerate.",
+                dispatcher.execute(parser.parse("hours reset tuesday"), state).output());
+        assertEquals("Reset study hours for 2026-10-27.\nUsing default hours: 08:00 - 22:00.\n"
+                + "Run plan to regenerate.",
+                dispatcher.execute(parser.parse("hours reset 2026-10-27"), state).output());
     }
 
     @Test

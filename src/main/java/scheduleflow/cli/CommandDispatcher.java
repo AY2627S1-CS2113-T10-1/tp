@@ -101,8 +101,7 @@ public final class CommandDispatcher {
             case Command.Help ignored -> renderer.help();
             case Command.SetHours hours -> changeHours(hours.target(), state.snapshot().studyHours()
                     .withWindow(hours.target(), new StudyWindow(hours.start(), hours.end())), state);
-            case Command.ResetHours hours -> changeHours(hours.target(),
-                    state.snapshot().studyHours().reset(hours.target()), state);
+            case Command.ResetHours hours -> resetHours(hours.target(), state);
             case Command.ShowHours hours -> renderer.hours(hours.target(),
                     state.snapshot().studyHours().forTarget(hours.target()));
             case Command.AddTask add -> addTask(add, state, now);
@@ -125,6 +124,13 @@ public final class CommandDispatcher {
     private String changeHours(String target, StudyHours hours, AppState state) throws StorageException {
         saveAndCommit(state.snapshot().withStudyHours(hours), state);
         return renderer.hours(target, hours.forTarget(target)) + "\nSaved study hours. Run plan to regenerate.";
+    }
+
+    /** Confirms a reset and its inherited hours only after saving succeeds. */
+    private String resetHours(String target, AppState state) throws StorageException {
+        StudyHours hours = state.snapshot().studyHours().reset(target);
+        saveAndCommit(state.snapshot().withStudyHours(hours), state);
+        return renderer.hoursReset(target, hours);
     }
 
     /**
