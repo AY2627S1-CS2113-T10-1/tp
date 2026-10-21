@@ -13,6 +13,7 @@ import java.util.StringJoiner;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import scheduleflow.model.Commitment;
+import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 import scheduleflow.planning.Plan;
 import scheduleflow.planning.ScheduleEntry;
@@ -59,9 +60,19 @@ public final class TextRenderer {
                 "commitment add n/NAME day/DAY start/HHmm d/MINUTES - Add a weekly commitment.",
                 "commitment list - List weekly commitments.",
                 "commitment delete CNUMBER - Delete a weekly commitment.",
+                "hours DAY|YYYY-MM-DD /start HH:mm /end HH:mm - Set study hours.",
+                "hours DAY|YYYY-MM-DD - View effective study hours (full lowercase weekday).",
+                "hours reset DAY|YYYY-MM-DD - Restore inherited study hours.",
                 "plan - Generate or replace the study plan.",
                 "schedule today OR schedule YYYY-MM-DD - View a date in the current plan.",
                 "exit - Close the application."));
+    }
+
+    /** Formats the effective window for a selected weekday or calendar date. */
+    public String hours(String target, StudyWindow window) {
+        Objects.requireNonNull(target, "target");
+        Objects.requireNonNull(window, "window");
+        return "Study hours for " + target + ": " + TIME.format(window.start()) + " - " + TIME.format(window.end());
     }
 
     /**

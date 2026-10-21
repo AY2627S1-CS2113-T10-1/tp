@@ -1,6 +1,6 @@
 # ScheduleFlow UI test plan
 
-All twelve maintained process scenarios are active. They exercise the packaged
+All thirteen maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -88,11 +88,12 @@ timeouts and expected output; Java 25 and isolated workspace data were retained.
 | UI-010 | Exhausted task and commitment ID sequences reject additions without overflow | Active |
 | UI-011 | Overlapping saved commitments reject the whole store before prompting | Active |
 | UI-012 | Unallocated duration totals beyond a signed 32-bit integer | Active |
+| UI-013 | Study hours precedence, validation, resets, plan invalidation and saved restarts | Active |
 
 The original eight scenarios retain their exact expectations. UI-009 through
 UI-012 add release acceptance without a production clock flag. Their saved
 deadlines are deliberately far past or beyond the current planning horizon.
-The separately invoked `test/release.test.mjs` runs all twelve cases with
+The separately invoked `test/release.test.mjs` runs all thirteen cases with
 `-ea`, checks the normal ZIP includes the exact JAR, and launches its native
 script with default assertions. Run it after `build`; it does not build
 artifacts itself. Its exact transcript path is printed under

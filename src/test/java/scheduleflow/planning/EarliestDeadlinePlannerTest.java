@@ -13,6 +13,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
+import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 
 /**
@@ -26,6 +27,38 @@ class EarliestDeadlinePlannerTest {
      */
     private static final int STUDY_MINUTES_PER_DAY = 14 * 60;
     private final EarliestDeadlinePlanner planner = new EarliestDeadlinePlanner();
+
+    @Test
+    void generate_customHours_respectsDatePriorityRecurrenceAndCommitments() {
+        Snapshot initial = snapshot(List.of(task(1, "Draft", MONDAY.plusDays(8).atStartOfDay(), 180)),
+                List.of(new Commitment(1, "Class", DayOfWeek.MONDAY, LocalTime.of(6, 0), 30)));
+        var hours = initial.studyHours().withWindow("monday",
+                new StudyWindow(LocalTime.of(6, 0), LocalTime.of(7, 0)))
+                .withWindow(MONDAY.toString(), new StudyWindow(LocalTime.of(22, 0), LocalTime.of(23, 30)));
+        Plan result = planner.generate(initial.withStudyHours(hours), MONDAY.atTime(5, 0));
+        assertEquals(new StudySession(1, MONDAY.atTime(22, 0), MONDAY.atTime(23, 30)),
+                result.sessions().getFirst());
+        assertEquals(new StudySession(1, MONDAY.plusDays(1).atTime(8, 0), MONDAY.plusDays(1).atTime(9, 30)),
+                result.sessions().getLast());
+        Plan followingWeek = planner.generate(initial.withStudyHours(hours), MONDAY.plusWeeks(1).atTime(5, 0));
+        assertEquals(List.of(new StudySession(1, MONDAY.plusWeeks(1).atTime(6, 30),
+                MONDAY.plusWeeks(1).atTime(7, 0))), followingWeek.sessions());
+        assertEquals(150, followingWeek.unallocated().getFirst().minutes());
+        assertEquals(180, initial.tasks().getFirst().remainingMinutes());
+    }
+
+    @Test
+    void generate_customCutoff_roundsAndClampsToWindow() {
+        Snapshot initial = snapshot(List.of(task(1, "Draft", MONDAY.atTime(20, 0), 60)), List.of());
+        Snapshot source = initial.withStudyHours(initial.studyHours().withWindow("monday",
+                new StudyWindow(LocalTime.of(14, 0), LocalTime.of(15, 0))));
+        assertEquals(MONDAY.atTime(14, 0), planner.generate(source, MONDAY.atTime(13, 0))
+                .sessions().getFirst().start());
+        Plan rounded = planner.generate(source, MONDAY.atTime(14, 0, 1));
+        assertEquals(List.of(new StudySession(1, MONDAY.atTime(14, 30), MONDAY.atTime(15, 0))), rounded.sessions());
+        assertEquals(30, rounded.unallocated().getFirst().minutes());
+        assertTrue(planner.generate(source, MONDAY.atTime(15, 0)).sessions().isEmpty());
+    }
 
     @Test
     void generate_emptySnapshot_returnsCompletePlanWithSource() {

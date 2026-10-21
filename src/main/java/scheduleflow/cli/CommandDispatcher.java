@@ -11,6 +11,8 @@ import java.util.logging.Logger;
 import scheduleflow.commitment.CommitmentService;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
+import scheduleflow.model.StudyHours;
+import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 import scheduleflow.planning.Plan;
 import scheduleflow.planning.Planner;
@@ -97,6 +99,12 @@ public final class CommandDispatcher {
         LOGGER.log(Level.FINE, "Command time captured");
         String output = switch (command) {
             case Command.Help ignored -> renderer.help();
+            case Command.SetHours hours -> changeHours(hours.target(), state.snapshot().studyHours()
+                    .withWindow(hours.target(), new StudyWindow(hours.start(), hours.end())), state);
+            case Command.ResetHours hours -> changeHours(hours.target(),
+                    state.snapshot().studyHours().reset(hours.target()), state);
+            case Command.ShowHours hours -> renderer.hours(hours.target(),
+                    state.snapshot().studyHours().forTarget(hours.target()));
             case Command.AddTask add -> addTask(add, state, now);
             case Command.ListTasks ignored -> renderer.tasks(tasks.list(state.snapshot()));
             case Command.DeleteTask delete -> deleteTask(delete.id(), state);
@@ -111,6 +119,12 @@ public final class CommandDispatcher {
         CommandResponse response = new CommandResponse(output, command instanceof Command.Exit);
         LOGGER.log(Level.FINE, "Command execution completed");
         return response;
+    }
+
+    /** Saves hours before clearing a plan, preserving the live settings and plan if saving fails. */
+    private String changeHours(String target, StudyHours hours, AppState state) throws StorageException {
+        saveAndCommit(state.snapshot().withStudyHours(hours), state);
+        return renderer.hours(target, hours.forTarget(target)) + "\nSaved study hours. Run plan to regenerate.";
     }
 
     /**

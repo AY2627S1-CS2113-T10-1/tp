@@ -2,6 +2,7 @@ package scheduleflow.model;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import scheduleflow.common.ValidationException;
@@ -14,8 +15,15 @@ import scheduleflow.common.ValidationException;
  * @param commitments nonoverlapping recurring weekly commitments
  * @param nextTaskId positive counter strictly greater than every stored task ID
  * @param nextCommitmentId positive counter strictly greater than every stored commitment ID
+ * @param studyHours recurring weekday windows and calendar-date overrides
  */
-public record Snapshot(List<Task> tasks, List<Commitment> commitments, int nextTaskId, int nextCommitmentId) {
+public record Snapshot(List<Task> tasks, List<Commitment> commitments, int nextTaskId, int nextCommitmentId,
+        StudyHours studyHours) {
+    /** Retains the original constructor for callers using default study hours. */
+    public Snapshot(List<Task> tasks, List<Commitment> commitments, int nextTaskId, int nextCommitmentId) {
+        this(tasks, commitments, nextTaskId, nextCommitmentId, new StudyHours(Map.of()));
+    }
+
     /**
      * Copies records and validates IDs, counters and weekly overlaps without consulting a clock.
      * Performs no I/O and does not reset counters when either list becomes empty.
@@ -24,6 +32,7 @@ public record Snapshot(List<Task> tasks, List<Commitment> commitments, int nextT
      *     or weekly commitments overlap
      */
     public Snapshot {
+        Objects.requireNonNull(studyHours, "studyHours");
         if (tasks == null || commitments == null || tasks.stream().anyMatch(Objects::isNull)
                 || commitments.stream().anyMatch(Objects::isNull)) {
             throw new ValidationException("Snapshot lists and their elements must not be null.");
@@ -33,6 +42,11 @@ public record Snapshot(List<Task> tasks, List<Commitment> commitments, int nextT
         validateTaskIds(tasks, nextTaskId);
         validateCommitmentIds(commitments, nextCommitmentId);
         validateOverlaps(commitments);
+    }
+
+    /** Returns a candidate changing only study hours. */
+    public Snapshot withStudyHours(StudyHours hours) {
+        return new Snapshot(tasks, commitments, nextTaskId, nextCommitmentId, hours);
     }
 
     /**

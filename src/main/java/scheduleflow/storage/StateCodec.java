@@ -5,13 +5,18 @@ import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
+import scheduleflow.model.StudyHours;
+import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 
 /**
@@ -25,7 +30,7 @@ public final class StateCodec {
     private static final Logger LOGGER = Logger.getLogger(StateCodec.class.getName());
 
     /**
-     * Identifies the supported persistence version; changing it requires format coordination.
+     * Identifies the legacy format used when no custom study hours are present.
      */
     private static final String HEADER = "SCHEDULEFLOW|1";
     // @@author
@@ -38,7 +43,7 @@ public final class StateCodec {
 
     // @@author ernestgoh-god
     /**
-     * Encodes a complete snapshot in canonical version 1 form.
+     * Encodes a complete snapshot, using version 2 when custom study hours are present.
      * Stores names last so names containing pipes do not need escaping.
      *
      * @param state validated immutable snapshot to encode in its existing list order
@@ -48,7 +53,8 @@ public final class StateCodec {
     public String encode(Snapshot state) {
         Objects.requireNonNull(state, "state");
         LOGGER.log(Level.FINE, "Starting snapshot encoding");
-        StringBuilder text = new StringBuilder(HEADER).append('\n');
+        StringBuilder text = new StringBuilder(state.studyHours().windows().isEmpty()
+                ? HEADER : "SCHEDULEFLOW|2").append('\n');
         text.append("NEXT|").append(state.nextTaskId()).append('|').append(state.nextCommitmentId()).append('\n');
         for (Task task : state.tasks()) {
             text.append("TASK|").append(task.id()).append('|').append(task.deadline()).append('|')
@@ -59,8 +65,11 @@ public final class StateCodec {
                     .append(commitment.start()).append('|').append(commitment.durationMinutes()).append('|')
                     .append(commitment.name()).append('\n');
         }
+        new TreeMap<>(state.studyHours().windows()).forEach((target, window) -> text.append("HOURS|")
+                .append(target).append('|').append(window.start()).append('|').append(window.end()).append('\n'));
         String encoded = text.toString();
         assert encoded.lines().count() == 2L + state.tasks().size() + state.commitments().size()
+                + state.studyHours().windows().size()
                 : "Encoding must produce a header, counters and one line per record";
         LOGGER.log(Level.FINE, "Snapshot encoding completed");
         return encoded;
@@ -90,14 +99,20 @@ public final class StateCodec {
             }
             List<Task> tasks = new ArrayList<>();
             List<Commitment> commitments = new ArrayList<>();
+            Map<String, StudyWindow> windows = new HashMap<>();
             for (int i = 2; i < lines.size(); i++) {
-                decodeRecord(lines.get(i), tasks, commitments);
+                String line = lines.get(i);
+                if (lines.getFirst().equals("SCHEDULEFLOW|2") && line.startsWith("HOURS|")) {
+                    decodeHours(line, windows);
+                } else {
+                    decodeRecord(line, tasks, commitments);
+                }
             }
-            assert (long) tasks.size() + commitments.size() == lines.size() - 2L
+            assert (long) tasks.size() + commitments.size() + windows.size() == lines.size() - 2L
                     : "Every saved record line must decode to exactly one record";
             LOGGER.log(Level.FINE, "Saved records decoded; validating snapshot invariants");
             Snapshot decoded = new Snapshot(tasks, commitments,
-                    Integer.parseInt(counters[1]), Integer.parseInt(counters[2]));
+                    Integer.parseInt(counters[1]), Integer.parseInt(counters[2]), new StudyHours(windows));
             LOGGER.log(Level.FINE, "Saved data decoding completed");
             return decoded;
         } catch (StorageException exception) {
@@ -118,7 +133,7 @@ public final class StateCodec {
         if (lines.isEmpty() || !lines.getFirst().startsWith("SCHEDULEFLOW|")) {
             throw new StorageException("Invalid saved data header.");
         }
-        if (!lines.getFirst().equals(HEADER)) {
+        if (!lines.getFirst().equals(HEADER) && !lines.getFirst().equals("SCHEDULEFLOW|2")) {
             throw new StorageException("Unsupported file version: "
                     + lines.getFirst().substring("SCHEDULEFLOW|".length()));
         }
@@ -144,6 +159,15 @@ public final class StateCodec {
                     LocalTime.parse(fields[3]), Integer.parseInt(fields[4])));
         } else {
             throw new StorageException("Unknown or empty saved record.");
+        }
+    }
+
+    /** Rejects duplicate targets and malformed windows rather than silently replacing saved settings. */
+    private void decodeHours(String line, Map<String, StudyWindow> windows) throws StorageException {
+        String[] fields = splitFields(line, 4);
+        StudyWindow window = new StudyWindow(LocalTime.parse(fields[2]), LocalTime.parse(fields[3]));
+        if (windows.putIfAbsent(fields[1], window) != null) {
+            throw new StorageException("Duplicate study hours target: " + fields[1]);
         }
     }
 

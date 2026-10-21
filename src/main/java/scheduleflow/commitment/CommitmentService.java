@@ -70,7 +70,8 @@ public final class CommitmentService {
         List<Commitment> commitments = new ArrayList<>(state.commitments());
         LOGGER.fine("Weekly overlaps checked; creating addition candidate");
         commitments.add(added);
-        Snapshot candidate = new Snapshot(state.tasks(), commitments, state.nextTaskId(), state.nextCommitmentId() + 1);
+        Snapshot candidate = new Snapshot(state.tasks(), commitments, state.nextTaskId(), state.nextCommitmentId() + 1,
+                state.studyHours());
         assert candidate.commitments().getLast().equals(added)
                 && candidate.commitments().subList(0, candidate.commitments().size() - 1).equals(state.commitments())
                 : "Addition must append exactly one series and preserve existing records";
@@ -107,7 +108,8 @@ public final class CommitmentService {
         // Snapshot guarantees unique IDs, so a successful deletion must remove exactly one series.
         assert remaining.size() == state.commitments().size() - 1 : "Deletion must remove exactly one commitment";
         LOGGER.fine("Commitment ID resolved; creating deletion candidate");
-        Snapshot candidate = new Snapshot(state.tasks(), remaining, state.nextTaskId(), state.nextCommitmentId());
+        Snapshot candidate = new Snapshot(state.tasks(), remaining, state.nextTaskId(), state.nextCommitmentId(),
+                state.studyHours());
         assert candidate.commitments().stream().noneMatch(commitment -> commitment.id() == commitmentId)
                 : "Deletion must remove the requested series";
         assert candidate.tasks().equals(state.tasks()) && candidate.nextTaskId() == state.nextTaskId()

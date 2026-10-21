@@ -16,8 +16,7 @@ public record ScheduleEntry(LocalDateTime start, LocalDateTime end, SlotKind kin
             throw new ValidationException("Schedule entry fields must not be null.");
         }
         if (!start.toLocalDate().equals(end.toLocalDate()) || !start.isBefore(end)
-                || start.toLocalTime().isBefore(TimeRules.STUDY_START)
-                || end.toLocalTime().isAfter(TimeRules.STUDY_END) || !isAligned(start) || !isAligned(end)) {
+                || !isAligned(start) || !isAligned(end)) {
             throw new ValidationException("Schedule entry must use aligned endpoints inside one study window.");
         }
         if (kind == SlotKind.FREE || kind == SlotKind.UNPLANNED) {

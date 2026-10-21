@@ -2,6 +2,37 @@
   "version": 1,
   "cases": [
     {
+      "requiredComponents": ["Main.main", "CommandParser.parse", "CommandDispatcher.execute", "StateCodec.encode", "StateCodec.decode"],
+      "id": "UI-013", "aim": "Study hours precedence, validation, reset, plan invalidation and restart",
+      "status": "active", "setup": "No data file; isolated saved settings",
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "hours tuesday", "output": "Study hours for tuesday: 08:00 - 22:00" },
+          { "input": "hours tuesday /start 09:00 /end 22:00", "output": "Study hours for tuesday: 09:00 - 22:00\nSaved study hours. Run plan to regenerate." },
+          { "input": "hours 2026-10-27 /start 14:00 /end 19:00", "output": "Study hours for 2026-10-27: 14:00 - 19:00\nSaved study hours. Run plan to regenerate." },
+          { "input": "hours 2026-11-03", "output": "Study hours for 2026-11-03: 09:00 - 22:00" },
+          { "input": "hours wednesday", "output": "Study hours for wednesday: 08:00 - 22:00" },
+          { "input": "hours tuesday /start 09:15 /end 22:00", "output": "Error: Study hours must use half-hour boundaries (:00 or :30)." },
+          { "input": "hours tuesday /start 22:00 /end 09:00", "output": "Error: Study start must be before end on the same day." },
+          { "input": "hours tuesday", "output": "Study hours for tuesday: 09:00 - 22:00" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "hours tuesday", "output": "Study hours for tuesday: 09:00 - 22:00" },
+          { "input": "hours 2026-10-27", "output": "Study hours for 2026-10-27: 14:00 - 19:00" },
+          { "input": "plan", "output": "No tasks to schedule." },
+          { "input": "hours reset 2026-10-27", "output": "Study hours for 2026-10-27: 09:00 - 22:00\nSaved study hours. Run plan to regenerate." },
+          { "input": "schedule today", "output": "No current plan. Run plan to generate one." },
+          { "input": "hours reset tuesday", "output": "Study hours for tuesday: 08:00 - 22:00\nSaved study hours. Run plan to regenerate." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "hours 2026-10-27", "output": "Study hours for 2026-10-27: 08:00 - 22:00" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
       "requiredComponents": ["Main.main","App.run","ConsoleUi.prompt","ConsoleUi.readLine","ConsoleUi.write","FileStorage.load","StateCodec.decode","CommandParser.parse","CommandDispatcher.execute","TaskService.list","CommitmentService.list","TextRenderer.tasks","TextRenderer.commitments","TextRenderer.noPlan","TextRenderer.exit"],
       "id": "UI-001", "aim": "First launch has empty lists and no plan",
       "status": "active", "setup": "No data file; Printing and Save implemented",

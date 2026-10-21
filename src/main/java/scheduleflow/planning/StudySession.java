@@ -9,15 +9,14 @@ import scheduleflow.common.ValidationException;
  */
 public record StudySession(int taskId, LocalDateTime start, LocalDateTime end) {
     /**
-     * Validates this interval; the planner checks its relationship to source tasks and other intervals.
+     * Validates this interval; the planner enforces configured hours and relationships to source tasks.
      */
     public StudySession {
         if (taskId <= 0 || start == null || end == null) {
             throw new ValidationException("Session requires a positive task ID and nonnull endpoints.");
         }
         if (!start.toLocalDate().equals(end.toLocalDate()) || !start.isBefore(end)
-                || start.toLocalTime().isBefore(TimeRules.STUDY_START)
-                || end.toLocalTime().isAfter(TimeRules.STUDY_END) || !isAligned(start) || !isAligned(end)) {
+                || !isAligned(start) || !isAligned(end)) {
             throw new ValidationException("Session must use aligned endpoints inside one study window.");
         }
     }

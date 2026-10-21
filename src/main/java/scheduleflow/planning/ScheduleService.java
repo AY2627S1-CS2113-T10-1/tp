@@ -45,18 +45,19 @@ public final class ScheduleService {
         }
         LOGGER.fine(() -> "Validated schedule date " + date);
 
-        LocalDateTime cutoff = TimeRules.eligibleStart(date, plan.generatedAt());
-        LocalDateTime windowEnd = date.atTime(TimeRules.STUDY_END);
-        assert !cutoff.isBefore(date.atTime(TimeRules.STUDY_START)) && !cutoff.isAfter(windowEnd)
+        var window = plan.source().studyHours().forDate(date);
+        LocalDateTime cutoff = TimeRules.eligibleStart(date, plan.generatedAt(), window);
+        LocalDateTime windowEnd = date.atTime(window.end());
+        assert !cutoff.isBefore(date.atTime(window.start())) && !cutoff.isAfter(windowEnd)
                 : "Planning cutoff must lie within the requested study window";
         LOGGER.fine(() -> "Classifying and merging study slots for " + date + "; cutoff: " + cutoff);
         List<ScheduleEntry> entries = new ArrayList<>();
-        for (LocalDateTime start = date.atTime(TimeRules.STUDY_START); start.isBefore(windowEnd);
+        for (LocalDateTime start = date.atTime(window.start()); start.isBefore(windowEnd);
                 start = start.plusMinutes(TimeRules.SLOT_MINUTES)) {
             appendMerged(entries, classifySlot(plan, start, cutoff));
         }
         LOGGER.fine(() -> "Validating completed schedule view for " + date);
-        ScheduleView view = new ScheduleView(date, plan.generatedAt(), entries, plan.unallocated());
+        ScheduleView view = new ScheduleView(date, plan.generatedAt(), entries, plan.unallocated(), window);
         LOGGER.fine(() -> "Projected schedule for " + date + " from plan generated at " + plan.generatedAt()
                 + "; merged entries: " + entries.size() + "; unallocated tasks: " + plan.unallocated().size());
         return view;

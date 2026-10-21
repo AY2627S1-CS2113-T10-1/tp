@@ -68,7 +68,7 @@ public final class TaskService {
             List<Task> tasks = new ArrayList<>(state.tasks());
             tasks.add(task);
             Snapshot candidate = new Snapshot(tasks, state.commitments(), state.nextTaskId() + 1,
-                    state.nextCommitmentId());
+                    state.nextCommitmentId(), state.studyHours());
             assert candidate.tasks().getLast().equals(task)
                     && candidate.tasks().subList(0, candidate.tasks().size() - 1).equals(state.tasks())
                     : "Addition must append exactly one task without changing existing records";
@@ -103,7 +103,8 @@ public final class TaskService {
             throw new ValidationException("Unknown task ID: T" + taskId);
         }
         LOGGER.log(Level.FINE, "Task ID resolved; creating deletion candidate");
-        Snapshot candidate = new Snapshot(tasks, state.commitments(), state.nextTaskId(), state.nextCommitmentId());
+        Snapshot candidate = new Snapshot(tasks, state.commitments(), state.nextTaskId(), state.nextCommitmentId(),
+                state.studyHours());
         assert candidate.tasks().size() == state.tasks().size() - 1
                 && candidate.tasks().stream().noneMatch(task -> task.id() == taskId)
                 : "Deletion must remove exactly one matching task";
