@@ -9,6 +9,15 @@ user-visible behaviour in the User Guide. Describe verified behaviour accurately
 and clearly mark planned features. This requirement also applies to all AI
 agents working on the project, as specified in the repository's root `AGENTS.md`.
 
+## Saving and loading authorship
+
+Scoped `// @@author ernestgoh-god` comments identify Ernest's storage
+implementation and storage tests for RepoSense. Each marked section ends with
+`// @@author`; shared foundation declarations outside these sections retain
+their Git-based attribution. Keep these boundaries accurate when editing the
+code. See the [RepoSense author-tag guide](https://reposense.org/RepoSense/ug/usingAuthorTags.html).
+These tooling comments do not change saving/loading behaviour or its test cases.
+
 ## Duration verification (issue #13)
 
 Duration recording belongs to the existing add operations; no additional

@@ -18,6 +18,7 @@ import scheduleflow.model.Task;
  * Converts snapshots to and from the versioned text format without accessing saved files.
  */
 public final class StateCodec {
+    // @@author ernestgoh-god
     /**
      * Records conversion stages at FINE level without including stored values or exception messages.
      */
@@ -27,6 +28,7 @@ public final class StateCodec {
      * Identifies the supported persistence version; changing it requires format coordination.
      */
     private static final String HEADER = "SCHEDULEFLOW|1";
+    // @@author
 
     /**
      * Creates the StateCodec dependencies without performing I/O.
@@ -34,6 +36,7 @@ public final class StateCodec {
     public StateCodec() {
     }
 
+    // @@author ernestgoh-god
     /**
      * Encodes a complete snapshot in canonical version 1 form.
      * Stores names last so names containing pipes do not need escaping.
@@ -157,4 +160,5 @@ public final class StateCodec {
         }
         return fields;
     }
+    // @@author
 }

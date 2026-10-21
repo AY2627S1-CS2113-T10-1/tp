@@ -16,11 +16,13 @@ import scheduleflow.model.Snapshot;
  * Owns UTF-8 loading and atomic file replacement at a fixed absolute path.
  */
 public final class FileStorage implements Storage {
+    // @@author ernestgoh-god
     /**
      * Records opt-in storage stages without paths, saved text or exception payloads.
      * Failures remain available to callers through {@link StorageException}.
      */
     private static final Logger LOGGER = Logger.getLogger(FileStorage.class.getName());
+    // @@author
 
     /**
      * Identifies the normalized absolute target, independent of later working-directory changes.
@@ -44,6 +46,7 @@ public final class FileStorage implements Storage {
         this.codec = Objects.requireNonNull(codec, "codec");
     }
 
+    // @@author ernestgoh-god
     /**
      * Reads UTF-8 and validates the entire snapshot without modifying the saved file.
      * A definitely absent target returns an empty snapshot; other failures never do.
@@ -135,4 +138,5 @@ public final class FileStorage implements Storage {
             LOGGER.log(Level.FINE, "Temporary saved data cleanup failed; original failure retained");
         }
     }
+    // @@author
 }
