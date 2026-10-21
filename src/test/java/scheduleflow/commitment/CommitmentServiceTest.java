@@ -343,6 +343,33 @@ class CommitmentServiceTest {
     }
 
     @Test
+    void add_multipleOverlaps_reportsEveryConflictWithoutChangingSource() {
+        Commitment late = new Commitment(2, "Seminar", DayOfWeek.MONDAY, LocalTime.of(11, 0), 60);
+        Commitment early = new Commitment(10, "Lecture", DayOfWeek.MONDAY, LocalTime.of(9, 0), 60);
+        Commitment adjacent = new Commitment(3, "Lunch", DayOfWeek.MONDAY, LocalTime.NOON, 30);
+        Commitment otherDay = new Commitment(4, "Tuesday", DayOfWeek.TUESDAY, LocalTime.of(9, 0), 60);
+        List<Commitment> stored = List.of(late, adjacent, otherDay, early);
+        Snapshot original = new Snapshot(List.of(), stored, 1, 11);
+        ValidationException exception = assertThrows(ValidationException.class,
+                () -> service.add(original, "Workshop", DayOfWeek.MONDAY, LocalTime.of(9, 0), 180));
+        assertEquals("Commitment overlaps C10: Lecture; C2: Seminar", exception.getMessage());
+        assertEquals(new Snapshot(List.of(), stored, 1, 11), original);
+        Snapshot retry = service.add(original, "Gap", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60);
+        assertEquals(11, retry.commitments().getLast().id());
+        assertEquals(stored, original.commitments());
+    }
+
+    @Test
+    void add_fullDayOverlap_reportsAllSameDayConflictsIncludingMidnight() {
+        Commitment late = new Commitment(1, "Class", DayOfWeek.SUNDAY, LocalTime.of(23, 30), 30);
+        Commitment early = new Commitment(2, "Class", DayOfWeek.SUNDAY, LocalTime.MIDNIGHT, 30);
+        Snapshot original = new Snapshot(List.of(), List.of(late, early), 1, 3);
+        ValidationException exception = assertThrows(ValidationException.class,
+                () -> service.add(original, "Away", DayOfWeek.SUNDAY, LocalTime.MIDNIGHT, 1440));
+        assertEquals("Commitment overlaps C2: Class; C1: Class", exception.getMessage());
+    }
+
+    @Test
     void add_sameDayOverlap_rejectsAndIdentifiesExistingCommitment() {
         Commitment lecture = new Commitment(7, "Lecture", DayOfWeek.MONDAY, LocalTime.of(10, 0), 120);
         Snapshot original = new Snapshot(List.of(), List.of(lecture), 1, 8);
@@ -350,8 +377,7 @@ class CommitmentServiceTest {
             ValidationException exception = assertThrows(ValidationException.class,
                     () -> service.add(original, "Clash", DayOfWeek.MONDAY,
                             LocalTime.of(interval[0], 0), interval[1]));
-            assertTrue(exception.getMessage().contains("C7"));
-            assertTrue(exception.getMessage().contains("Lecture"));
+            assertEquals("Commitment overlaps C7: Lecture", exception.getMessage());
         }
         assertEquals(new Snapshot(List.of(), List.of(lecture), 1, 8), original);
         Snapshot retry = service.add(original, "Later", DayOfWeek.MONDAY, LocalTime.NOON, 30);

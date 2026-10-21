@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
@@ -62,11 +63,7 @@ public final class CommitmentService {
         }
         Commitment added = new Commitment(state.nextCommitmentId(), name, day, start, minutes);
         LOGGER.fine("Commitment fields validated; checking weekly overlaps");
-        for (Commitment existing : state.commitments()) {
-            if (added.overlaps(existing)) {
-                throw new ValidationException("Commitment overlaps " + existing.displayId() + ": " + existing.name());
-            }
-        }
+        rejectOverlaps(added, state.commitments());
         List<Commitment> commitments = new ArrayList<>(state.commitments());
         LOGGER.fine("Weekly overlaps checked; creating addition candidate");
         commitments.add(added);
@@ -79,6 +76,26 @@ public final class CommitmentService {
                 : "Addition must preserve tasks and advance only the commitment counter";
         LOGGER.fine("Commitment addition candidate created; not yet saved or published");
         return candidate;
+    }
+
+    /**
+     * Reports every conflicting series in chronological order without changing stored order.
+     * Retains the existing error format when only one series conflicts.
+     *
+     * @param added validated proposed series
+     * @param existing stored series to check, including intervals outside study hours
+     * @throws ValidationException if any stored series overlaps the proposed interval
+     */
+    private void rejectOverlaps(Commitment added, List<Commitment> existing) {
+        List<Commitment> conflicts = existing.stream().filter(added::overlaps)
+                .sorted(Comparator.comparing(Commitment::start).thenComparingInt(Commitment::id)).toList();
+        if (conflicts.isEmpty()) {
+            return;
+        }
+        String details = conflicts.stream()
+                .map(commitment -> commitment.displayId() + ": " + commitment.name())
+                .collect(Collectors.joining("; "));
+        throw new ValidationException("Commitment overlaps " + details);
     }
 
     /**

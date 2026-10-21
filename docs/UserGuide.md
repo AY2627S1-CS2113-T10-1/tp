@@ -214,10 +214,15 @@ This blocks 10:00–12:00 every Monday.
 - The start must be on `:00` or `:30`, and the duration must be a positive multiple of 30 minutes.
 - A commitment must end by midnight on its selected day. Ending exactly at midnight is allowed and displayed as `24:00`; entering `2400` as a start time is invalid.
 - Commitments may occur outside study hours. A full-day commitment starting at `0000` with duration `1440` is valid.
-- Commitments on the same weekday must not overlap, even outside study hours. An overlap error identifies the existing commitment.
+- Commitments on the same weekday must not overlap, even outside study hours. An overlap error identifies every conflicting commitment by ID and name, in start-time order.
 - Adjacent commitments are allowed: Monday 10:00–12:00 and Monday 12:00–13:00 do not overlap. The same time on different weekdays is also allowed.
 
 A successful addition saves the commitment and clears the current plan.
+
+If an addition overlaps multiple entries, the error lists them together, for example:
+`Error: Commitment overlaps C10: Lecture; C2: Seminar`.
+Adjacent entries and commitments on other weekdays are not included in that list.
+Correct the proposed interval and retry; rejected additions do not consume an ID.
 
 Rejected additions leave existing commitments and IDs unchanged. Optional
 [commitment diagnostics](DeveloperGuide.md#commitment-defensive-checks-and-diagnostics)
