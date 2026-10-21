@@ -18,6 +18,17 @@ their Git-based attribution. Keep these boundaries accurate when editing the
 code. See the [RepoSense author-tag guide](https://reposense.org/RepoSense/ug/usingAuthorTags.html).
 These tooling comments do not change saving/loading behaviour or its test cases.
 
+## Task authorship
+
+Scoped `// @@author nickpatt` comments identify Nickhil's task add/delete/list
+implementation, defensive checks and opt-in diagnostics, together with his
+regression tests. Each range ends with `// @@author`. These ranges follow the
+Task role's four production files and verified contributions in commits
+`83c8d7c` and `a9bb80b`; unchanged shared foundation code and tests retain their
+Git-based attribution. CLI wiring remains attributed to its Printing owner.
+These tooling comments change no commands, runtime behaviour or UI fixtures;
+the existing Task JUnit coverage and packaged scenarios remain applicable.
+
 ## Duration verification (issue #13)
 
 Duration recording belongs to the existing add operations; no additional
