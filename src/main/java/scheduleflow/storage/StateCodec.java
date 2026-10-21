@@ -162,6 +162,7 @@ public final class StateCodec {
         }
     }
 
+    // @@author GabrielYuSP
     /** Rejects duplicate targets and malformed windows rather than silently replacing saved settings. */
     private void decodeHours(String line, Map<String, StudyWindow> windows) throws StorageException {
         String[] fields = splitFields(line, 4);
@@ -171,6 +172,7 @@ public final class StateCodec {
         }
     }
 
+    // @@author ernestgoh-god
     /**
      * Splits required fields while preserving literal pipes within the final name field.
      *

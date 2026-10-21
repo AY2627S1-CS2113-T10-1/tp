@@ -200,6 +200,7 @@ public final class CommandParser {
         return new Command.ScheduleDate(date);
     }
 
+    // @@author GabrielYuSP
     /** Parses explicit hours targets without reading state or validating interval ordering. */
     private Command parseHours(String input) throws ParseException {
         Matcher fields = match(HOURS_PATTERN, input, HOURS_USAGE);
@@ -220,6 +221,7 @@ public final class CommandParser {
                 LocalTime.parse(fields.group("end"), HOURS_TIME_FORMAT));
     }
 
+    // @@author ka-how
     /**
      * Requires a match of the entire input, including the final field or argument.
      */

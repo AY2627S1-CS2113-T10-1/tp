@@ -20,6 +20,7 @@ import scheduleflow.model.Task;
 class StateCodecTest {
     private final StateCodec codec = new StateCodec();
 
+    // @@author GabrielYuSP
     @Test
     void encodeAndDecode_hours_preservesSettingsAndLoadsLegacyData() throws StorageException {
         Snapshot empty = Snapshot.empty();
@@ -39,6 +40,7 @@ class StateCodecTest {
                 () -> codec.decode("SCHEDULEFLOW|1\nNEXT|1|1\nHOURS|tuesday|09:00|22:00"));
     }
 
+    // @@author ernestgoh-god
     @Test
     void encode_nullSnapshot_reportsNamedPrecondition() {
         assertEquals("state", assertThrows(NullPointerException.class, () -> codec.encode(null)).getMessage());

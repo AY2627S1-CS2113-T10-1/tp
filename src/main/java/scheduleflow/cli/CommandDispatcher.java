@@ -120,6 +120,7 @@ public final class CommandDispatcher {
         return response;
     }
 
+    // @@author GabrielYuSP
     /** Saves hours before clearing a plan, preserving the live settings and plan if saving fails. */
     private String changeHours(String target, StudyHours hours, AppState state) throws StorageException {
         saveAndCommit(state.snapshot().withStudyHours(hours), state);
@@ -133,6 +134,7 @@ public final class CommandDispatcher {
         return renderer.hoursReset(target, hours);
     }
 
+    // @@author ka-how
     /**
      * Resolves the allocated ID from the validated candidate before saving and publishing it.
      */

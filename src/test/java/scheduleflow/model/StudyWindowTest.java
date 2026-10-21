@@ -7,6 +7,7 @@ import java.time.LocalTime;
 import org.junit.jupiter.api.Test;
 import scheduleflow.common.ValidationException;
 
+// @@author GabrielYuSP
 /** Checks positive half-hour windows and same-day limits. */
 class StudyWindowTest {
     @Test

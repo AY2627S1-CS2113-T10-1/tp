@@ -11,6 +11,7 @@ import java.util.Objects;
  * Defines the complete command vocabulary as immutable transport values.
  */
 public sealed interface Command {
+    // @@author GabrielYuSP
     /** Requests replacement of one recurring weekday or date-specific window. */
     record SetHours(String target, LocalTime start, LocalTime end) implements Command {
         /** Requires transport values; domain validation happens during execution. */
@@ -37,6 +38,7 @@ public sealed interface Command {
         }
     }
 
+    // @@author ka-how
     /**
      * Requests command help.
      */

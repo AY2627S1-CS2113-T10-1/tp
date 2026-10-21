@@ -10,6 +10,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import scheduleflow.common.ValidationException;
 
+// @@author GabrielYuSP
 /** Verifies precedence, independent weekdays, reset and immutable settings. */
 class StudyHoursTest {
     @Test

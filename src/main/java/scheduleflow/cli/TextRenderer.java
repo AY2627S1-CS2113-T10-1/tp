@@ -70,6 +70,7 @@ public final class TextRenderer {
                 "exit - Close the application."));
     }
 
+    // @@author GabrielYuSP
     /** Formats the effective window for a selected weekday or calendar date. */
     public String hours(String target, StudyWindow window) {
         Objects.requireNonNull(target, "target");
@@ -89,6 +90,7 @@ public final class TextRenderer {
                 + ".\nRun plan to regenerate.";
     }
 
+    // @@author ka-how
     /**
      * Formats the added task.
      *

@@ -89,6 +89,16 @@ cutoff rounding, clipping, midnight commitments and allowed schedule dates.
 
 ### Configurable study hours
 
+Scoped `// @@author GabrielYuSP` tags identify the new study-hours models,
+command records, parsing/dispatch/rendering helpers, codec helper and associated
+tests introduced in commits `9216291` and `3546152`. Shared files restore the
+previous author's tag after each new block; untagged planning tests return to
+Git-based attribution. Minor integrations in existing methods remain outside
+these claims. The User Guide and UI fixtures were reviewed and remain unchanged
+because these attribution comments do not alter behavior. Verify the final
+green-highlighted lines in the course RepoSense dashboard after it refreshes;
+local tags alone do not confirm the course's author mapping or analyzed branch.
+
 `StudyWindow` validates positive same-day intervals on half-hour boundaries.
 `StudyHours` holds an immutable map keyed by full lowercase weekday names or
 canonical ISO dates. Resolution is date override, then weekday, then

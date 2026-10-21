@@ -40,6 +40,7 @@ class CommandDispatcherTest {
     private static final Clock CLOCK = Clock.fixed(NOW.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
     private final TextRenderer renderer = new TextRenderer();
 
+    // @@author GabrielYuSP
     @Test
     void execute_hoursMutations_saveBeforeInvalidatingAndPreserveSettingsAcrossOtherChanges() throws Exception {
         FakeStorage storage = new FakeStorage(Snapshot.empty());
@@ -85,6 +86,7 @@ class CommandDispatcherTest {
                 dispatcher.execute(parser.parse("hours reset 2026-10-27"), state).output());
     }
 
+    // @@author ka-how
     @Test
     void execute_nullArguments_rejectsBeforeClockReadsOrSaves() {
         CountingClock clock = new CountingClock();

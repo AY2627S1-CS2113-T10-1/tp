@@ -24,6 +24,7 @@ class ScheduleServiceTest {
     private static final LocalDateTime MORNING = MONDAY.atTime(7, 0);
     private final ScheduleService schedules = new ScheduleService();
 
+    // @@author GabrielYuSP
     @Test
     void forDate_customWindow_clipsBusyAndUsesFrozenCutoff() {
         Snapshot initial = new Snapshot(List.of(), List.of(
@@ -40,6 +41,7 @@ class ScheduleServiceTest {
                 .entries().getFirst().start().toLocalTime());
     }
 
+    // @@author
     @Test
     void forDate_correctedContractExample_preservesAdjacentCommitmentIds() {
         Task task = new Task(1, "Draft", MONDAY.plusDays(1).atTime(18, 0), 180);

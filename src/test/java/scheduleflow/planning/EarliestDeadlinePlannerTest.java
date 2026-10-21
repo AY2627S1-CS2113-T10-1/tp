@@ -28,6 +28,7 @@ class EarliestDeadlinePlannerTest {
     private static final int STUDY_MINUTES_PER_DAY = 14 * 60;
     private final EarliestDeadlinePlanner planner = new EarliestDeadlinePlanner();
 
+    // @@author GabrielYuSP
     @Test
     void generate_customHours_respectsDatePriorityRecurrenceAndCommitments() {
         Snapshot initial = snapshot(List.of(task(1, "Draft", MONDAY.plusDays(8).atStartOfDay(), 180)),
@@ -60,6 +61,7 @@ class EarliestDeadlinePlannerTest {
         assertTrue(planner.generate(source, MONDAY.atTime(15, 0)).sessions().isEmpty());
     }
 
+    // @@author
     @Test
     void generate_emptySnapshot_returnsCompletePlanWithSource() {
         Commitment commitment = new Commitment(1, "Lecture", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60);

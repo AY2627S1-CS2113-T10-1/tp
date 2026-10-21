@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Objects;
 import scheduleflow.common.ValidationException;
 
+// @@author GabrielYuSP
 /** Stores immutable windows keyed by lowercase full weekday names or ISO calendar dates. */
 public record StudyHours(Map<String, StudyWindow> windows) {
     /** Copies and validates all settings without consulting the clock. */

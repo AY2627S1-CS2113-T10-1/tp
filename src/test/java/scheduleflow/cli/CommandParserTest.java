@@ -25,6 +25,7 @@ class CommandParserTest {
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
     private final CommandParser parser = new CommandParser();
 
+    // @@author GabrielYuSP
     @Test
     void parse_hoursCommands_supportsWeekdaysDatesAndResets() throws ParseException {
         assertEquals(new Command.SetHours("tuesday", LocalTime.of(9, 0), LocalTime.of(22, 0)),
@@ -39,6 +40,7 @@ class CommandParserTest {
         }
     }
 
+    // @@author ka-how
     @Test
     void parse_nullLine_rejectsWithArgumentName() {
         assertEquals("line", assertThrows(NullPointerException.class, () -> parser.parse(null)).getMessage());
