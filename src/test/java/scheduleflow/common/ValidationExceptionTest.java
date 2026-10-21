@@ -1,3 +1,4 @@
+// @@author nickpatt
 package scheduleflow.common;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -20,3 +21,4 @@ class ValidationExceptionTest {
                 () -> new ValidationException(null)).getMessage());
     }
 }
+// @@author
