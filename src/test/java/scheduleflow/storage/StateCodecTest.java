@@ -12,6 +12,7 @@ import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
 
+// @@author ernestgoh-god
 /**
  * Checks text conversion independently of files and console integration.
  */
@@ -80,3 +81,4 @@ class StateCodecTest {
         }
     }
 }
+// @@author
