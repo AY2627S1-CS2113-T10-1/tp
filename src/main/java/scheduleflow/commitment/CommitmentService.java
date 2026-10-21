@@ -27,6 +27,7 @@ public final class CommitmentService {
     public CommitmentService() {
     }
 
+    //@@author Darren50
     /**
      * Creates a candidate after checking overlap and counter overflow.
      * Preserves the original snapshot so callers can save before publishing the change.
@@ -133,4 +134,5 @@ public final class CommitmentService {
         LOGGER.fine("Commitment listing completed; source snapshot unchanged");
         return commitments;
     }
+    //@@author
 }

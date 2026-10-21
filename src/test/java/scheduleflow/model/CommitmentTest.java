@@ -66,12 +66,14 @@ class CommitmentTest {
         assertFalse(monday(1, 23, 30, 30).overlaps(monday(2, 0, 0, 30)));
     }
 
+    //@@author Darren50
     @Test
     void overlaps_nullSeries_rejectsWithNamedPrecondition() {
         NullPointerException exception = assertThrows(NullPointerException.class,
                 () -> monday(1, 10, 0, 30).overlaps(null));
         assertEquals("other", exception.getMessage());
     }
+    //@@author
 
     /**
      * Creates a Monday series with a padded name to exercise normalization.
