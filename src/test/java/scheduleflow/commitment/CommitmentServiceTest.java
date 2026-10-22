@@ -13,6 +13,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -23,6 +24,8 @@ import org.junit.jupiter.api.parallel.Isolated;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
+import scheduleflow.model.StudyHours;
+import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 import scheduleflow.planning.EarliestDeadlinePlanner;
 import scheduleflow.planning.Plan;
@@ -39,6 +42,109 @@ import scheduleflow.task.TaskService;
 @Isolated("Logging checks temporarily configure the commitment service logger.")
 class CommitmentServiceTest {
     private final CommitmentService service = new CommitmentService();
+
+    @Test
+    void edit_customHours_preservesWeekdayAndDateOverridesThroughRestart(@TempDir Path directory) throws Exception {
+        StudyHours hours = new StudyHours(Map.of(
+                "monday", new StudyWindow(LocalTime.of(9, 0), LocalTime.of(18, 0)),
+                "2026-10-26", new StudyWindow(LocalTime.of(14, 0), LocalTime.of(19, 0))));
+        Snapshot source = service.add(Snapshot.empty().withStudyHours(hours), "Class",
+                DayOfWeek.MONDAY, LocalTime.of(10, 0), 60);
+        Snapshot edited = service.edit(source, 1, "Changed", null, LocalTime.of(11, 0), null);
+        assertEquals(hours, edited.studyHours());
+        assertEquals(hours, source.studyHours());
+        Path path = directory.resolve("scheduleflow.txt");
+        new FileStorage(path, new StateCodec()).save(edited);
+        Snapshot restored = new FileStorage(path, new StateCodec()).load();
+        assertEquals(edited, restored);
+        assertEquals(hours.forTarget("monday"), restored.studyHours().forTarget("monday"));
+        assertEquals(hours.forTarget("2026-10-26"), restored.studyHours().forTarget("2026-10-26"));
+    }
+
+    @Test
+    void edit_selectedFields_preservesOmissionsOrderTasksAndExhaustedCounters() {
+        Commitment first = new Commitment(9, "Other", DayOfWeek.TUESDAY, LocalTime.NOON, 60);
+        Commitment target = new Commitment(2, "Class", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60);
+        Task task = new Task(7, "Task", LocalDate.of(2026, 10, 26).atTime(18, 0), 30);
+        Snapshot source = new Snapshot(List.of(task), List.of(first, target), 8, Integer.MAX_VALUE);
+        Snapshot renamed = service.edit(source, 2, "  新 lecture  ", null, null, null);
+        assertEquals(List.of(first, new Commitment(2, "新 lecture", target.day(), target.start(), 60)),
+                renamed.commitments());
+        assertEquals(source.tasks(), renamed.tasks());
+        assertEquals(8, renamed.nextTaskId());
+        assertEquals(Integer.MAX_VALUE, renamed.nextCommitmentId());
+        assertEquals(List.of(first, target), source.commitments());
+        assertThrows(UnsupportedOperationException.class, () -> renamed.commitments().clear());
+        Snapshot moved = service.edit(source, 2, null, DayOfWeek.SUNDAY, LocalTime.of(23, 30), 30);
+        assertEquals(new Commitment(2, "Class", DayOfWeek.SUNDAY, LocalTime.of(23, 30), 30),
+                moved.commitments().get(1));
+        assertEquals(first, moved.commitments().getFirst());
+    }
+
+    @Test
+    void edit_sameIntervalAndAdjacentBoundary_excludesOnlyItself() {
+        Snapshot source = service.add(Snapshot.empty(), "Class", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60);
+        source = service.add(source, "Next", DayOfWeek.MONDAY, LocalTime.NOON, 60);
+        assertEquals(source, service.edit(source, 1, "Class", null, null, null));
+        Snapshot extended = service.edit(source, 1, null, null, null, 120);
+        assertEquals(120, extended.commitments().getFirst().durationMinutes());
+        Snapshot shifted = service.edit(source, 1, null, null, LocalTime.of(11, 0), null);
+        assertEquals(LocalTime.of(11, 0), shifted.commitments().getFirst().start());
+        assertEquals(60, shifted.commitments().getFirst().durationMinutes());
+    }
+
+    @Test
+    void edit_multipleConflicts_rejectsCompleteReplacementWithoutChangingSource() {
+        Commitment target = new Commitment(1, "Original", DayOfWeek.TUESDAY, LocalTime.NOON, 30);
+        Commitment later = new Commitment(2, "Later", DayOfWeek.MONDAY, LocalTime.of(11, 0), 60);
+        Commitment earlier = new Commitment(3, "Earlier", DayOfWeek.MONDAY, LocalTime.of(9, 0), 60);
+        Snapshot source = new Snapshot(List.of(), List.of(target, later, earlier), 1, 4);
+        ValidationException error = assertThrows(ValidationException.class,
+                () -> service.edit(source, 1, "Rejected", DayOfWeek.MONDAY, LocalTime.of(9, 0), 180));
+        assertEquals("Commitment overlaps C3: Earlier; C2: Later", error.getMessage());
+        assertEquals(List.of(target, later, earlier), source.commitments());
+        Snapshot retry = service.edit(source, 1, null, DayOfWeek.MONDAY, LocalTime.of(10, 0), 60);
+        assertEquals("Original", retry.commitments().getFirst().name());
+        assertEquals(4, retry.nextCommitmentId());
+        Snapshot added = service.add(retry, "New", DayOfWeek.FRIDAY, LocalTime.NOON, 30);
+        assertEquals(4, added.commitments().getLast().id());
+    }
+
+    @Test
+    void edit_invalidFieldsAndIds_rejectsBeforeReturningCandidate() {
+        Snapshot source = service.add(Snapshot.empty(), "Late", DayOfWeek.MONDAY, LocalTime.of(23, 30), 30);
+        assertEquals("state", assertThrows(NullPointerException.class,
+                () -> service.edit(null, 1, "Name", null, null, null)).getMessage());
+        for (int id : List.of(0, -1, 2, Integer.MAX_VALUE)) {
+            assertThrows(ValidationException.class, () -> service.edit(source, id, "Name", null, null, null));
+        }
+        assertThrows(ValidationException.class, () -> service.edit(source, 1, null, null, null, null));
+        for (String name : List.of("", "   ", "Bad\nname")) {
+            assertThrows(ValidationException.class, () -> service.edit(source, 1, name, null, null, null));
+        }
+        for (int minutes : List.of(0, -30, 45, 60, Integer.MAX_VALUE)) {
+            assertThrows(ValidationException.class, () -> service.edit(source, 1, null, null, null, minutes));
+        }
+        for (LocalTime start : List.of(LocalTime.of(10, 15), LocalTime.of(10, 0, 1), LocalTime.of(10, 0, 0, 1))) {
+            assertThrows(ValidationException.class, () -> service.edit(source, 1, null, null, start, null));
+        }
+        Snapshot fullDay = service.edit(source, 1, null, null, LocalTime.MIDNIGHT, 1440);
+        assertEquals(1440, fullDay.commitments().getFirst().endMinuteOfDay());
+        assertEquals(30, source.commitments().getFirst().durationMinutes());
+    }
+
+    @Test
+    void edit_logging_reportsCandidateOrRejectionWithoutPrivateValues() {
+        Snapshot source = service.add(Snapshot.empty(), "Private original", DayOfWeek.MONDAY, LocalTime.NOON, 60);
+        List<LogRecord> records = captureLogs(() -> {
+            service.edit(source, 1, "Private replacement", null, null, null);
+            assertThrows(ValidationException.class, () -> service.edit(source, 1, null, null, null, 45));
+        });
+        List<String> messages = records.stream().map(LogRecord::getMessage).toList();
+        assertEquals(1, messages.stream().filter(message -> message.contains("edit candidate created")).count());
+        assertTrue(messages.getLast().contains("edit rejected"));
+        assertTrue(messages.stream().noneMatch(message -> message.contains("Private")));
+    }
 
     @Test
     void operations_loggingEnabled_recordsStagesWithoutPrivateValues() {
@@ -343,6 +449,33 @@ class CommitmentServiceTest {
     }
 
     @Test
+    void add_multipleOverlaps_reportsEveryConflictWithoutChangingSource() {
+        Commitment late = new Commitment(2, "Seminar", DayOfWeek.MONDAY, LocalTime.of(11, 0), 60);
+        Commitment early = new Commitment(10, "Lecture", DayOfWeek.MONDAY, LocalTime.of(9, 0), 60);
+        Commitment adjacent = new Commitment(3, "Lunch", DayOfWeek.MONDAY, LocalTime.NOON, 30);
+        Commitment otherDay = new Commitment(4, "Tuesday", DayOfWeek.TUESDAY, LocalTime.of(9, 0), 60);
+        List<Commitment> stored = List.of(late, adjacent, otherDay, early);
+        Snapshot original = new Snapshot(List.of(), stored, 1, 11);
+        ValidationException exception = assertThrows(ValidationException.class,
+                () -> service.add(original, "Workshop", DayOfWeek.MONDAY, LocalTime.of(9, 0), 180));
+        assertEquals("Commitment overlaps C10: Lecture; C2: Seminar", exception.getMessage());
+        assertEquals(new Snapshot(List.of(), stored, 1, 11), original);
+        Snapshot retry = service.add(original, "Gap", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60);
+        assertEquals(11, retry.commitments().getLast().id());
+        assertEquals(stored, original.commitments());
+    }
+
+    @Test
+    void add_fullDayOverlap_reportsAllSameDayConflictsIncludingMidnight() {
+        Commitment late = new Commitment(1, "Class", DayOfWeek.SUNDAY, LocalTime.of(23, 30), 30);
+        Commitment early = new Commitment(2, "Class", DayOfWeek.SUNDAY, LocalTime.MIDNIGHT, 30);
+        Snapshot original = new Snapshot(List.of(), List.of(late, early), 1, 3);
+        ValidationException exception = assertThrows(ValidationException.class,
+                () -> service.add(original, "Away", DayOfWeek.SUNDAY, LocalTime.MIDNIGHT, 1440));
+        assertEquals("Commitment overlaps C2: Class; C1: Class", exception.getMessage());
+    }
+
+    @Test
     void add_sameDayOverlap_rejectsAndIdentifiesExistingCommitment() {
         Commitment lecture = new Commitment(7, "Lecture", DayOfWeek.MONDAY, LocalTime.of(10, 0), 120);
         Snapshot original = new Snapshot(List.of(), List.of(lecture), 1, 8);
@@ -350,8 +483,7 @@ class CommitmentServiceTest {
             ValidationException exception = assertThrows(ValidationException.class,
                     () -> service.add(original, "Clash", DayOfWeek.MONDAY,
                             LocalTime.of(interval[0], 0), interval[1]));
-            assertTrue(exception.getMessage().contains("C7"));
-            assertTrue(exception.getMessage().contains("Lecture"));
+            assertEquals("Commitment overlaps C7: Lecture", exception.getMessage());
         }
         assertEquals(new Snapshot(List.of(), List.of(lecture), 1, 8), original);
         Snapshot retry = service.add(original, "Later", DayOfWeek.MONDAY, LocalTime.NOON, 30);

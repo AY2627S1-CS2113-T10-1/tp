@@ -2,32 +2,153 @@
   "version": 1,
   "cases": [
     {
-      "requiredComponents": ["Main.main", "CommandParser.parse", "CommandDispatcher.execute", "StateCodec.encode", "StateCodec.decode"],
-      "id": "UI-013", "aim": "Study hours precedence, validation, reset, plan invalidation and restart",
-      "status": "active", "setup": "No data file; isolated saved settings",
+      "requiredComponents": [
+        "Main.main",
+        "CommandParser.parse",
+        "CommandDispatcher.execute",
+        "StateCodec.encode",
+        "StateCodec.decode"
+      ],
+      "id": "UI-015",
+      "aim": "Study hours precedence, validation, reset, plan invalidation and restart",
+      "status": "active",
+      "setup": "No data file; isolated saved settings",
+      "sessions": [
+        {
+          "startup": "",
+          "steps": [
+            {
+              "input": "hours tuesday",
+              "output": "Study hours for tuesday: 08:00 - 22:00"
+            },
+            {
+              "input": "hours tuesday /start 09:00 /end 22:00",
+              "output": "Study hours for tuesday: 09:00 - 22:00\nSaved study hours. Run plan to regenerate."
+            },
+            {
+              "input": "hours 2026-10-27 /start 14:00 /end 19:00",
+              "output": "Study hours for 2026-10-27: 14:00 - 19:00\nSaved study hours. Run plan to regenerate."
+            },
+            {
+              "input": "hours 2026-11-03",
+              "output": "Study hours for 2026-11-03: 09:00 - 22:00"
+            },
+            {
+              "input": "hours wednesday",
+              "output": "Study hours for wednesday: 08:00 - 22:00"
+            },
+            {
+              "input": "hours tuesday /start 09:15 /end 22:00",
+              "output": "Error: Study hours must use half-hour boundaries (:00 or :30)."
+            },
+            {
+              "input": "hours tuesday /start 22:00 /end 09:00",
+              "output": "Error: Study start must be before end on the same day."
+            },
+            {
+              "input": "hours tuesday",
+              "output": "Study hours for tuesday: 09:00 - 22:00"
+            },
+            {
+              "input": "exit",
+              "output": "Goodbye for now!",
+              "exitCode": 0
+            }
+          ]
+        },
+        {
+          "startup": "",
+          "steps": [
+            {
+              "input": "hours tuesday",
+              "output": "Study hours for tuesday: 09:00 - 22:00"
+            },
+            {
+              "input": "hours 2026-10-27",
+              "output": "Study hours for 2026-10-27: 14:00 - 19:00"
+            },
+            {
+              "input": "plan",
+              "output": "No tasks to schedule."
+            },
+            {
+              "input": "hours reset 2026-10-27",
+              "output": "Reset study hours for 2026-10-27.\nUsing recurring weekday hours: 09:00 - 22:00.\nRun plan to regenerate."
+            },
+            {
+              "input": "schedule today",
+              "output": "No current plan. Run plan to generate one."
+            },
+            {
+              "input": "hours reset tuesday",
+              "output": "Reset study hours for tuesday.\nUsing default hours: 08:00 - 22:00.\nRun plan to regenerate."
+            },
+            {
+              "input": "exit",
+              "output": "Goodbye for now!",
+              "exitCode": 0
+            }
+          ]
+        },
+        {
+          "startup": "",
+          "steps": [
+            {
+              "input": "hours 2026-10-27",
+              "output": "Study hours for 2026-10-27: 08:00 - 22:00"
+            },
+            {
+              "input": "exit",
+              "output": "Goodbye for now!",
+              "exitCode": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "UI-014", "aim": "Commitment edits preserve IDs, reject invalid replacements and survive restart",
+      "status": "active", "setup": "Empty store; weekly events with adjacent and conflicting edits",
       "sessions": [
         { "startup": "", "steps": [
-          { "input": "hours tuesday", "output": "Study hours for tuesday: 08:00 - 22:00" },
-          { "input": "hours tuesday /start 09:00 /end 22:00", "output": "Study hours for tuesday: 09:00 - 22:00\nSaved study hours. Run plan to regenerate." },
-          { "input": "hours 2026-10-27 /start 14:00 /end 19:00", "output": "Study hours for 2026-10-27: 14:00 - 19:00\nSaved study hours. Run plan to regenerate." },
-          { "input": "hours 2026-11-03", "output": "Study hours for 2026-11-03: 09:00 - 22:00" },
-          { "input": "hours wednesday", "output": "Study hours for wednesday: 08:00 - 22:00" },
-          { "input": "hours tuesday /start 09:15 /end 22:00", "output": "Error: Study hours must use half-hour boundaries (:00 or :30)." },
-          { "input": "hours tuesday /start 22:00 /end 09:00", "output": "Error: Study start must be before end on the same day." },
-          { "input": "hours tuesday", "output": "Study hours for tuesday: 09:00 - 22:00" },
-          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
-        ] },
-        { "startup": "", "steps": [
-          { "input": "hours tuesday", "output": "Study hours for tuesday: 09:00 - 22:00" },
-          { "input": "hours 2026-10-27", "output": "Study hours for 2026-10-27: 14:00 - 19:00" },
+          { "input": "commitment add n/Lecture day/MON start/1000 d/60", "output": "Added C1: Lecture | Monday 10:00 - 11:00 (60 min)" },
+          { "input": "commitment add n/Lab day/MON start/1200 d/60", "output": "Added C2: Lab | Monday 12:00 - 13:00 (60 min)" },
+          { "input": "hours monday /start 14:00 /end 19:00", "output": "Study hours for monday: 14:00 - 19:00\nSaved study hours. Run plan to regenerate." },
           { "input": "plan", "output": "No tasks to schedule." },
-          { "input": "hours reset 2026-10-27", "output": "Reset study hours for 2026-10-27.\nUsing recurring weekday hours: 09:00 - 22:00.\nRun plan to regenerate." },
+          { "input": "commitment edit C1 n/新 lecture", "output": "Edited C1: 新 lecture | Monday 10:00 - 11:00 (60 min)" },
           { "input": "schedule today", "output": "No current plan. Run plan to generate one." },
-          { "input": "hours reset tuesday", "output": "Reset study hours for tuesday.\nUsing default hours: 08:00 - 22:00.\nRun plan to regenerate." },
+          { "input": "commitment edit C1 d/120", "output": "Edited C1: 新 lecture | Monday 10:00 - 12:00 (120 min)" },
+          { "input": "commitment edit C1 start/1100", "output": "Error: Commitment overlaps C2: Lab" },
+          { "input": "commitment edit C1", "output": "Error: Provide at least one commitment field to edit." },
+          { "input": "commitment edit C99 n/Missing", "output": "Error: Unknown commitment ID: C99" },
+          { "input": "commitment edit C1 start/2330", "output": "Error: Commitment must not continue past midnight." },
+          { "input": "commitment edit C1 d/30 n/Reordered", "output": "Error: Invalid command format or missing fields\nExpected: commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]" },
+          { "input": "commitment edit C1 day/SUN start/2330 d/30", "output": "Edited C1: 新 lecture | Sunday 23:30 - 24:00 (30 min)" },
+          { "input": "hours monday", "output": "Study hours for monday: 14:00 - 19:00" },
           { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
         ] },
         { "startup": "", "steps": [
-          { "input": "hours 2026-10-27", "output": "Study hours for 2026-10-27: 08:00 - 22:00" },
+          { "input": "commitment list", "output": "=== Recurring Weekly Commitments ===\n[Monday]\nC2. 12:00 - 13:00 | Lab\n\n[Sunday]\nC1. 23:30 - 24:00 | 新 lecture\n\nTotal: 2 recurring commitments across the week." },
+          { "input": "hours monday", "output": "Study hours for monday: 14:00 - 19:00" },
+          { "input": "commitment add n/New day/MON start/1000 d/60", "output": "Added C3: New | Monday 10:00 - 11:00 (60 min)" },
+          { "input": "commitment edit C1 n/新 lecture", "output": "Edited C1: 新 lecture | Sunday 23:30 - 24:00 (30 min)" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
+      "id": "UI-013", "aim": "Multiple conflicts are chronological and rejection preserves IDs and saved data",
+      "status": "active", "setup": "Empty store; add same-day commitments in reverse chronological order",
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "commitment add n/Seminar day/MON start/1100 d/60", "output": "Added C1: Seminar | Monday 11:00 - 12:00 (60 min)" },
+          { "input": "commitment add n/Lecture day/MON start/0900 d/60", "output": "Added C2: Lecture | Monday 09:00 - 10:00 (60 min)" },
+          { "input": "commitment add n/Workshop day/MON start/0900 d/180", "output": "Error: Commitment overlaps C2: Lecture; C1: Seminar" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "commitment list", "output": "=== Recurring Weekly Commitments ===\n[Monday]\nC2. 09:00 - 10:00 | Lecture\nC1. 11:00 - 12:00 | Seminar\n\nTotal: 2 recurring commitments across the week." },
+          { "input": "commitment add n/Gap day/MON start/1000 d/60", "output": "Added C3: Gap | Monday 10:00 - 11:00 (60 min)" },
           { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
         ] }
       ]

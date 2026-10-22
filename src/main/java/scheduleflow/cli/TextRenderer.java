@@ -65,6 +65,8 @@ public final class TextRenderer {
                 "hours DAY|YYYY-MM-DD /start HH:mm /end HH:mm - Set study hours.",
                 "hours DAY|YYYY-MM-DD - View effective study hours (full lowercase weekday).",
                 "hours reset DAY|YYYY-MM-DD - Restore inherited study hours.",
+                "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]"
+                        + " - Edit at least one field; saves and clears the plan. Run plan again.",
                 "plan - Generate or replace the study plan.",
                 "schedule today OR schedule YYYY-MM-DD - View a date in the current plan.",
                 "exit - Close the application."));
@@ -155,6 +157,24 @@ public final class TextRenderer {
                 + " " + TIME.format(commitment.start()) + " - " + formatCommitmentEnd(commitment)
                 + " (" + commitment.durationMinutes() + " min)");
     }
+
+    //@@author Darren50
+    /**
+     * Shows all saved fields after an edit, retaining the stable ID and displaying midnight as 24:00.
+     *
+     * @param commitment successfully saved replacement
+     * @return complete edit confirmation without a trailing newline
+     * @throws NullPointerException if commitment is null
+     */
+    public String commitmentEdited(Commitment commitment) {
+        Objects.requireNonNull(commitment, "commitment");
+        LOGGER.fine("Formatting commitment edit response");
+        return finish("Edited " + commitment.displayId() + ": " + commitment.name()
+                + " | " + formatWeekday(commitment.day())
+                + " " + TIME.format(commitment.start()) + " - " + formatCommitmentEnd(commitment)
+                + " (" + commitment.durationMinutes() + " min)");
+    }
+    //@@author ka-how
 
     /**
      * Formats the removed commitment.

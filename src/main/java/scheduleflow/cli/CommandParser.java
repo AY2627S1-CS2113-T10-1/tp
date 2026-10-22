@@ -29,6 +29,8 @@ public final class CommandParser {
     private static final String TASK_DELETE_USAGE = "task delete TNUMBER";
     private static final String COMMITMENT_ADD_USAGE = "commitment add n/NAME day/DAY start/HHmm d/MINUTES";
     private static final String COMMITMENT_DELETE_USAGE = "commitment delete CNUMBER";
+    private static final String COMMITMENT_EDIT_USAGE =
+            "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]";
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
     private static final String HOURS_USAGE = "hours DAY|YYYY-MM-DD [/start HH:mm /end HH:mm]"
             + " OR hours reset DAY|YYYY-MM-DD";
@@ -56,6 +58,17 @@ public final class CommandParser {
     private static final Pattern COMMITMENT_DELETE_PATTERN = Pattern.compile(
             "commitment +delete +C(?<id>" + POSITIVE_INT_TOKEN + ")");
     private static final Pattern SCHEDULE_PATTERN = Pattern.compile("schedule +(?<date>today|" + DATE_TOKEN + ")");
+    //@@author Darren50
+    /**
+     * Accepts any nonempty subset in the same field order as addition; the service rejects an empty edit.
+     */
+    private static final Pattern COMMITMENT_EDIT_PATTERN = Pattern.compile(
+            "commitment +edit +C(?<id>" + POSITIVE_INT_TOKEN + ")"
+                    + "(?: +n/(?<name>" + NAME_TOKEN + "))?"
+                    + "(?: +day/(?<day>MON|TUE|WED|THU|FRI|SAT|SUN))?"
+                    + "(?: +start/(?<time>" + TIME_TOKEN + "))?"
+                    + "(?: +d/(?<minutes>" + POSITIVE_INT_TOKEN + "))?");
+    //@@author ka-how
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("uuuu-MM-dd", Locale.ROOT)
             .withResolverStyle(ResolverStyle.STRICT);
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HHmm", Locale.ROOT)
@@ -97,6 +110,7 @@ public final class CommandParser {
                 case "task delete" -> new Command.DeleteTask(Integer.parseInt(
                         match(TASK_DELETE_PATTERN, input, usage).group("id")));
                 case "commitment add" -> parseAddCommitment(input);
+                case "commitment edit" -> parseEditCommitment(input);
                 case "commitment list" -> parseNoArguments(input, command, new Command.ListCommitments());
                 case "commitment delete" -> new Command.DeleteCommitment(Integer.parseInt(
                         match(COMMITMENT_DELETE_PATTERN, input, usage).group("id")));
@@ -139,6 +153,7 @@ public final class CommandParser {
             case "task add" -> TASK_ADD_USAGE;
             case "task delete" -> TASK_DELETE_USAGE;
             case "commitment add" -> COMMITMENT_ADD_USAGE;
+            case "commitment edit" -> COMMITMENT_EDIT_USAGE;
             case "commitment delete" -> COMMITMENT_DELETE_USAGE;
             case "schedule" -> SCHEDULE_USAGE;
             case "hours" -> HOURS_USAGE;
@@ -173,7 +188,16 @@ public final class CommandParser {
      */
     private Command.AddCommitment parseAddCommitment(String input) throws ParseException {
         Matcher fields = match(COMMITMENT_ADD_PATTERN, input, COMMITMENT_ADD_USAGE);
-        DayOfWeek day = switch (fields.group("day")) {
+        DayOfWeek day = parseWeekday(fields.group("day"), COMMITMENT_ADD_USAGE);
+        return new Command.AddCommitment(fields.group("name").strip(), day,
+                LocalTime.parse(fields.group("time"), TIME_FORMAT), Integer.parseInt(fields.group("minutes")));
+    }
+
+    /**
+     * Maps the existing strict weekday vocabulary for both addition and editing.
+     */
+    private DayOfWeek parseWeekday(String token, String usage) throws ParseException {
+        return switch (token) {
             case "MON" -> DayOfWeek.MONDAY;
             case "TUE" -> DayOfWeek.TUESDAY;
             case "WED" -> DayOfWeek.WEDNESDAY;
@@ -181,11 +205,27 @@ public final class CommandParser {
             case "FRI" -> DayOfWeek.FRIDAY;
             case "SAT" -> DayOfWeek.SATURDAY;
             case "SUN" -> DayOfWeek.SUNDAY;
-            default -> throw new ParseException("Invalid weekday", COMMITMENT_ADD_USAGE);
+            default -> throw new ParseException("Invalid weekday", usage);
         };
-        return new Command.AddCommitment(fields.group("name").strip(), day,
-                LocalTime.parse(fields.group("time"), TIME_FORMAT), Integer.parseInt(fields.group("minutes")));
     }
+
+    //@@author Darren50
+    /**
+     * Preserves omission explicitly so editing one field never resets the others.
+     * Uses the existing strict numeric/time rules without duplicating domain validation.
+     */
+    private Command.EditCommitment parseEditCommitment(String input) throws ParseException {
+        Matcher fields = match(COMMITMENT_EDIT_PATTERN, input, COMMITMENT_EDIT_USAGE);
+        String name = fields.group("name");
+        String day = fields.group("day");
+        String time = fields.group("time");
+        String minutes = fields.group("minutes");
+        return new Command.EditCommitment(Integer.parseInt(fields.group("id")), name == null ? null : name.strip(),
+                day == null ? null : parseWeekday(day, COMMITMENT_EDIT_USAGE),
+                time == null ? null : LocalTime.parse(time, TIME_FORMAT),
+                minutes == null ? null : Integer.valueOf(minutes));
+    }
+    //@@author ka-how
 
     /**
      * Keeps {@code today} unresolved or parses an explicit date without consulting a clock.

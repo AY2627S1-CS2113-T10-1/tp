@@ -108,6 +108,7 @@ public final class CommandDispatcher {
             case Command.ListTasks ignored -> renderer.tasks(tasks.list(state.snapshot()));
             case Command.DeleteTask delete -> deleteTask(delete.id(), state);
             case Command.AddCommitment add -> addCommitment(add, state);
+            case Command.EditCommitment edit -> editCommitment(edit, state);
             case Command.ListCommitments ignored -> renderer.commitments(commitments.list(state.snapshot()));
             case Command.DeleteCommitment delete -> deleteCommitment(delete.id(), state);
             case Command.GeneratePlan ignored -> generatePlan(state, now);
@@ -176,6 +177,21 @@ public final class CommandDispatcher {
         saveAndCommit(candidate, state);
         return renderer.commitmentAdded(added);
     }
+
+    //@@author Darren50
+    /**
+     * Saves the complete edit before publishing it, invalidating the plan or reporting success.
+     */
+    private String editCommitment(Command.EditCommitment command, AppState state) throws StorageException {
+        Snapshot candidate = commitments.edit(state.snapshot(), command.id(), command.name(), command.day(),
+                command.start(), command.minutes());
+        Commitment edited = candidate.commitments().stream()
+                .filter(commitment -> commitment.id() == command.id()).findFirst()
+                .orElseThrow(() -> new IllegalStateException("Validated commitment edit is missing its target."));
+        saveAndCommit(candidate, state);
+        return renderer.commitmentEdited(edited);
+    }
+    //@@author ka-how
 
     /**
      * Retains the validated original series so deletion output includes its stable ID and name.
