@@ -331,8 +331,15 @@ through the existing planner and projection APIs before formatting.
 `CommitmentService.add` creates an immutable candidate snapshot. It reuses
 `Commitment` for name, weekday, duration and interval validation, checks overlaps
 against the full weekly intervals (including outside study hours), and reports
-the conflicting commitment's ID and name. Adjacent intervals and duplicate
+every conflicting commitment's ID and name in start-time order, with numeric ID
+as a tie-breaker. The private overlap check collects matches before rejecting;
+it never reorders the source snapshot. Single-conflict wording is unchanged,
+and multiple conflicts are separated by semicolons. Adjacent intervals and duplicate
 names at nonoverlapping times are allowed.
+
+Regression tests verify multi-conflict ordering, adjacency and other-day exclusion,
+full-day intervals, duplicate names, unchanged snapshots and unconsumed retry IDs.
+UI-013 checks the same rejection through the packaged application and a saved restart.
 
 The service uses the stored next commitment ID, preserves task records and their
 counter, and increments only the candidate's commitment counter. A next ID of
@@ -373,8 +380,10 @@ is not reused. These direct service checks do not certify CLI restart or dispatc
 
 Commitment-owned APIs document parameters, results and failure contracts.
 Services reject null snapshots with a named `NullPointerException`; invalid
-fields, overlaps, exhausted IDs and invalid deletion IDs retain their existing
-`ValidationException` messages. These runtime checks remain active without assertions.
+fields, overlaps, exhausted IDs and invalid deletion IDs raise
+`ValidationException`. The model distinguishes a nonpositive ID, missing weekday
+and missing start time, in that validation order. Name/duration and interval
+validation follow those checks. These runtime checks remain active without assertions.
 The commitment service constructor performs no logging or I/O. The model
 delegates name and duration checks to the shared validators, which own their
 separate opt-in diagnostics; it installs no logging handlers.
@@ -527,7 +536,7 @@ restores logger settings in `finally` and uses `@Isolated` to protect other
 tests. It checks severity classification, retained exceptions and filtering at
 the `WARNING` threshold. `MainTest` checks quiet default launches for recoverable
 and fatal errors, and an explicit warning-only file configuration. Existing
-exact-output tests and all twelve active packaged scenarios verify normal
+exact-output tests and all maintained active packaged scenarios verify normal
 console behaviour. The User Guide's command and error behaviour remains valid.
 
 ### Supplied contract and Save-module differences

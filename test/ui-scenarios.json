@@ -2,6 +2,23 @@
   "version": 1,
   "cases": [
     {
+      "id": "UI-013", "aim": "Multiple conflicts are chronological and rejection preserves IDs and saved data",
+      "status": "active", "setup": "Empty store; add same-day commitments in reverse chronological order",
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "commitment add n/Seminar day/MON start/1100 d/60", "output": "Added C1: Seminar | Monday 11:00 - 12:00 (60 min)" },
+          { "input": "commitment add n/Lecture day/MON start/0900 d/60", "output": "Added C2: Lecture | Monday 09:00 - 10:00 (60 min)" },
+          { "input": "commitment add n/Workshop day/MON start/0900 d/180", "output": "Error: Commitment overlaps C2: Lecture; C1: Seminar" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "commitment list", "output": "=== Recurring Weekly Commitments ===\n[Monday]\nC2. 09:00 - 10:00 | Lecture\nC1. 11:00 - 12:00 | Seminar\n\nTotal: 2 recurring commitments across the week." },
+          { "input": "commitment add n/Gap day/MON start/1000 d/60", "output": "Added C3: Gap | Monday 10:00 - 11:00 (60 min)" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
       "requiredComponents": ["Main.main","App.run","ConsoleUi.prompt","ConsoleUi.readLine","ConsoleUi.write","FileStorage.load","StateCodec.decode","CommandParser.parse","CommandDispatcher.execute","TaskService.list","CommitmentService.list","TextRenderer.tasks","TextRenderer.commitments","TextRenderer.noPlan","TextRenderer.exit"],
       "id": "UI-001", "aim": "First launch has empty lists and no plan",
       "status": "active", "setup": "No data file; Printing and Save implemented",
