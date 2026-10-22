@@ -27,8 +27,14 @@ public record Commitment(int id, String name, DayOfWeek day, LocalTime start, in
      * @throws ValidationException if any field or the same-day interval is invalid
      */
     public Commitment {
-        if (id <= 0 || day == null || start == null) {
-            throw new ValidationException("Commitment requires a positive ID, weekday and start time.");
+        if (id <= 0) {
+            throw new ValidationException("Commitment ID must be positive.");
+        }
+        if (day == null) {
+            throw new ValidationException("Commitment weekday must be provided.");
+        }
+        if (start == null) {
+            throw new ValidationException("Commitment start time must be provided.");
         }
         name = InputRules.normalizeName(name);
         InputRules.requireDuration(durationMinutes);

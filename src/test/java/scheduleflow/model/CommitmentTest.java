@@ -68,6 +68,16 @@ class CommitmentTest {
 
     //@@author Darren50
     @Test
+    void constructor_missingIdentityOrTime_identifiesInvalidField() {
+        assertEquals("Commitment ID must be positive.", assertThrows(ValidationException.class,
+                () -> new Commitment(0, "Lecture", null, null, 30)).getMessage());
+        assertEquals("Commitment weekday must be provided.", assertThrows(ValidationException.class,
+                () -> new Commitment(1, "Lecture", null, null, 30)).getMessage());
+        assertEquals("Commitment start time must be provided.", assertThrows(ValidationException.class,
+                () -> new Commitment(1, "Lecture", DayOfWeek.MONDAY, null, 30)).getMessage());
+    }
+
+    @Test
     void overlaps_nullSeries_rejectsWithNamedPrecondition() {
         NullPointerException exception = assertThrows(NullPointerException.class,
                 () -> monday(1, 10, 0, 30).overlaps(null));

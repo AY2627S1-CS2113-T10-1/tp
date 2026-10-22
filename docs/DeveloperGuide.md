@@ -60,7 +60,11 @@ conventions and CS2113 code-quality guidelines used by this project.
 
 ### Command transport
 
+<<<<<<< HEAD
 The sealed `Command` interface contains fourteen supported command records.
+=======
+The sealed `Command` interface contains the twelve supported command records.
+>>>>>>> origin/master
 Records that only carry values use Java's generated canonical constructors;
 redundant empty compact constructors have been removed. Records with required
 reference fields retain their null checks. Parsing and the services still own
@@ -371,8 +375,15 @@ through the existing planner and projection APIs before formatting.
 `CommitmentService.add` creates an immutable candidate snapshot. It reuses
 `Commitment` for name, weekday, duration and interval validation, checks overlaps
 against the full weekly intervals (including outside study hours), and reports
-the conflicting commitment's ID and name. Adjacent intervals and duplicate
+every conflicting commitment's ID and name in start-time order, with numeric ID
+as a tie-breaker. The private overlap check collects matches before rejecting;
+it never reorders the source snapshot. Single-conflict wording is unchanged,
+and multiple conflicts are separated by semicolons. Adjacent intervals and duplicate
 names at nonoverlapping times are allowed.
+
+Regression tests verify multi-conflict ordering, adjacency and other-day exclusion,
+full-day intervals, duplicate names, unchanged snapshots and unconsumed retry IDs.
+UI-013 checks the same rejection through the packaged application and a saved restart.
 
 The service uses the stored next commitment ID, preserves task records and their
 counter, and increments only the candidate's commitment counter. A next ID of
@@ -387,6 +398,33 @@ ID exhaustion, unchanged source data and discarded-candidate retries. A fixed-da
 planner integration test checks that an added commitment blocks study slots.
 Run `.\gradlew.bat test --tests scheduleflow.commitment.CommitmentServiceTest`.
 The dispatcher and console tests also exercise these operations.
+
+### Commitment editing (issue #42)
+
+`CommitmentService.edit` accepts an existing numeric ID and nullable replacement
+fields: name, weekday, start and boxed duration. Null means omitted; a blank name
+is not an omission. It rejects empty edits and unknown/nonpositive IDs, resolves
+omissions from the original record, and constructs one validated replacement.
+The existing model and overlap helper remain the validation authorities. Only
+the target ID is excluded from conflict checks. Stored position, other records,
+tasks and both counters are preserved, even when the next ID is exhausted.
+No delete/add intermediate state or storage-format change is required.
+
+`Command.EditCommitment` transports partial values. The parser accepts subsets
+in `n/`, `day/`, `start/`, `d/` order with the existing strict weekday/time/integer
+rules. It rejects repeated, reordered and unknown fields. Domain validation,
+including empty-edit rejection, remains in the service. The dispatcher resolves
+the replacement before the existing save-and-commit transaction and reports it
+through `TextRenderer.commitmentEdited`. Even identical-value valid edits save
+and invalidate the temporary plan, consistently with successful mutations.
+
+Tests cover all fifteen nonempty field subsets, invalid syntax, immutable source
+snapshots, self-exclusion, multi-conflict ordering, adjacent and midnight bounds,
+counter exhaustion, rollback/retry and changed allocation after regeneration.
+UI-014 verifies the packaged command, Unicode edits, rejection recovery and restart.
+New significant methods have scoped Darren50 author markers; existing shared CLI
+methods retain their attribution. Changes outside the commitment domain are limited
+to this command's transport, integration, output and acceptance tests.
 
 ### Commitment deletion and listing
 
@@ -413,8 +451,10 @@ is not reused. These direct service checks do not certify CLI restart or dispatc
 
 Commitment-owned APIs document parameters, results and failure contracts.
 Services reject null snapshots with a named `NullPointerException`; invalid
-fields, overlaps, exhausted IDs and invalid deletion IDs retain their existing
-`ValidationException` messages. These runtime checks remain active without assertions.
+fields, overlaps, exhausted IDs and invalid deletion IDs raise
+`ValidationException`. The model distinguishes a nonpositive ID, missing weekday
+and missing start time, in that validation order. Name/duration and interval
+validation follow those checks. These runtime checks remain active without assertions.
 The commitment service constructor performs no logging or I/O. The model
 delegates name and duration checks to the shared validators, which own their
 separate opt-in diagnostics; it installs no logging handlers.
@@ -467,7 +507,7 @@ Schedule requests project that frozen plan; absence takes precedence over date
 validation. Exceptions from domain services remain their owners' validation.
 
 `CommandDispatcherTest` uses fixed clocks, a counting clock and fake storage
-to verify all routes, all four transaction paths and retries, save ordering,
+to verify all routes, mutation transaction paths and retries, save ordering,
 deadline boundaries, numeric IDs, partial/blocked plans, cutoff precision,
 range validation, zone-aware today and frozen/replaced plans.
 
@@ -567,7 +607,11 @@ restores logger settings in `finally` and uses `@Isolated` to protect other
 tests. It checks severity classification, retained exceptions and filtering at
 the `WARNING` threshold. `MainTest` checks quiet default launches for recoverable
 and fatal errors, and an explicit warning-only file configuration. Existing
+<<<<<<< HEAD
 exact-output tests and all thirteen active packaged scenarios verify normal
+=======
+exact-output tests and all maintained active packaged scenarios verify normal
+>>>>>>> origin/master
 console behaviour. The User Guide's command and error behaviour remains valid.
 
 ### Supplied contract and Save-module differences

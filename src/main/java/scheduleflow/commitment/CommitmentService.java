@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
@@ -62,11 +63,7 @@ public final class CommitmentService {
         }
         Commitment added = new Commitment(state.nextCommitmentId(), name, day, start, minutes);
         LOGGER.fine("Commitment fields validated; checking weekly overlaps");
-        for (Commitment existing : state.commitments()) {
-            if (added.overlaps(existing)) {
-                throw new ValidationException("Commitment overlaps " + existing.displayId() + ": " + existing.name());
-            }
-        }
+        rejectOverlaps(added, state.commitments());
         List<Commitment> commitments = new ArrayList<>(state.commitments());
         LOGGER.fine("Weekly overlaps checked; creating addition candidate");
         commitments.add(added);
@@ -79,6 +76,83 @@ public final class CommitmentService {
                 && candidate.nextCommitmentId() == state.nextCommitmentId() + 1
                 : "Addition must preserve tasks and advance only the commitment counter";
         LOGGER.fine("Commitment addition candidate created; not yet saved or published");
+        return candidate;
+    }
+
+    /**
+     * Reports every conflicting series in chronological order without changing stored order.
+     * Retains the existing error format when only one series conflicts.
+     *
+     * @param added validated proposed series
+     * @param existing stored series to check, including intervals outside study hours
+     * @throws ValidationException if any stored series overlaps the proposed interval
+     */
+    private void rejectOverlaps(Commitment added, List<Commitment> existing) {
+        List<Commitment> conflicts = existing.stream().filter(added::overlaps)
+                .sorted(Comparator.comparing(Commitment::start).thenComparingInt(Commitment::id)).toList();
+        if (conflicts.isEmpty()) {
+            return;
+        }
+        String details = conflicts.stream()
+                .map(commitment -> commitment.displayId() + ": " + commitment.name())
+                .collect(Collectors.joining("; "));
+        throw new ValidationException("Commitment overlaps " + details);
+    }
+
+    /**
+     * Replaces selected fields of a weekly series while retaining its ID and stored position.
+     * Null fields mean omitted values; an explicitly blank name remains invalid.
+     * Even an identical valid edit produces a candidate for the normal save/invalidation transaction.
+     *
+     * @param state immutable source snapshot
+     * @param commitmentId identifier of the series to edit
+     * @param name replacement name, or null to preserve it
+     * @param day replacement weekday, or null to preserve it
+     * @param start replacement start, or null to preserve it
+     * @param minutes replacement duration, or null to preserve it
+     * @return validated candidate preserving tasks, other series and both counters
+     * @throws NullPointerException if state is null
+     * @throws ValidationException if no fields are supplied, the ID is unknown or the result is invalid
+     */
+    public Snapshot edit(Snapshot state, int commitmentId, String name, DayOfWeek day,
+            LocalTime start, Integer minutes) {
+        Objects.requireNonNull(state, "state");
+        LOGGER.fine("Starting commitment edit");
+        try {
+            if (commitmentId <= 0) {
+                throw new ValidationException("Commitment ID must be positive.");
+            }
+            if (name == null && day == null && start == null && minutes == null) {
+                throw new ValidationException("Provide at least one commitment field to edit.");
+            }
+            return createEdit(state, commitmentId, name, day, start, minutes);
+        } catch (ValidationException exception) {
+            LOGGER.fine("Commitment edit rejected; source snapshot unchanged");
+            throw exception;
+        }
+    }
+
+    /**
+     * Resolves omitted fields and validates the complete replacement before creating a candidate.
+     * Excludes only the target ID from overlap checks, including when the time stays unchanged.
+     */
+    private Snapshot createEdit(Snapshot state, int id, String name, DayOfWeek day,
+            LocalTime start, Integer minutes) {
+        Commitment original = state.commitments().stream().filter(commitment -> commitment.id() == id)
+                .findFirst().orElseThrow(() -> new ValidationException("Unknown commitment ID: C" + id));
+        Commitment edited = new Commitment(id, name == null ? original.name() : name,
+                day == null ? original.day() : day, start == null ? original.start() : start,
+                minutes == null ? original.durationMinutes() : minutes);
+        LOGGER.fine("Replacement fields validated; checking other weekly series");
+        rejectOverlaps(edited, state.commitments().stream().filter(commitment -> commitment.id() != id).toList());
+        List<Commitment> replacements = new ArrayList<>(state.commitments());
+        replacements.set(replacements.indexOf(original), edited);
+        Snapshot candidate = new Snapshot(state.tasks(), replacements, state.nextTaskId(), state.nextCommitmentId());
+        assert candidate.commitments().size() == state.commitments().size()
+                && candidate.nextCommitmentId() == state.nextCommitmentId()
+                && candidate.nextTaskId() == state.nextTaskId() && candidate.tasks().equals(state.tasks())
+                : "Edit must preserve record counts, tasks and both counters";
+        LOGGER.fine("Commitment edit candidate created; not yet saved or published");
         return candidate;
     }
 

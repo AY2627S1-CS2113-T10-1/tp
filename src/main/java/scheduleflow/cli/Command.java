@@ -88,6 +88,15 @@ public sealed interface Command {
         }
     }
 
+    //@@author Darren50
+    /**
+     * Carries a partial weekly-series edit; null fields are omitted rather than cleared.
+     * The service validates the ID, presence of changes and resulting complete interval.
+     */
+    record EditCommitment(int id, String name, DayOfWeek day, LocalTime start, Integer minutes) implements Command {
+    }
+    //@@author ka-how
+
     /**
      * Requests all recurring weekly commitments.
      */

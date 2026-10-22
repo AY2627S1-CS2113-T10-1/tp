@@ -41,6 +41,18 @@ class TextRendererTest {
     private static final LocalDateTime NOW = DATE.atTime(7, 0);
     private final TextRenderer renderer = new TextRenderer();
 
+    //@@author Darren50
+    @Test
+    void commitmentEdited_reportsStoredFieldsAndMidnight() {
+        assertOutput("Edited C12: 新 lecture | Sunday 23:30 - 24:00 (30 min)", renderer.commitmentEdited(
+                new Commitment(12, "新 lecture", DayOfWeek.SUNDAY, LocalTime.of(23, 30), 30)));
+        assertOutput("Edited C1: Full day | Monday 00:00 - 24:00 (1440 min)", renderer.commitmentEdited(
+                new Commitment(1, "Full day", DayOfWeek.MONDAY, LocalTime.MIDNIGHT, 1440)));
+        assertEquals("commitment", assertThrows(NullPointerException.class,
+                () -> renderer.commitmentEdited(null)).getMessage());
+    }
+    //@@author ka-how
+
     @Test
     void publicMethods_nullInputs_rejectWithArgumentNames() {
         assertEquals("task", assertThrows(NullPointerException.class, () -> renderer.taskAdded(null)).getMessage());
@@ -81,9 +93,14 @@ class TextRendererTest {
         assertTrue(output.startsWith("=== ScheduleFlow Command Help ===\n"));
         List<String> formats = List.of("help", "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES", "task list",
                 "task delete TNUMBER", "commitment add n/NAME day/DAY start/HHmm d/MINUTES", "commitment list",
+<<<<<<< HEAD
                 "commitment delete CNUMBER", "hours DAY|YYYY-MM-DD /start HH:mm /end HH:mm",
                 "hours DAY|YYYY-MM-DD", "hours reset DAY|YYYY-MM-DD", "plan",
                 "schedule today OR schedule YYYY-MM-DD", "exit");
+=======
+                "commitment delete CNUMBER", "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]",
+                "plan", "schedule today OR schedule YYYY-MM-DD", "exit");
+>>>>>>> origin/master
         List<String> lines = output.lines().skip(1).toList();
         assertEquals(formats.size(), lines.size());
         for (int i = 0; i < formats.size(); i++) {
