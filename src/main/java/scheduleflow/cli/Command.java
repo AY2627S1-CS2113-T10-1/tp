@@ -72,6 +72,16 @@ public sealed interface Command {
     record DeleteTask(int id) implements Command {
     }
 
+    // @@author ernestgoh-god
+    /** Carries reported whole minutes of completed task work. */
+    record RecordTaskWork(int id, int doneMinutes) implements Command {
+    }
+
+    /** Carries a reported session duration and its completed-work percentage. */
+    record RecordTaskSession(int id, int sessionMinutes, int percent) implements Command {
+    }
+    // @@author ka-how
+
     /**
      * Carries parsed weekly commitment fields without overlap validation.
      */

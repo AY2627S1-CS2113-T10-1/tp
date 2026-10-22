@@ -109,6 +109,12 @@ Examples below are independent unless a sequence is explicitly described. Use ex
 
 ## Tasks
 
+> **Planned issue #40 command:** The parser recognizes `task progress T1 done/30`
+> and `task progress T1 session/60 percent/50`, but the application does not
+> execute them yet. Use the existing task commands until progress dispatch and
+> its response are integrated. A percentage describes work completed during the
+> reported session; it is not a percentage of the whole task.
+
 ### Recording duration (tasks and commitments)
 
 Enter duration when adding a task or commitment using `d/MINUTES`; there is no

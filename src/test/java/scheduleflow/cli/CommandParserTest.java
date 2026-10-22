@@ -25,6 +25,32 @@ class CommandParserTest {
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
     private final CommandParser parser = new CommandParser();
 
+    // @@author ernestgoh-god
+    @Test
+    void parse_taskProgress_acceptsBothReportedWorkForms() throws ParseException {
+        assertEquals(new Command.RecordTaskWork(1, 30), parser.parse("task progress T1 done/30"));
+        assertEquals(new Command.RecordTaskWork(2, 0), parser.parse(" task  progress  T2  done/0 "));
+        assertEquals(new Command.RecordTaskSession(3, 60, 50),
+                parser.parse("task progress T3 session/60 percent/50"));
+        assertEquals(new Command.RecordTaskSession(4, 1, 100),
+                parser.parse("task progress T4 session/1 percent/100"));
+    }
+
+    @Test
+    void parse_taskProgress_rejectsMixedMalformedAndOverflowingInput() {
+        String usage = "task progress TNUMBER done/MINUTES OR task progress TNUMBER session/MINUTES percent/PERCENT";
+        for (String input : List.of("task progress", "task progress T0 done/30", "task progress T01 done/30",
+                "task progress T1 done/-1", "task progress T1 done/01", "task progress T1 done/2147483648",
+                "task progress T2147483648 done/1", "task progress T1 session/0 percent/50",
+                "task progress T1 session/60 percent/-1", "task progress T1 session/60 percent/101",
+                "task progress T1 session/60", "task progress T1 percent/50 session/60",
+                "task progress T1 done/30 percent/50", "task progress T1 session/60 percent/50 done/30",
+                "task progress T1 done/30 done/30", "task progress T1 done/30 extra")) {
+            assertEquals(usage, assertThrows(ParseException.class, () -> parser.parse(input), input).usage());
+        }
+    }
+    // @@author ka-how
+
     // @@author GabrielYuSP
     @Test
     void parse_hoursCommands_supportsWeekdaysDatesAndResets() throws ParseException {

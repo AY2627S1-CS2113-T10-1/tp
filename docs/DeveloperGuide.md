@@ -296,6 +296,19 @@ rules are required by the root `AGENTS.md` and do not change command behaviour.
 
 ### Commands and parsing
 
+Issue #40 parser preparation recognizes `task progress TNUMBER done/MINUTES`
+and `task progress TNUMBER session/MINUTES percent/PERCENT`. It returns
+`RecordTaskWork` or `RecordTaskSession` transport values without reading state;
+the task service will enforce remaining-work limits and apply percentage
+rounding. The command is not dispatched yet because the progress service is
+still on an unmerged teammate branch. `TextRenderer.taskProgressUpdated` is a
+throwing Printing skeleton and is not called by the application. The new
+production parser blocks and parser tests carry scoped Ernest author tags;
+existing Printing blocks retain Ka How's tag. The reserved renderer method is
+tagged to the commit author until Ka How implements its real output. Progress
+acceptance and rollback tests remain pending integration with the task service
+and renderer.
+
 `CommandParser.parse` implements all command formats in the User Guide and
 returns the existing nested `Command` records. The parser has no clock, storage
 or application-state dependency. `schedule today` produces `Command.ScheduleToday`;
