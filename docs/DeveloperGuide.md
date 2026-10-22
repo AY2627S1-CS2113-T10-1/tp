@@ -60,7 +60,7 @@ conventions and CS2113 code-quality guidelines used by this project.
 
 ### Command transport
 
-The sealed `Command` interface contains the eleven supported command records.
+The sealed `Command` interface contains the twelve supported command records.
 Records that only carry values use Java's generated canonical constructors;
 redundant empty compact constructors have been removed. Records with required
 reference fields retain their null checks. Parsing and the services still own
@@ -355,6 +355,33 @@ planner integration test checks that an added commitment blocks study slots.
 Run `.\gradlew.bat test --tests scheduleflow.commitment.CommitmentServiceTest`.
 The dispatcher and console tests also exercise these operations.
 
+### Commitment editing (issue #42)
+
+`CommitmentService.edit` accepts an existing numeric ID and nullable replacement
+fields: name, weekday, start and boxed duration. Null means omitted; a blank name
+is not an omission. It rejects empty edits and unknown/nonpositive IDs, resolves
+omissions from the original record, and constructs one validated replacement.
+The existing model and overlap helper remain the validation authorities. Only
+the target ID is excluded from conflict checks. Stored position, other records,
+tasks and both counters are preserved, even when the next ID is exhausted.
+No delete/add intermediate state or storage-format change is required.
+
+`Command.EditCommitment` transports partial values. The parser accepts subsets
+in `n/`, `day/`, `start/`, `d/` order with the existing strict weekday/time/integer
+rules. It rejects repeated, reordered and unknown fields. Domain validation,
+including empty-edit rejection, remains in the service. The dispatcher resolves
+the replacement before the existing save-and-commit transaction and reports it
+through `TextRenderer.commitmentEdited`. Even identical-value valid edits save
+and invalidate the temporary plan, consistently with successful mutations.
+
+Tests cover all fifteen nonempty field subsets, invalid syntax, immutable source
+snapshots, self-exclusion, multi-conflict ordering, adjacent and midnight bounds,
+counter exhaustion, rollback/retry and changed allocation after regeneration.
+UI-014 verifies the packaged command, Unicode edits, rejection recovery and restart.
+New significant methods have scoped Darren50 author markers; existing shared CLI
+methods retain their attribution. Changes outside the commitment domain are limited
+to this command's transport, integration, output and acceptance tests.
+
 ### Commitment deletion and listing
 
 `CommitmentService.delete` removes an entire weekly series by its stable numeric
@@ -436,7 +463,7 @@ Schedule requests project that frozen plan; absence takes precedence over date
 validation. Exceptions from domain services remain their owners' validation.
 
 `CommandDispatcherTest` uses fixed clocks, a counting clock and fake storage
-to verify all routes, all four transaction paths and retries, save ordering,
+to verify all routes, mutation transaction paths and retries, save ordering,
 deadline boundaries, numeric IDs, partial/blocked plans, cutoff precision,
 range validation, zone-aware today and frozen/replaced plans.
 

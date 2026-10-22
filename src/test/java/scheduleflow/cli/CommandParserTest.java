@@ -25,6 +25,37 @@ class CommandParserTest {
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
     private final CommandParser parser = new CommandParser();
 
+    //@@author Darren50
+    @Test
+    void parse_commitmentEdit_allFieldSubsetsPreserveOmission() throws ParseException {
+        for (int mask = 1; mask < 16; mask++) {
+            String name = (mask & 1) == 0 ? null : "新  lecture";
+            DayOfWeek day = (mask & 2) == 0 ? null : DayOfWeek.SUNDAY;
+            LocalTime start = (mask & 4) == 0 ? null : LocalTime.of(23, 30);
+            Integer minutes = (mask & 8) == 0 ? null : 30;
+            String input = "  commitment  edit C12" + (name == null ? "" : " n/  " + name)
+                    + (day == null ? "" : " day/SUN") + (start == null ? "" : " start/2330")
+                    + (minutes == null ? "" : " d/30") + "  ";
+            assertEquals(new Command.EditCommitment(12, name, day, start, minutes), parser.parse(input));
+        }
+        assertEquals(new Command.EditCommitment(1, "", null, null, null), parser.parse("commitment edit C1 n/"));
+        assertEquals(new Command.EditCommitment(1, null, null, null, null), parser.parse("commitment edit C1"));
+    }
+
+    @Test
+    void parse_commitmentEdit_rejectsMalformedAndDuplicateFieldsWithUsage() {
+        String usage = "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]";
+        for (String suffix : List.of("", "1 n/A", "T1 n/A", "C01 n/A", "C0 n/A", "C2147483648 n/A",
+                "C1 n/A n/B", "C1 day/MON day/TUE", "C1 start/1000 start/1100", "C1 d/30 d/60",
+                "C1 d/30 n/A", "C1 day/MONDAY", "C1 day/mon", "C1 on/2026-10-26", "C1 start/2400",
+                "C1 start/1260", "C1 start/930", "C1 d/0", "C1 d/-30", "C1 d/030", "C1 d/2147483648",
+                "C1 d/30 extra", "C1 n/A/foo", "C1 day/", "C1 start/", "C1 d/", "C1 n/A\tB")) {
+            assertEquals(usage, assertThrows(ParseException.class,
+                    () -> parser.parse("commitment edit " + suffix), suffix).usage());
+        }
+    }
+    //@@author ka-how
+
     @Test
     void parse_nullLine_rejectsWithArgumentName() {
         assertEquals("line", assertThrows(NullPointerException.class, () -> parser.parse(null)).getMessage());

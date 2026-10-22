@@ -21,6 +21,7 @@ Study hours are **08:00–22:00 every day**, including weekends. Work is schedul
   - [Deleting a task](#deleting-a-task)
 - [Recurring commitments](#recurring-commitments)
   - [Adding a commitment](#adding-a-commitment)
+  - [Editing a commitment](#editing-a-commitment)
   - [Listing commitments](#listing-commitments)
   - [Deleting a commitment](#deleting-a-commitment)
 - [Study plans](#study-plans)
@@ -78,7 +79,7 @@ Enter each command on one line. In syntax examples, uppercase placeholders such 
 | Input | Rule | Example |
 | --- | --- | --- |
 | Commands and prefixes | Case sensitive and lowercase | `task add`, `n/`, `due/`, `d/` |
-| Fields | All shown fields are required and must appear in the stated order | `n/NAME due/DATE_TIME d/MINUTES` |
+| Fields | Fields must appear in the stated order; bracketed edit fields are optional | `n/NAME due/DATE_TIME d/MINUTES` |
 | Names | Nonblank; may contain spaces and Unicode, but no `/`, tabs, newlines, or other control characters | `CS2113 draft` |
 | Dates | Real dates in `YYYY-MM-DD` format; years `0001`–`9999` | `2026-10-06` |
 | Times | Four digits in 24-hour `HHmm` format, from `0000` to `2359` | `0930`, `1800` |
@@ -93,7 +94,7 @@ Use one or more ordinary spaces between fields. Outer whitespace is trimmed, and
 
 IDs identify records, not list positions. Bare numbers such as `1`, zero-padded IDs such as `T01`, and IDs with the wrong prefix are rejected. Task and commitment IDs have separate sequences starting at `T1` and `C1`. Deleted IDs are never reused, including after a restart; a failed add does not consume an ID. Numeric inputs must fit within a signed 32-bit integer, and an exhausted ID sequence rejects further additions.
 
-Missing, repeated, unknown, reordered, or extra fields are rejected. Commands such as `help`, `task list`, `plan`, and `exit` accept no arguments. Deletion and schedule commands also reject trailing input.
+Missing required fields, repeated, unknown, reordered, or extra fields are rejected. Commands such as `help`, `task list`, `plan`, and `exit` accept no arguments. Deletion and schedule commands also reject trailing input.
 
 Impossible dates such as `2026-02-30` are rejected rather than adjusted to another
 date. Parsing keeps `schedule today` as a request for today's schedule; its date
@@ -195,7 +196,7 @@ The ID must belong to an existing task. A successful deletion saves the change a
 
 A commitment reserves the same period every week until it is deleted. Add separate entries for commitments on different weekdays.
 
-Commitment addition, deletion and listing run directly at the console. Each
+Commitment addition, editing, deletion and listing run directly at the console. Each
 successful change saves automatically and clears the current plan.
 
 ### Adding a commitment
@@ -228,6 +229,35 @@ Rejected additions leave existing commitments and IDs unchanged. Optional
 [commitment diagnostics](DeveloperGuide.md#commitment-defensive-checks-and-diagnostics)
 record processing stages separately without commitment names or schedules.
 Normal launches keep the same console output.
+
+### Editing a commitment
+
+```text
+commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]
+```
+
+Supply at least one field, in the order shown; do not type the square brackets.
+Omitted fields retain their stored values. The existing ID is kept, and editing
+does not consume a new ID or change other commitments. This edits the whole weekly
+series, not just one occurrence. Date bounds and skipped occurrences are not part
+of this command yet.
+
+```text
+scheduleflow> commitment edit C1 start/1100 d/60
+Edited C1: CS2113 lecture | Monday 11:00 - 12:00 (60 min)
+```
+
+You can rename with `commitment edit C1 n/New lecture` or move the series with
+`commitment edit C1 day/TUE`. The full resulting interval must satisfy the same
+rules as addition. Conflict checks exclude the edited series itself, but still
+check every other series. Blank names, unknown IDs and empty edits are rejected.
+When changing a late start and duration, supply both together so the complete
+replacement ends by midnight.
+
+Successful edits save automatically and clear the plan; run `plan` again. This
+also applies when you explicitly supply an existing value. Invalid edits and failed
+saves leave the saved data, IDs, current records and plan unchanged. Correct the
+input or save problem and retry. Edited values survive restarting the application.
 
 ### Listing commitments
 
@@ -433,7 +463,7 @@ No current plan. Run plan to generate one.
 
 A selected date must fall within the current plan's date range. An out-of-range request reports the earliest and latest allowed dates; it does not produce an empty schedule. Run `plan` again when you need a fresh range.
 
-**Plans remain fixed until regenerated.** Viewing a schedule later does not move its sessions, update its generation time, or account for completed work. Successful task or commitment additions and deletions clear the plan; failed commands preserve it. Restarting also clears the plan.
+**Plans remain fixed until regenerated.** Viewing a schedule later does not move its sessions, update its generation time, or account for completed work. Successful additions, deletions and commitment edits clear the plan; failed commands preserve it. Restarting also clears the plan.
 
 ## Help and exit
 
@@ -459,7 +489,7 @@ Goodbye for now!
 The application loads saved data before showing its first prompt and saves
 each successful task or commitment change automatically.
 
-Tasks, commitments, and the next ID counters are saved automatically after each successful addition or deletion and restored at startup. No manual save or load command is needed.
+Tasks, commitments, and the next ID counters are saved automatically after each successful addition, deletion or commitment edit and restored at startup. No manual save or load command is needed.
 
 - **Location:** `data/scheduleflow.txt`, relative to the folder from which you launch the application. Launch from the same folder to use the same data.
 - **First launch:** If the file is absent, the app starts empty. The first successful change creates the saved data.
@@ -480,11 +510,15 @@ Run `plan` and review the unallocated minutes and reasons. The app retains every
 
 ### How do I mark work as complete or correct an entry?
 
-Delete completed tasks using `task delete TNUMBER`. To correct a task or commitment, delete it and add a replacement with the correct details; the replacement gets a new ID. There are no edit or completion commands. For partially completed work, replace the task with your revised remaining-work estimate.
+Delete completed tasks using `task delete TNUMBER`. Correct commitments with
+`commitment edit CNUMBER` and one or more fields; the ID is preserved. To correct
+a task, delete it and add a replacement with the correct details and a new ID.
+Task editing and completion commands are not supported yet. For partially
+completed work, replace the task with your revised remaining-work estimate.
 
 ### Why did my schedule disappear?
 
-A successful task or commitment addition or deletion clears the current plan. Plans also disappear when the application restarts. Run `plan` to generate another one.
+A successful task or commitment addition or deletion, or commitment edit, clears the current plan. Plans also disappear when the application restarts. Run `plan` to generate another one.
 
 ### Can I change the study hours or slot size?
 
@@ -520,6 +554,7 @@ these storage logs do not include your task names or saved file contents.
 | Add a weekly commitment | `commitment add n/NAME day/DAY start/HHmm d/MINUTES` |
 | List commitments | `commitment list` |
 | Delete a weekly commitment | `commitment delete CNUMBER` |
+| Edit a weekly commitment | `commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]` |
 | Generate or replace the plan | `plan` |
 | View today's schedule | `schedule today` |
 | View a dated schedule | `schedule YYYY-MM-DD` |
