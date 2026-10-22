@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Snapshot;
@@ -53,7 +54,7 @@ class PlanningRecordsTest {
         assertThrows(ValidationException.class,
                 () -> new UnallocatedWork(1, "", NOW, 30, UnallocatedReason.DEADLINE_PASSED));
         assertThrows(ValidationException.class,
-                () -> new UnallocatedWork(1, "A", NOW, 45, UnallocatedReason.DEADLINE_PASSED));
+                () -> new UnallocatedWork(1, "A", NOW, 0, UnallocatedReason.DEADLINE_PASSED));
         for (LocalDateTime deadline : new LocalDateTime[] {null, NOW.plusSeconds(1), NOW.plusNanos(1)}) {
             assertThrows(ValidationException.class,
                     () -> new UnallocatedWork(1, "A", deadline, 30, UnallocatedReason.DEADLINE_PASSED));
@@ -167,6 +168,31 @@ class PlanningRecordsTest {
         assertThrows(ValidationException.class, () -> new ScheduleView(DATE, NOW,
                 List.of(entry(8, 22, SlotKind.FREE, "", "")), Arrays.asList((UnallocatedWork) null)));
     }
+
+    // @@author nickpatt
+    @Test
+    void exactWorkRecords_validateWorkCapacityAndOptionalDeadline() {
+        LocalDateTime start = DATE.atTime(8, 0);
+        assertEquals(45, new StudySession(1, start, start.plusMinutes(60), 45).workMinutes());
+        assertEquals(60, new StudySession(1, start, start.plusMinutes(60)).workMinutes());
+        for (int work : new int[] {-1, 0, 61}) {
+            assertThrows(ValidationException.class, () -> new StudySession(1, start, start.plusMinutes(60), work));
+        }
+        assertEquals(60L, new UnallocatedWork(1, "Draft", NOW, 45,
+                UnallocatedReason.DEADLINE_PASSED).capacityMinutes());
+        assertEquals(2147483670L, new UnallocatedWork(1, "Draft", NOW, Integer.MAX_VALUE,
+                UnallocatedReason.DEADLINE_PASSED).capacityMinutes());
+        for (long capacity : new long[] {-30, 0, 15, 30, 90, Long.MAX_VALUE}) {
+            assertThrows(ValidationException.class, () -> new UnallocatedWork(1, "Draft", Optional.empty(),
+                    45, capacity, UnallocatedReason.INSUFFICIENT_CAPACITY));
+        }
+        for (UnallocatedReason reason : List.of(UnallocatedReason.DEADLINE_PASSED,
+                UnallocatedReason.OUTSIDE_HORIZON)) {
+            assertThrows(ValidationException.class,
+                    () -> new UnallocatedWork(1, "Draft", Optional.empty(), 45, 60, reason));
+        }
+    }
+    // @@author
 
     private StudySession session(int id, int hour) {
         return new StudySession(id, DATE.atTime(hour, 0), DATE.atTime(hour, 30));

@@ -1,6 +1,6 @@
 # ScheduleFlow UI test plan
 
-All fifteen maintained process scenarios are active. They exercise the packaged
+All sixteen maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -74,10 +74,21 @@ timeouts and expected output; Java 25 and isolated workspace data were retained.
 
 ## Active packaged scenarios
 
-Task name/deadline edit API cases are covered by deterministic JUnit tests only.
-They are not process-active until task-edit CLI wiring and rendering are integrated;
-the new renderer method is an unwired skeleton, not acceptance coverage. All current
-active fixture expectations remain unchanged.
+Task edit, deadline clear/absence, progress/session percentages, revised remaining,
+completion and reopening APIs are covered by deterministic JUnit tests only.
+There are no new Task parser/dispatcher commands. `taskEdited`,
+`taskProgressUpdated`, `taskCompleted`, `taskReopened` and `taskRemainingUpdated`
+are unwired throwing skeletons and do not count as acceptance coverage. CLI cases
+for those operations remain deferred until integration and rendering are ready.
+
+Compatibility checks cover optional deadlines in existing add/list/remainder
+output, exact plan work totals (not rounded capacity), 45-minute work versus
+60-minute reservation, partial 30/15 allocation, completed-task exclusion, long
+arithmetic, custom hours, identity no-ops and legacy/v2 save round trips.
+Tasks now accept positive whole-minute additions; commitments retain the positive
+30-minute rule, including UI-006's rejected commitment `d/45`. All existing
+slot-aligned fixture responses remain unchanged. New restored-data UI-016 is
+active because existing list/plan/delete/restart commands need no new wiring.
 
 | ID | Coverage | Status |
 | --- | --- | --- |
@@ -96,6 +107,7 @@ active fixture expectations remain unchanged.
 | UI-013 | Multiple commitment conflicts in time order, saved-data retention and retry ID | Active |
 | UI-014 | Partial commitment edits, unchanged IDs, rejection, plan invalidation and Unicode restart | Active |
 | UI-015 | Study hours precedence, validation, resets, plan invalidation and saved restarts | Active |
+| UI-016 | Extended saved tasks: absent deadlines, completed overdue exclusion, exact work and restart | Active |
 
 UI-015 asserts reset confirmations name the restored source and its endpoints.
 
