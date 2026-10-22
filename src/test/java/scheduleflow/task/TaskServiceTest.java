@@ -43,6 +43,29 @@ class TaskServiceTest {
     private final TaskService service = new TaskService();
 
     @Test
+    void mutations_recurringOccurrence_preserveProvenanceTemplateCursorAndHours() {
+        Snapshot source = new RecurringTaskService().add(Snapshot.empty(), "Quiz", DEADLINE, 45,
+                Optional.empty(), TaskPriority.HIGH, NOW);
+        source = source.withStudyHours(source.studyHours().withWindow("monday",
+                new StudyWindow(LocalTime.of(9, 0), LocalTime.of(10, 0))));
+        Snapshot original = source;
+        List<Snapshot> candidates = List.of(service.add(source, "Ordinary", DEADLINE, 30, NOW),
+                service.addWithoutDeadline(source, "Undated", 30), service.delete(source, 1),
+                service.edit(source, 1, new TaskEdit(Optional.of("Edited"), Optional.empty(), false), NOW),
+                service.edit(source, 1, new TaskEdit(Optional.empty(), Optional.empty(), true), NOW),
+                service.setPriority(source, 1, TaskPriority.LOW), service.recordWork(source, 1, 1),
+                service.reviseRemaining(source, 1, 60), service.complete(source, 1),
+                service.reopen(service.complete(source, 1), 1, 90));
+        for (Snapshot candidate : candidates) {
+            assertEquals(original.recurringTasks(), candidate.recurringTasks());
+            assertEquals(original.nextRecurringTaskId(), candidate.nextRecurringTaskId());
+            assertEquals(original.studyHours(), candidate.studyHours());
+            candidate.tasks().stream().filter(task -> task.id() == 1).forEach(task ->
+                    assertEquals(original.tasks().getFirst().occurrence(), task.occurrence()));
+        }
+    }
+
+    @Test
     void methods_nullDependencies_reportNamedPreconditions() {
         assertEquals("state", assertThrows(NullPointerException.class,
                 () -> service.add(null, "Draft", DEADLINE, 30, NOW)).getMessage());

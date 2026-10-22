@@ -18,9 +18,10 @@ import scheduleflow.common.ValidationException;
  * @param deadline optional local deadline with minute precision and a year from 0001 to 9999
  * @param remainingMinutes nonnegative whole remaining-work minutes
  * @param priority stored priority, defaulting to NORMAL for legacy callers
+ * @param occurrence immutable recurrence provenance, absent for ordinary tasks
  */
 public record Task(int id, String name, Optional<LocalDateTime> deadline, int remainingMinutes,
-        TaskPriority priority) {
+        TaskPriority priority, Optional<TaskOccurrence> occurrence) {
     /**
      * Records opt-in structural validation stages without task values or exception payloads.
      */
@@ -46,6 +47,7 @@ public record Task(int id, String name, Optional<LocalDateTime> deadline, int re
             LOGGER.log(Level.FINE, "Task identity and name validated; checking deadline structure");
             Objects.requireNonNull(deadline, "deadline");
             Objects.requireNonNull(priority, "priority");
+            Objects.requireNonNull(occurrence, "occurrence");
             if (deadline.isPresent() && (deadline.get().getYear() < 1 || deadline.get().getYear() > 9999
                     || deadline.get().getSecond() != 0 || deadline.get().getNano() != 0)) {
                 throw new ValidationException("Deadline must have minute precision and a year from 0001 to 9999.");
@@ -61,6 +63,11 @@ public record Task(int id, String name, Optional<LocalDateTime> deadline, int re
     }
 
     // @@author nickpatt
+    /** Preserves the five-argument constructor for ordinary tasks without recurrence provenance. */
+    public Task(int id, String name, Optional<LocalDateTime> deadline, int remainingMinutes, TaskPriority priority) {
+        this(id, name, deadline, remainingMinutes, priority, Optional.empty());
+    }
+
     /** Preserves the concrete-deadline constructor and its rejection of null deadlines. */
     public Task(int id, String name, LocalDateTime deadline, int remainingMinutes) {
         this(id, name, Optional.of(requireDeadline(deadline)), remainingMinutes, TaskPriority.NORMAL);

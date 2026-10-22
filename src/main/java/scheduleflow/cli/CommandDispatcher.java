@@ -19,6 +19,7 @@ import scheduleflow.planning.Planner;
 import scheduleflow.planning.ScheduleService;
 import scheduleflow.storage.Storage;
 import scheduleflow.storage.StorageException;
+import scheduleflow.task.RecurringTaskService;
 import scheduleflow.task.TaskService;
 
 /**
@@ -234,16 +235,23 @@ public final class CommandDispatcher {
         LOGGER.log(Level.FINE, "Saved candidate committed");
     }
 
-    /**
-     * Replaces the complete temporary plan without changing or saving task estimates.
-     */
-    private String generatePlan(AppState state, LocalDateTime now) {
+    // @@author nickpatt
+    /** Materializes and validates before saving changed source data, then publishes the temporary plan. */
+    private String generatePlan(AppState state, LocalDateTime now) throws StorageException {
         LOGGER.log(Level.FINE, "Generating temporary plan");
-        Plan plan = Objects.requireNonNull(planner.generate(state.snapshot(), now), "generated plan");
+        Snapshot candidate = new RecurringTaskService().materialize(state.snapshot(), now);
+        Plan plan = Objects.requireNonNull(planner.generate(candidate, now), "generated plan");
+        if (!plan.source().equals(candidate)) {
+            throw new IllegalArgumentException("Plan source must match the materialized snapshot.");
+        }
+        if (candidate != state.snapshot()) {
+            saveAndCommit(candidate, state);
+        }
         state.replacePlan(plan);
         LOGGER.log(Level.FINE, "Temporary plan published; formatting result");
         return renderer.plan(plan);
     }
+    // @@author ka-how
 
     /**
      * Gives absent plans precedence over date-range validation and projects existing frozen plans.

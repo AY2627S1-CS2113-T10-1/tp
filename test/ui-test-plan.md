@@ -1,6 +1,6 @@
 # ScheduleFlow UI test plan
 
-All sixteen maintained process scenarios are active. They exercise the packaged
+All seventeen maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -88,6 +88,23 @@ unwired TODO(Tasks) throwing skeletons, not feature acceptance. No parser or
 dispatcher commands were added, so no new active UI commands or fixture changes
 are expected. All sixteen existing active cases remain regression coverage.
 
+PR4 review: weekly template add/delete/list and materialization are internal APIs,
+not new Task commands. The three recurrence renderer methods are unwired throwing
+TODO(Tasks) skeletons. Deterministic JUnit checks chronological IDs/ties, inclusive
+horizon/until, arithmetic no-backfill, persistent cursors, completed/deleted
+occurrences, removed templates, counter exhaustion, no-op identity, custom hours,
+mutation metadata, immutable original release and dispatcher save-before-publication
+with generation/save rollback. V1/v2 actual formats remain readable; new writes
+are v3 with templates, provenance and nextR. Exact plan persistence is deferred.
+Ready UI-017 uses restored historical bounded templates with existing list/delete/
+plan commands to verify skipped history, completion and non-regeneration across
+restart. Future weekly generation/release remains fixed-clock JUnit coverage,
+not end-to-end recurring-command acceptance. All earlier fixtures are unchanged.
+Reviewer follow-up adds fixed-clock JUnit regressions for future releases with
+edited dated deadlines, deadline-before-release full remainders, cursor-only
+save rollback/retry, combined-batch exhaustion and year-9999 dispatcher/file
+restart with a year-10000 planning horizon. No new command or fixture is needed.
+
 Compatibility checks cover optional deadlines in existing add/list/remainder
 output, exact plan work totals (not rounded capacity), 45-minute work versus
 60-minute reservation, partial 30/15 allocation, completed-task exclusion, long
@@ -115,6 +132,7 @@ active because existing list/plan/delete/restart commands need no new wiring.
 | UI-014 | Partial commitment edits, unchanged IDs, rejection, plan invalidation and Unicode restart | Active |
 | UI-015 | Study hours precedence, validation, resets, plan invalidation and saved restarts | Active |
 | UI-016 | Extended saved tasks: absent deadlines, completed overdue exclusion, exact work and restart | Active |
+| UI-017 | Restored v3 bounded recurrence, skipped history, completion and deleted occurrence restart | Active |
 
 UI-015 asserts reset confirmations name the restored source and its endpoints.
 

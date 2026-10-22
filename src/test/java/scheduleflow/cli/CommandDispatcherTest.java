@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.Instant;
@@ -16,18 +18,24 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import scheduleflow.commitment.CommitmentService;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
+import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskPriority;
 import scheduleflow.planning.EarliestDeadlinePlanner;
 import scheduleflow.planning.Plan;
 import scheduleflow.planning.Planner;
 import scheduleflow.planning.ScheduleService;
 import scheduleflow.planning.StudySession;
 import scheduleflow.planning.TimeRules;
+import scheduleflow.storage.FileStorage;
+import scheduleflow.storage.StateCodec;
 import scheduleflow.storage.Storage;
 import scheduleflow.storage.StorageException;
 import scheduleflow.task.TaskService;
@@ -39,6 +47,145 @@ class CommandDispatcherTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 9, 21, 7, 0);
     private static final Clock CLOCK = Clock.fixed(NOW.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
     private final TextRenderer renderer = new TextRenderer();
+
+    // @@author nickpatt
+    @Test
+    void execute_expiredCursorOnlyPlan_savesOnceAfterSuccessfulRetryAndPreservesStateOnFailure() throws Exception {
+        LocalDateTime first = NOW.minusWeeks(3);
+        LocalDateTime last = first.plusWeeks(1);
+        RecurringTask expired = new RecurringTask(1, "Expired", first, Optional.of(last.toLocalDate()),
+                45, TaskPriority.NORMAL, Optional.empty());
+        Snapshot source = new Snapshot(List.of(), List.of(), 7, 3, Snapshot.empty().studyHours(), List.of(expired), 2);
+        AppState state = new AppState(source);
+        Plan oldPlan = new EarliestDeadlinePlanner().generate(source, NOW);
+        state.replacePlan(oldPlan);
+        FakeStorage storage = new FakeStorage(source);
+        storage.beforeSave = () -> {
+            assertSame(source, state.snapshot());
+            assertSame(oldPlan, state.currentPlan().orElseThrow());
+        };
+        CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
+        storage.failSave = true;
+        assertThrows(StorageException.class, () -> dispatcher.execute(new Command.GeneratePlan(), state));
+        assertSame(source, state.snapshot());
+        assertSame(source, storage.saved);
+        assertSame(oldPlan, state.currentPlan().orElseThrow());
+        assertEquals(1, storage.saveCalls);
+        assertEquals(Optional.empty(), source.recurringTasks().getFirst().generatedThrough());
+        Snapshot attempted = storage.attempted;
+        assertTrue(attempted.tasks().isEmpty());
+        assertEquals(Optional.of(last), attempted.recurringTasks().getFirst().generatedThrough());
+
+        storage.failSave = false;
+        dispatcher.execute(new Command.GeneratePlan(), state);
+        assertEquals(attempted, state.snapshot());
+        assertSame(storage.saved, state.snapshot());
+        assertSame(state.snapshot(), state.currentPlan().orElseThrow().source());
+        assertEquals(7, state.snapshot().nextTaskId());
+        assertEquals(3, state.snapshot().nextCommitmentId());
+        assertEquals(2, state.snapshot().nextRecurringTaskId());
+        dispatcher.execute(new Command.GeneratePlan(), state);
+        assertEquals(2, storage.saveCalls);
+        assertTrue(state.snapshot().tasks().isEmpty());
+    }
+
+    @Test
+    void execute_year9999Plan_roundTripsClippedOccurrencesAndReplansThroughYear10000(@TempDir Path folder)
+            throws Exception {
+        LocalDateTime now = LocalDateTime.of(9999, 12, 23, 7, 0);
+        LocalDateTime first = LocalDateTime.of(9999, 12, 24, 18, 0);
+        Clock clock = Clock.fixed(now.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
+        RecurringTask template = new RecurringTask(1, "Quiz", first, Optional.empty(), 45,
+                TaskPriority.HIGH, Optional.empty());
+        Snapshot source = new Snapshot(List.of(), List.of(), 1, 1, Snapshot.empty().studyHours(), List.of(template), 2);
+        Path file = folder.resolve("weekly.txt");
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        AppState state = new AppState(source);
+        dispatcher(storage, clock).execute(new Command.GeneratePlan(), state);
+        Plan plan = state.currentPlan().orElseThrow();
+        assertEquals(LocalDateTime.of(10000, 12, 23, 0, 0), plan.horizonEnd());
+        assertEquals(List.of(Optional.of(first), Optional.of(first.plusWeeks(1))),
+                state.snapshot().tasks().stream().map(Task::deadline).toList());
+        assertEquals(Optional.of(first.plusWeeks(1)), state.snapshot().recurringTasks().getFirst().generatedThrough());
+        assertEquals(3, state.snapshot().nextTaskId());
+        assertEquals(2, plan.sessions().size());
+        assertTrue(plan.sessions().stream().allMatch(session -> session.start().getYear() == 9999
+                && session.end().getYear() == 9999));
+        assertTrue(plan.unallocated().isEmpty());
+
+        String saved = Files.readString(file);
+        AppState restarted = new AppState(new FileStorage(file, new StateCodec()).load());
+        assertEquals(state.snapshot(), restarted.snapshot());
+        assertTrue(restarted.currentPlan().isEmpty());
+        FakeStorage noSave = new FakeStorage(restarted.snapshot());
+        dispatcher(noSave, clock).execute(new Command.GeneratePlan(), restarted);
+        assertEquals(plan, restarted.currentPlan().orElseThrow());
+        assertEquals(0, noSave.saveCalls);
+        assertEquals(saved, Files.readString(file));
+    }
+
+    @Test
+    void execute_recurringPlan_savesBeforePublishingAndNoOpDoesNotSave() throws Exception {
+        Snapshot source = unprocessedRecurrence();
+        AppState state = new AppState(source);
+        Plan oldPlan = new EarliestDeadlinePlanner().generate(source, NOW);
+        state.replacePlan(oldPlan);
+        FakeStorage storage = new FakeStorage(source);
+        storage.beforeSave = () -> {
+            assertSame(source, state.snapshot());
+            assertSame(oldPlan, state.currentPlan().orElseThrow());
+        };
+        CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
+        storage.failSave = true;
+        assertThrows(StorageException.class, () -> dispatcher.execute(new Command.GeneratePlan(), state));
+        assertSame(source, state.snapshot());
+        assertSame(oldPlan, state.currentPlan().orElseThrow());
+        assertSame(source, storage.saved);
+        Snapshot attempted = storage.attempted;
+        storage.failSave = false;
+        dispatcher.execute(new Command.GeneratePlan(), state);
+        assertEquals(attempted, state.snapshot());
+        assertSame(storage.saved, state.snapshot());
+        assertSame(state.snapshot(), state.currentPlan().orElseThrow().source());
+        assertEquals(1, state.snapshot().tasks().size());
+        dispatcher.execute(new Command.GeneratePlan(), state);
+        assertEquals(2, storage.saveCalls);
+        storage.beforeSave = () -> { };
+        var templates = state.snapshot().recurringTasks();
+        dispatcher.execute(new Command.SetHours("monday", LocalTime.of(9, 0), LocalTime.of(10, 0)), state);
+        dispatcher.execute(new Command.ResetHours("monday"), state);
+        assertEquals(templates, state.snapshot().recurringTasks());
+        assertEquals(2, state.snapshot().nextRecurringTaskId());
+    }
+
+    @Test
+    void execute_recurringPlanFailure_neverSavesOrPublishes() {
+        Snapshot source = unprocessedRecurrence();
+        for (Planner planner : List.<Planner>of((candidate, now) -> null,
+                (candidate, now) -> {
+                    throw new ValidationException("Generation rejected");
+                },
+                (candidate, now) -> new EarliestDeadlinePlanner().generate(source, now))) {
+            AppState state = new AppState(source);
+            Plan oldPlan = new EarliestDeadlinePlanner().generate(source, NOW);
+            state.replacePlan(oldPlan);
+            FakeStorage storage = new FakeStorage(source);
+            CommandDispatcher dispatcher = new CommandDispatcher(new TaskService(), new CommitmentService(), storage,
+                    planner, new ScheduleService(), renderer, CLOCK);
+            assertThrows(RuntimeException.class, () -> dispatcher.execute(new Command.GeneratePlan(), state));
+            assertSame(source, state.snapshot());
+            assertSame(oldPlan, state.currentPlan().orElseThrow());
+            assertEquals(0, storage.saveCalls);
+        }
+    }
+
+    /** Builds a bounded saved template awaiting generation, without a clock read. */
+    private Snapshot unprocessedRecurrence() {
+        RecurringTask template = new RecurringTask(1, "Quiz", NOW.plusDays(1),
+                Optional.of(NOW.plusDays(1).toLocalDate()), 45, TaskPriority.HIGH, Optional.empty());
+        return new Snapshot(List.of(), List.of(), 1, 1, Snapshot.empty().studyHours(), List.of(template), 2);
+    }
+    // @@author ka-how
 
     // @@author GabrielYuSP
     @Test

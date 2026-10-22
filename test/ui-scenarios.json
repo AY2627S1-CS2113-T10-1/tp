@@ -2,6 +2,25 @@
   "version": 1,
   "cases": [
     {
+      "id": "UI-017", "aim": "Restored bounded recurrence retains completion and never regenerates deleted occurrences",
+      "status": "active", "setup": "Version 3 bounded historical template; no new Task commands",
+      "files": { "data/scheduleflow.txt": "SCHEDULEFLOW|3\nNEXT|3|1|2\nTASK3|1|2000-01-08T18:00|0|HIGH|1|2000-01-08T18:00|Completed\nTASK3|2|2000-01-15T18:00|45|HIGH|1|2000-01-15T18:00|每周|Quiz\nRECURRING|1|2000-01-08T18:00|2000-01-22|45|HIGH|2000-01-15T18:00|每周|Quiz\n" },
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "task delete T2", "output": "Deleted task T2: 每周|Quiz" },
+          { "input": "plan", "output": "Study plan generated successfully! Type 'schedule today' to view your sessions." },
+          { "input": "plan", "output": "Study plan generated successfully! Type 'schedule today' to view your sessions." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT1 | Completed | 0 min | 2000-01-08 18:00\nTotal: 1 task(s)." },
+          { "input": "plan", "output": "Study plan generated successfully! Type 'schedule today' to view your sessions." },
+          { "input": "task delete T2", "output": "Error: Unknown task ID: T2" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
       "requiredComponents": [
         "Main.main",
         "CommandParser.parse",

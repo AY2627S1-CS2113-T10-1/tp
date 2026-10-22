@@ -10,6 +10,7 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import scheduleflow.common.ValidationException;
 
@@ -17,6 +18,41 @@ import scheduleflow.common.ValidationException;
  * Verifies persisted identity integrity and immutable ownership of lists.
  */
 class SnapshotTest {
+    // @@author nickpatt
+    @Test
+    void constructor_recurrence_validatesRetainedReferencesAndCursorCoverage() {
+        LocalDateTime first = LocalDateTime.of(2026, 9, 22, 18, 0);
+        RecurringTask template = new RecurringTask(1, "Quiz", first, Optional.empty(), 30,
+                TaskPriority.NORMAL, Optional.of(first));
+        Task task = new Task(1, "Edited", Optional.empty(), 0, TaskPriority.LOW,
+                Optional.of(new TaskOccurrence(1, first)));
+        Snapshot valid = new Snapshot(List.of(task), List.of(), 2, 1, Snapshot.empty().studyHours(),
+                List.of(template), 2);
+        assertEquals(1, valid.recurringTasks().size());
+        assertThrows(UnsupportedOperationException.class, () -> valid.recurringTasks().clear());
+        assertEquals(List.of(task), new Snapshot(List.of(task), List.of(), 2, 1, valid.studyHours(), List.of(), 2)
+                .tasks());
+        for (int counter : new int[] {0, 1}) {
+            assertThrows(ValidationException.class, () -> new Snapshot(List.of(task), List.of(), 2, 1,
+                    valid.studyHours(), List.of(), counter));
+        }
+        assertThrows(ValidationException.class, () -> new Snapshot(List.of(), List.of(), 1, 1,
+                valid.studyHours(), List.of(template, template), 2));
+        Task duplicate = new Task(2, "Other", Optional.of(first), 30, TaskPriority.HIGH, task.occurrence());
+        assertThrows(ValidationException.class, () -> valid.withTasks(List.of(task, duplicate), 3));
+        for (LocalDateTime original : new LocalDateTime[] {first.plusMinutes(1), first.plusDays(1),
+                first.plusWeeks(1), first.minusWeeks(1)}) {
+            Task invalid = new Task(2, "Other", Optional.empty(), 30, TaskPriority.NORMAL,
+                    Optional.of(new TaskOccurrence(1, original)));
+            assertThrows(ValidationException.class, () -> valid.withTasks(List.of(invalid), 3));
+        }
+        RecurringTask unprocessed = new RecurringTask(1, "Quiz", first, Optional.empty(), 30,
+                TaskPriority.NORMAL, Optional.empty());
+        assertThrows(ValidationException.class, () -> new Snapshot(List.of(task), List.of(), 2, 1,
+                valid.studyHours(), List.of(unprocessed), 2));
+    }
+    // @@author
+
     @Test
     void empty_initialCountersAndLists() {
         Snapshot snapshot = Snapshot.empty();

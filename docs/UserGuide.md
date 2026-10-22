@@ -134,6 +134,19 @@ tasks. Their new renderer methods are unwired throwing skeletons: **none of thes
 operations has a console command yet**. `task list` remains an all-task numeric-ID
 listing; the planner's deadline-first policy is unchanged.
 
+Weekly recurring task templates are also implemented as internal Java APIs only.
+There are **no recurring Task console commands** or working template renderers yet.
+For restored templates, `plan` creates future weekly occurrences through its
+rolling horizon, skipping deadlines already passed and respecting an optional
+inclusive last date. Occurrences have ordinary T IDs and independent work estimates.
+Their work cannot be scheduled earlier than one week before the original due time,
+even if an internal API later edits or clears the current deadline.
+
+Deleting or completing an occurrence never recreates it on replanning or restart.
+Removing a template through the internal API stops future generation but retains
+existing occurrences. Templates cannot yet be edited and support weekly frequency
+only. The new template output methods remain unwired throwing skeletons.
+
 ### Recording duration (tasks and commitments)
 
 Enter duration when adding a task or commitment using `d/MINUTES`; there is no
@@ -423,7 +436,12 @@ No tasks to schedule.
 
 Even with no tasks, `plan` creates a current plan. You can then view commitments and free or unplanned periods using `schedule`.
 
-Each `plan` command replaces the previous plan. It does not change stored task durations or save a plan to disk. This allocator follows deadline order; it does not guarantee the fewest sessions or the greatest number of fully completed tasks.
+Each `plan` command replaces the previous plan. It does not change stored task durations
+or save a plan to disk. If restored recurring templates need processing, their
+new occurrences and cursors are saved before the new snapshot and plan become live.
+Generation or save failure preserves the previous data and plan; unchanged
+recurrence processing does not save. This allocator follows deadline order; it
+does not guarantee the fewest sessions or the greatest number of fully completed tasks.
 
 ### Planning hours and date range
 
@@ -587,13 +605,15 @@ each successful task, commitment or study-hours change automatically.
 
 Tasks, commitments, study hours and the next ID counters are saved automatically after each successful change and restored at startup. No manual save or load command is needed.
 
-New saves always use version 2 and retain exact remaining minutes, completion,
-optional deadlines and stored priorities, together with custom study hours.
+New saves always use version 3 and retain exact remaining minutes, completion,
+optional deadlines, stored priorities, custom study hours, weekly templates,
+generation cursors and occurrence provenance, with independent R-ID counters.
 Existing version 1 and earlier study-hours version 2 files still load unchanged;
 loading does not rewrite them. The next successful change writes the extended
-format. Older application versions cannot read its new TASK2 rows. See the
+format. Older application versions cannot read version 3. See the
 [Developer Guide](DeveloperGuide.md#basic-saving-and-loading) for the precise
-layout. Templates and plans are not included in this change.
+layout. Plans are still temporary and are not saved. Loading does not materialize
+occurrences or rewrite data; the existing `plan` command performs processing.
 
 - **Location:** `data/scheduleflow.txt`, relative to the folder from which you launch the application. Launch from the same folder to use the same data.
 - **First launch:** If the file is absent, the app starts empty. The first successful change creates the saved data.

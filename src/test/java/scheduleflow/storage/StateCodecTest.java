@@ -29,7 +29,7 @@ class StateCodecTest {
         Snapshot state = empty.withStudyHours(empty.studyHours()
                 .withWindow("tuesday", new StudyWindow(LocalTime.of(9, 0), LocalTime.of(22, 0)))
                 .withWindow("2026-10-27", new StudyWindow(LocalTime.of(14, 0), LocalTime.of(19, 0))));
-        assertEquals("SCHEDULEFLOW|2\nNEXT|1|1\nHOURS|2026-10-27|14:00|19:00\n"
+        assertEquals("SCHEDULEFLOW|3\nNEXT|1|1|1\nHOURS|2026-10-27|14:00|19:00\n"
                 + "HOURS|tuesday|09:00|22:00\n", codec.encode(state));
         assertEquals(state, codec.decode(codec.encode(state)));
         assertEquals(empty, codec.decode("SCHEDULEFLOW|1\nNEXT|1|1\n"));
@@ -50,7 +50,7 @@ class StateCodecTest {
 
     @Test
     void encode_emptySnapshot_writesHeaderAndCounters() {
-        assertEquals("SCHEDULEFLOW|2\nNEXT|1|1\n", codec.encode(Snapshot.empty()));
+        assertEquals("SCHEDULEFLOW|3\nNEXT|1|1|1\n", codec.encode(Snapshot.empty()));
     }
 
     @Test
@@ -58,7 +58,7 @@ class StateCodecTest {
         Snapshot snapshot = new Snapshot(
                 List.of(new Task(3, "复习 | café", LocalDateTime.of(2000, 1, 2, 9, 0), 60)),
                 List.of(new Commitment(2, "Class", DayOfWeek.MONDAY, LocalTime.of(10, 30), 90)), 8, 5);
-        String text = "SCHEDULEFLOW|2\nNEXT|8|5\nTASK2|3|2000-01-02T09:00|60|NORMAL|复习 | café\n"
+        String text = "SCHEDULEFLOW|3\nNEXT|8|5|1\nTASK3|3|2000-01-02T09:00|60|NORMAL|NONE|NONE|复习 | café\n"
                 + "COMMITMENT|2|MONDAY|10:30|90|Class\n";
         assertEquals(text, codec.encode(snapshot));
         assertEquals(snapshot, codec.decode(text));
@@ -97,6 +97,38 @@ class StateCodecTest {
 
     // @@author nickpatt
     @Test
+    void decode_corruptRecurrence_rejectsWholeSnapshot() {
+        String template = "RECURRING|1|2026-09-22T18:00|2026-10-06|45|HIGH|2026-09-29T18:00|Quiz\n";
+        String occurrence = "TASK3|1|NONE|0|LOW|1|2026-09-22T18:00|Edited\n";
+        for (String records : List.of(template + template,
+                template.replace("2026-09-29T18:00", "2026-09-30T18:00"),
+                template.replace("2026-09-29T18:00", "2026-10-13T18:00"),
+                template.replace("2026-09-29T18:00", "NONE") + occurrence,
+                template + occurrence.replace("2026-09-22T18:00", "2026-09-23T18:00"),
+                template + occurrence + occurrence.replace("TASK3|1|", "TASK3|2|"),
+                template + occurrence.replace("|1|2026-09-22", "|NONE|2026-09-22"),
+                template + occurrence.replace("|1|2026-09-22T18:00", "|1|NONE"),
+                template + occurrence.replace("|1|2026-09-22", "|2|2026-09-22"),
+                template.replace("|45|", "|0|"))) {
+            assertThrows(StorageException.class, () -> codec.decode("SCHEDULEFLOW|3\nNEXT|3|1|2\n" + records),
+                    records);
+        }
+        assertThrows(StorageException.class, () -> codec.decode("SCHEDULEFLOW|3\nNEXT|3|1|1\n" + occurrence));
+        assertThrows(StorageException.class, () -> codec.decode("SCHEDULEFLOW|2\nNEXT|3|1\n" + template));
+        assertThrows(StorageException.class, () -> codec.decode("SCHEDULEFLOW|2\nNEXT|3|1\n" + occurrence));
+    }
+
+    @Test
+    void encodeAndDecode_weeklyTemplateAndEditedOccurrence_preservesExactLayoutAndUnicodePipes() throws Exception {
+        String text = "SCHEDULEFLOW|3\nNEXT|2|1|2\n"
+                + "TASK3|1|NONE|0|LOW|1|2026-09-22T18:00|完成|café\n"
+                + "RECURRING|1|2026-09-22T18:00|2026-10-06|45|HIGH|2026-09-29T18:00|每周|Quiz\n"
+                + "HOURS|monday|09:00|10:00\n";
+        assertEquals(text, codec.encode(codec.decode(text)));
+        assertEquals(codec.decode(text), codec.decode(text.replace("\n", "\r\n")));
+    }
+
+    @Test
     void decode_legacyVersions_preservesValuesDefaultsAndPipes() throws StorageException {
         for (int version : new int[] {1, 2}) {
             String legacy = "SCHEDULEFLOW|" + version + "\nNEXT|8|5\n"
@@ -123,8 +155,9 @@ class StateCodecTest {
                 List.of(), Integer.MAX_VALUE, 7);
         state = state.withStudyHours(state.studyHours().withWindow("monday",
                 new StudyWindow(LocalTime.of(9, 0), LocalTime.of(10, 0))));
-        assertEquals("SCHEDULEFLOW|2\nNEXT|2147483647|7\nTASK2|3|NONE|0|NORMAL|Complete|kept\n"
-                + "TASK2|1|2000-01-02T09:00|1|HIGH|Minute\nTASK2|2|NONE|2147483647|LOW|Large\n"
+        assertEquals("SCHEDULEFLOW|3\nNEXT|2147483647|7|1\nTASK3|3|NONE|0|NORMAL|NONE|NONE|Complete|kept\n"
+                + "TASK3|1|2000-01-02T09:00|1|HIGH|NONE|NONE|Minute\n"
+                + "TASK3|2|NONE|2147483647|LOW|NONE|NONE|Large\n"
                 + "HOURS|monday|09:00|10:00\n", codec.encode(state));
         assertEquals(state, codec.decode(codec.encode(state)));
     }
