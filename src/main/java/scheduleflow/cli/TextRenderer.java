@@ -62,14 +62,11 @@ public final class TextRenderer {
                 "commitment add n/NAME day/DAY start/HHmm d/MINUTES - Add a weekly commitment.",
                 "commitment list - List weekly commitments.",
                 "commitment delete CNUMBER - Delete a weekly commitment.",
-<<<<<<< HEAD
+                "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]"
+                        + " - Edit at least one field; saves and clears the plan. Run plan again.",
                 "hours DAY|YYYY-MM-DD /start HH:mm /end HH:mm - Set study hours.",
                 "hours DAY|YYYY-MM-DD - View effective study hours (full lowercase weekday).",
                 "hours reset DAY|YYYY-MM-DD - Restore inherited study hours.",
-=======
-                "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]"
-                        + " - Edit at least one field; saves and clears the plan. Run plan again.",
->>>>>>> origin/master
                 "plan - Generate or replace the study plan.",
                 "schedule today OR schedule YYYY-MM-DD - View a date in the current plan.",
                 "exit - Close the application."));

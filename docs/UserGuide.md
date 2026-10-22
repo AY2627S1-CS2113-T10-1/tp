@@ -517,11 +517,7 @@ No current plan. Run plan to generate one.
 
 A selected date must fall within the current plan's date range. An out-of-range request reports the earliest and latest allowed dates; it does not produce an empty schedule. Run `plan` again when you need a fresh range.
 
-<<<<<<< HEAD
-**Plans remain fixed until regenerated.** Viewing a schedule later does not move its sessions, update its generation time, or account for completed work. Successful task or commitment additions and deletions, and study-hours sets and resets, clear the plan; failed commands preserve it. Restarting also clears the plan.
-=======
-**Plans remain fixed until regenerated.** Viewing a schedule later does not move its sessions, update its generation time, or account for completed work. Successful additions, deletions and commitment edits clear the plan; failed commands preserve it. Restarting also clears the plan.
->>>>>>> origin/master
+**Plans remain fixed until regenerated.** Viewing a schedule later does not move its sessions, update its generation time, or account for completed work. Successful task or commitment additions, deletions, commitment edits, and study-hours sets or resets clear the plan; failed commands preserve it. Restarting also clears the plan.
 
 ## Help and exit
 
@@ -547,11 +543,7 @@ Goodbye for now!
 The application loads saved data before showing its first prompt and saves
 each successful task, commitment or study-hours change automatically.
 
-<<<<<<< HEAD
 Tasks, commitments, study hours and the next ID counters are saved automatically after each successful change and restored at startup. No manual save or load command is needed.
-=======
-Tasks, commitments, and the next ID counters are saved automatically after each successful addition, deletion or commitment edit and restored at startup. No manual save or load command is needed.
->>>>>>> origin/master
 
 - **Location:** `data/scheduleflow.txt`, relative to the folder from which you launch the application. Launch from the same folder to use the same data.
 - **First launch:** If the file is absent, the app starts empty. The first successful change creates the saved data.
@@ -580,11 +572,7 @@ completed work, replace the task with your revised remaining-work estimate.
 
 ### Why did my schedule disappear?
 
-<<<<<<< HEAD
-A successful task or commitment addition or deletion, or a study-hours set or reset, clears the current plan. Plans also disappear when the application restarts. Run `plan` to generate another one.
-=======
-A successful task or commitment addition or deletion, or commitment edit, clears the current plan. Plans also disappear when the application restarts. Run `plan` to generate another one.
->>>>>>> origin/master
+A successful task or commitment addition or deletion, commitment edit, or study-hours set or reset clears the current plan. Plans also disappear when the application restarts. Run `plan` to generate another one.
 
 ### Can I change the study hours or slot size?
 
@@ -620,13 +608,10 @@ these storage logs do not include your task names or saved file contents.
 | Add a weekly commitment | `commitment add n/NAME day/DAY start/HHmm d/MINUTES` |
 | List commitments | `commitment list` |
 | Delete a weekly commitment | `commitment delete CNUMBER` |
-<<<<<<< HEAD
+| Edit a weekly commitment | `commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]` |
 | Set study hours | `hours DAY\|YYYY-MM-DD /start HH:mm /end HH:mm` |
 | View effective study hours | `hours DAY\|YYYY-MM-DD` |
 | Reset study hours | `hours reset DAY\|YYYY-MM-DD` |
-=======
-| Edit a weekly commitment | `commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]` |
->>>>>>> origin/master
 | Generate or replace the plan | `plan` |
 | View today's schedule | `schedule today` |
 | View a dated schedule | `schedule YYYY-MM-DD` |

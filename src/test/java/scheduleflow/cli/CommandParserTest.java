@@ -25,7 +25,6 @@ class CommandParserTest {
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
     private final CommandParser parser = new CommandParser();
 
-<<<<<<< HEAD
     // @@author GabrielYuSP
     @Test
     void parse_hoursCommands_supportsWeekdaysDatesAndResets() throws ParseException {
@@ -41,8 +40,6 @@ class CommandParserTest {
         }
     }
 
-    // @@author ka-how
-=======
     //@@author Darren50
     @Test
     void parse_commitmentEdit_allFieldSubsetsPreserveOmission() throws ParseException {
@@ -73,8 +70,6 @@ class CommandParserTest {
         }
     }
     //@@author ka-how
-
->>>>>>> origin/master
     @Test
     void parse_nullLine_rejectsWithArgumentName() {
         assertEquals("line", assertThrows(NullPointerException.class, () -> parser.parse(null)).getMessage());

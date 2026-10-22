@@ -2,7 +2,6 @@
   "version": 1,
   "cases": [
     {
-<<<<<<< HEAD
       "requiredComponents": ["Main.main", "CommandParser.parse", "CommandDispatcher.execute", "StateCodec.encode", "StateCodec.decode"],
       "id": "UI-013", "aim": "Study hours precedence, validation, reset, plan invalidation and restart",
       "status": "active", "setup": "No data file; isolated saved settings",
@@ -29,7 +28,11 @@
         ] },
         { "startup": "", "steps": [
           { "input": "hours 2026-10-27", "output": "Study hours for 2026-10-27: 08:00 - 22:00" },
-=======
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
       "id": "UI-014", "aim": "Commitment edits preserve IDs, reject invalid replacements and survive restart",
       "status": "active", "setup": "Empty store; weekly events with adjacent and conflicting edits",
       "sessions": [
@@ -57,7 +60,7 @@
       ]
     },
     {
-      "id": "UI-013", "aim": "Multiple conflicts are chronological and rejection preserves IDs and saved data",
+      "id": "UI-015", "aim": "Multiple conflicts are chronological and rejection preserves IDs and saved data",
       "status": "active", "setup": "Empty store; add same-day commitments in reverse chronological order",
       "sessions": [
         { "startup": "", "steps": [
@@ -69,7 +72,6 @@
         { "startup": "", "steps": [
           { "input": "commitment list", "output": "=== Recurring Weekly Commitments ===\n[Monday]\nC2. 09:00 - 10:00 | Lecture\nC1. 11:00 - 12:00 | Seminar\n\nTotal: 2 recurring commitments across the week." },
           { "input": "commitment add n/Gap day/MON start/1000 d/60", "output": "Added C3: Gap | Monday 10:00 - 11:00 (60 min)" },
->>>>>>> origin/master
           { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
         ] }
       ]

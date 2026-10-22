@@ -60,11 +60,7 @@ conventions and CS2113 code-quality guidelines used by this project.
 
 ### Command transport
 
-<<<<<<< HEAD
-The sealed `Command` interface contains fourteen supported command records.
-=======
-The sealed `Command` interface contains the twelve supported command records.
->>>>>>> origin/master
+The sealed `Command` interface contains fifteen supported command records.
 Records that only carry values use Java's generated canonical constructors;
 redundant empty compact constructors have been removed. Records with required
 reference fields retain their null checks. Parsing and the services still own
@@ -383,7 +379,7 @@ names at nonoverlapping times are allowed.
 
 Regression tests verify multi-conflict ordering, adjacency and other-day exclusion,
 full-day intervals, duplicate names, unchanged snapshots and unconsumed retry IDs.
-UI-013 checks the same rejection through the packaged application and a saved restart.
+UI-015 checks the same rejection through the packaged application and a saved restart.
 
 The service uses the stored next commitment ID, preserves task records and their
 counter, and increments only the candidate's commitment counter. A next ID of
@@ -606,12 +602,7 @@ successful and failed transactions. `AppTest` captures records in memory,
 restores logger settings in `finally` and uses `@Isolated` to protect other
 tests. It checks severity classification, retained exceptions and filtering at
 the `WARNING` threshold. `MainTest` checks quiet default launches for recoverable
-and fatal errors, and an explicit warning-only file configuration. Existing
-<<<<<<< HEAD
-exact-output tests and all thirteen active packaged scenarios verify normal
-=======
-exact-output tests and all maintained active packaged scenarios verify normal
->>>>>>> origin/master
+and fatal errors, and an explicit warning-only file configuration. Existing exact-output tests and all maintained active packaged scenarios verify normal
 console behaviour. The User Guide's command and error behaviour remains valid.
 
 ### Supplied contract and Save-module differences
