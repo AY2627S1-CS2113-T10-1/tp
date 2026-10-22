@@ -109,6 +109,11 @@ Examples below are independent unless a sequence is explicitly described. Use ex
 
 ## Tasks
 
+Task name/deadline editing is implemented only as an internal Java service API.
+Console integration and edit-confirmation rendering are pending; no task-edit
+command is supported yet. The existing add, list and delete commands below are
+unchanged. Deadline removal and progress tracking are not supported.
+
 ### Recording duration (tasks and commitments)
 
 Enter duration when adding a task or commitment using `d/MINUTES`; there is no
