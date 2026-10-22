@@ -1,6 +1,6 @@
 # ScheduleFlow UI test plan
 
-All thirteen maintained process scenarios are active. They exercise the packaged
+All fourteen maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -89,6 +89,7 @@ timeouts and expected output; Java 25 and isolated workspace data were retained.
 | UI-011 | Overlapping saved commitments reject the whole store before prompting | Active |
 | UI-012 | Unallocated duration totals beyond a signed 32-bit integer | Active |
 | UI-013 | Multiple commitment conflicts in time order, saved-data retention and retry ID | Active |
+| UI-014 | Partial commitment edits, unchanged IDs, rejection, plan invalidation and Unicode restart | Active |
 
 The original eight scenarios retain their exact expectations. UI-009 through
 UI-012 add release acceptance without a production clock flag. Their saved
@@ -97,6 +98,10 @@ UI-013 adds two commitments in reverse time order and rejects a spanning interva
 Restarting confirms the original entries remain; retrying in the gap uses the
 unconsumed ID. Existing dispatcher tests cover plan retention after rejected mutations.
 Model JUnit checks distinguish invalid IDs, missing weekdays and missing starts.
+UI-014 edits individual and combined fields, rejects conflicts and incomplete/invalid
+commands, and confirms midnight output, saved replacements and unchanged next IDs.
+Fixed-clock dispatcher tests additionally cover edits and identical-value edits through
+save failure/retry, plan preservation on rejection and allocation after regeneration.
 The separately invoked `test/release.test.mjs` runs all maintained cases with
 `-ea`, checks the normal ZIP includes the exact JAR, and launches its native
 script with default assertions. Run it after `build`; it does not build

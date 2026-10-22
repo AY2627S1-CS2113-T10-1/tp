@@ -160,7 +160,10 @@ class CommandDispatcherTest {
                 new Command.AddCommitment("Unaligned", DayOfWeek.MONDAY, LocalTime.of(10, 15), 30),
                 new Command.AddCommitment("Overlap", DayOfWeek.MONDAY, LocalTime.of(10, 30), 30),
                 new Command.AddCommitment("Too long", DayOfWeek.MONDAY, LocalTime.of(23, 30), 60),
-                new Command.DeleteTask(99), new Command.DeleteCommitment(99));
+                new Command.DeleteTask(99), new Command.DeleteCommitment(99),
+                new Command.EditCommitment(99, "Missing", null, null, null),
+                new Command.EditCommitment(2, null, null, null, null),
+                new Command.EditCommitment(2, null, null, LocalTime.of(23, 30), 60));
         for (Command command : invalid) {
             assertThrows(ValidationException.class, () -> dispatcher.execute(command, state));
             assertSame(original, state.snapshot());
@@ -352,6 +355,32 @@ class CommandDispatcherTest {
         assertSame(snapshot, state.snapshot());
     }
 
+    //@@author Darren50
+    @Test
+    void execute_edit_replansAgainstReplacementAndKeepsPlanOnConflict() throws Exception {
+        AppState state = new AppState(populatedSnapshot());
+        FakeStorage storage = new FakeStorage(state.snapshot());
+        CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
+        dispatcher.execute(new Command.GeneratePlan(), state);
+        assertEquals(LocalTime.of(8, 0), state.currentPlan().orElseThrow().sessions().getFirst().start().toLocalTime());
+        dispatcher.execute(new Command.EditCommitment(2, null, null, LocalTime.of(8, 0), null), state);
+        assertTrue(state.currentPlan().isEmpty());
+        dispatcher.execute(new Command.GeneratePlan(), state);
+        assertEquals(LocalTime.of(9, 0), state.currentPlan().orElseThrow().sessions().getFirst().start().toLocalTime());
+        dispatcher.execute(new Command.AddCommitment("Other", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60), state);
+        dispatcher.execute(new Command.GeneratePlan(), state);
+        Snapshot original = state.snapshot();
+        Plan plan = state.currentPlan().orElseThrow();
+        int saves = storage.saveCalls;
+        assertThrows(ValidationException.class, () -> dispatcher.execute(
+                new Command.EditCommitment(2, "Rejected", null, LocalTime.of(10, 0), null), state));
+        assertSame(original, state.snapshot());
+        assertSame(plan, state.currentPlan().orElseThrow());
+        assertSame(original, storage.saved);
+        assertEquals(saves, storage.saveCalls);
+    }
+    //@@author ka-how
+
     /**
      * Wires the real service contracts with controlled storage and time.
      */
@@ -372,7 +401,9 @@ class CommandDispatcherTest {
      * Supplies all mutation paths against the same initial records.
      */
     private List<Command> mutations() {
-        return List.of(addTask(), new Command.DeleteTask(2), addCommitment(), new Command.DeleteCommitment(2));
+        return List.of(addTask(), new Command.DeleteTask(2), addCommitment(), new Command.DeleteCommitment(2),
+                new Command.EditCommitment(2, "Edited", null, LocalTime.NOON, 30),
+                new Command.EditCommitment(2, "Class", null, null, null));
     }
 
     /**
@@ -401,6 +432,10 @@ class CommandDispatcherTest {
         }
         if (command instanceof Command.AddCommitment) {
             return "Added C3: New | Monday 11:00 - 11:30 (30 min)";
+        }
+        if (command instanceof Command.EditCommitment edit) {
+            return edit.name().equals("Class") ? "Edited C2: Class | Monday 10:00 - 11:00 (60 min)"
+                    : "Edited C2: Edited | Monday 12:00 - 12:30 (30 min)";
         }
         return "Deleted commitment C2: Class";
     }

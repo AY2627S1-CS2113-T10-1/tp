@@ -2,6 +2,33 @@
   "version": 1,
   "cases": [
     {
+      "id": "UI-014", "aim": "Commitment edits preserve IDs, reject invalid replacements and survive restart",
+      "status": "active", "setup": "Empty store; weekly events with adjacent and conflicting edits",
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "commitment add n/Lecture day/MON start/1000 d/60", "output": "Added C1: Lecture | Monday 10:00 - 11:00 (60 min)" },
+          { "input": "commitment add n/Lab day/MON start/1200 d/60", "output": "Added C2: Lab | Monday 12:00 - 13:00 (60 min)" },
+          { "input": "plan", "output": "No tasks to schedule." },
+          { "input": "commitment edit C1 n/新 lecture", "output": "Edited C1: 新 lecture | Monday 10:00 - 11:00 (60 min)" },
+          { "input": "schedule today", "output": "No current plan. Run plan to generate one." },
+          { "input": "commitment edit C1 d/120", "output": "Edited C1: 新 lecture | Monday 10:00 - 12:00 (120 min)" },
+          { "input": "commitment edit C1 start/1100", "output": "Error: Commitment overlaps C2: Lab" },
+          { "input": "commitment edit C1", "output": "Error: Provide at least one commitment field to edit." },
+          { "input": "commitment edit C99 n/Missing", "output": "Error: Unknown commitment ID: C99" },
+          { "input": "commitment edit C1 start/2330", "output": "Error: Commitment must not continue past midnight." },
+          { "input": "commitment edit C1 d/30 n/Reordered", "output": "Error: Invalid command format or missing fields\nExpected: commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]" },
+          { "input": "commitment edit C1 day/SUN start/2330 d/30", "output": "Edited C1: 新 lecture | Sunday 23:30 - 24:00 (30 min)" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "commitment list", "output": "=== Recurring Weekly Commitments ===\n[Monday]\nC2. 12:00 - 13:00 | Lab\n\n[Sunday]\nC1. 23:30 - 24:00 | 新 lecture\n\nTotal: 2 recurring commitments across the week." },
+          { "input": "commitment add n/New day/MON start/1000 d/60", "output": "Added C3: New | Monday 10:00 - 11:00 (60 min)" },
+          { "input": "commitment edit C1 n/新 lecture", "output": "Edited C1: 新 lecture | Sunday 23:30 - 24:00 (30 min)" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
       "id": "UI-013", "aim": "Multiple conflicts are chronological and rejection preserves IDs and saved data",
       "status": "active", "setup": "Empty store; add same-day commitments in reverse chronological order",
       "sessions": [
