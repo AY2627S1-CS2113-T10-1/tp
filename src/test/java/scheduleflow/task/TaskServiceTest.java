@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.logging.Handler;
@@ -560,6 +561,207 @@ class TaskServiceTest {
         assertThrows(ValidationException.class, () -> service.edit(cleared, 1,
                 new TaskEdit(Optional.of("Invalid change"), Optional.of(NOW), false), NOW));
         assertEquals(task, source.tasks().getFirst());
+    }
+
+    @Test
+    void setPriority_allTransitions_preservesAllOtherDataAndNoOpIdentity() {
+        Snapshot base = editSource();
+        for (TaskPriority from : TaskPriority.values()) {
+            for (TaskPriority to : TaskPriority.values()) {
+                for (int remaining : new int[] {0, 45, Integer.MAX_VALUE}) {
+                    for (Optional<LocalDateTime> deadline : List.of(Optional.<LocalDateTime>empty(),
+                            Optional.of(NOW.minusYears(1)), Optional.of(NOW.plusYears(2)))) {
+                        Task target = new Task(2, "Private task", deadline, remaining, from);
+                        Snapshot source = new Snapshot(List.of(base.tasks().getFirst(), target,
+                                base.tasks().getLast()), base.commitments(), base.nextTaskId(),
+                                base.nextCommitmentId(), base.studyHours());
+                        Snapshot candidate = service.setPriority(source, 2, to);
+                        Task expected = new Task(2, target.name(), deadline, remaining, to);
+                        assertEquals(new Snapshot(List.of(base.tasks().getFirst(), expected,
+                                base.tasks().getLast()), base.commitments(), base.nextTaskId(),
+                                base.nextCommitmentId(), base.studyHours()), candidate);
+                        assertSame(source.studyHours(), candidate.studyHours());
+                        assertSame(source.tasks().getFirst(), candidate.tasks().getFirst());
+                        assertSame(source.tasks().getLast(), candidate.tasks().getLast());
+                        assertEquals(target, source.tasks().get(1));
+                        assertThrows(UnsupportedOperationException.class, () -> candidate.tasks().clear());
+                        if (from == to) {
+                            assertSame(source, candidate);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    void setPriority_unknownIds_rejectsWithoutChangingSource() {
+        Snapshot source = editSource();
+        for (int id : new int[] {Integer.MIN_VALUE, -1, 0, 1, Integer.MAX_VALUE}) {
+            assertEquals("Unknown task ID: T" + id, assertThrows(ValidationException.class,
+                    () -> service.setPriority(source, id, TaskPriority.HIGH)).getMessage());
+        }
+        assertThrows(ValidationException.class, () -> service.setPriority(Snapshot.empty(), 1, TaskPriority.HIGH));
+        assertEquals(editSource(), source);
+    }
+
+    @Test
+    void setPriority_diagnostics_distinguishesCandidateNoOpAndRejectionPrivately() throws Throwable {
+        Snapshot source = editSource();
+        List<LogRecord> records = captureLogs(TaskService.class, () -> {
+            service.setPriority(source, 2, TaskPriority.HIGH);
+            service.setPriority(source, 2, TaskPriority.NORMAL);
+            assertThrows(ValidationException.class, () -> service.setPriority(source, 1, TaskPriority.LOW));
+        });
+        assertEquals(List.of("Starting task priority update",
+                "Task priority candidate created; not yet saved or published", "Starting task priority update",
+                "Task priority unchanged; source snapshot returned", "Starting task priority update",
+                "Task priority update rejected; source snapshot unchanged"),
+                records.stream().map(LogRecord::getMessage).toList());
+        assertPrivateStageRecords(records);
+    }
+
+    @Test
+    void queries_emptyScopes_returnImmutableEmptyLists() {
+        for (TaskScope scope : TaskScope.values()) {
+            for (List<Task> result : List.of(service.list(Snapshot.empty(), scope),
+                    service.listByPriority(Snapshot.empty(), scope), service.search(Snapshot.empty(), "x", scope))) {
+                assertEquals(List.of(), result);
+                assertThrows(UnsupportedOperationException.class, () -> result.add(Task.withoutDeadline(1, "A", 1)));
+            }
+        }
+        List<Task> overdue = service.overdue(Snapshot.empty(), NOW);
+        assertEquals(List.of(), overdue);
+        assertThrows(UnsupportedOperationException.class, () -> overdue.add(Task.withoutDeadline(1, "A", 1)));
+    }
+
+    @Test
+    void queries_eachScope_preservesRecordsAndReturnsImmutableNumericIds() {
+        Task large = new Task(Integer.MAX_VALUE - 1, "Match", Optional.empty(), 1, TaskPriority.LOW);
+        Task ten = new Task(10, "MATCH", Optional.of(NOW), 0, TaskPriority.HIGH);
+        Task two = new Task(2, "match", Optional.of(DEADLINE), 45, TaskPriority.NORMAL);
+        Snapshot source = new Snapshot(List.of(large, ten, two), List.of(LECTURE), Integer.MAX_VALUE, 8,
+                editSource().studyHours());
+        for (TaskScope scope : TaskScope.values()) {
+            List<Task> expected = switch (scope) {
+                case ACTIVE -> List.of(two, large);
+                case COMPLETED -> List.of(ten);
+                case ALL -> List.of(two, ten, large);
+            };
+            assertEquals(expected, service.list(source, scope));
+            assertEquals(expected, service.search(source, "  MaTcH  ", scope));
+            assertThrows(UnsupportedOperationException.class, () -> service.list(source, scope).clear());
+            assertThrows(UnsupportedOperationException.class, () -> service.search(source, "match", scope).clear());
+        }
+        assertEquals(List.of(two, ten, large), service.list(source));
+        assertEquals(List.of(large, ten, two), source.tasks());
+        assertSame(two, service.list(source, TaskScope.ACTIVE).getFirst());
+    }
+
+    @Test
+    void listByPriority_allPrioritiesAndDeadlineTies_ordersWithinEachScopeWithoutMutation() {
+        List<Task> tasks = new ArrayList<>();
+        List<Task> expected = new ArrayList<>();
+        for (TaskPriority priority : TaskPriority.values()) {
+            int offset = priority.ordinal() * 100;
+            List<Task> group = List.of(
+                    new Task(offset + 2, "Early two", Optional.of(NOW), 1, priority),
+                    new Task(offset + 10, "Early ten", Optional.of(NOW), 0, priority),
+                    new Task(offset + 3, "Later", Optional.of(DEADLINE), 1, priority),
+                    new Task(offset + 1, "Undated one", Optional.empty(), 0, priority),
+                    new Task(offset + 11, "Undated eleven", Optional.empty(), 1, priority));
+            expected.addAll(group);
+            tasks.addAll(group);
+        }
+        Snapshot source = new Snapshot(tasks.reversed(), List.of(), 300, 1);
+        List<Task> stored = List.copyOf(source.tasks());
+        for (TaskScope scope : TaskScope.values()) {
+            List<Task> scopedExpected = expected.stream().filter(task -> scope == TaskScope.ALL
+                    || (scope == TaskScope.ACTIVE ? task.remainingMinutes() > 0 : task.remainingMinutes() == 0))
+                    .toList();
+            List<Task> result = service.listByPriority(source, scope);
+            assertEquals(scopedExpected, result);
+            assertThrows(UnsupportedOperationException.class, () -> result.clear());
+        }
+        assertEquals(stored, source.tasks());
+    }
+
+    @Test
+    void search_unicodeAndPunctuation_matchesLiteralSubstringsOnly() {
+        Task literal = Task.withoutDeadline(10, "Préparation 项目 [a.*]+? \\ Draft", 45);
+        Task other = Task.withoutDeadline(2, "PREPARATION axxx DRAFT", 0);
+        Snapshot source = new Snapshot(List.of(literal, other), List.of(), 11, 1);
+        for (String query : List.of("PRÉPARATION", "项目", "[a.*]+?", "\\", "\u2003项目\u2003")) {
+            assertEquals(List.of(literal), service.search(source, query, TaskScope.ALL));
+        }
+        assertEquals(List.of(other, literal), service.search(source, "draft", TaskScope.ALL));
+        assertEquals(List.of(), service.search(source, "missing", TaskScope.ALL));
+        assertEquals(List.of(), service.search(source, "^Draft$", TaskScope.ALL));
+        assertEquals(List.of(literal, other), source.tasks());
+    }
+
+    @Test
+    void search_turkishDefaultLocale_usesRootMappingAndRestoresDefaults() {
+        Locale original = Locale.getDefault();
+        Locale display = Locale.getDefault(Locale.Category.DISPLAY);
+        Locale format = Locale.getDefault(Locale.Category.FORMAT);
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+            Task task = Task.withoutDeadline(1, "INDIGO İstanbul", 1);
+            Snapshot source = new Snapshot(List.of(task), List.of(), 2, 1);
+            assertEquals(List.of(task), service.search(source, "indigo", TaskScope.ACTIVE));
+            assertEquals(List.of(task), service.search(source, "INDIGO", TaskScope.ACTIVE));
+            assertEquals(List.of(task), service.search(source, "İSTANBUL", TaskScope.ACTIVE));
+        } finally {
+            Locale.setDefault(original);
+            Locale.setDefault(Locale.Category.DISPLAY, display);
+            Locale.setDefault(Locale.Category.FORMAT, format);
+        }
+    }
+
+    @Test
+    void overdue_exactCapturedTime_excludesCompletedUndatedAndFutureWithoutRounding() {
+        Task exact = new Task(10, "Exact", NOW, 1);
+        Task tie = new Task(2, "Tie", NOW, 45);
+        Task old = new Task(7, "Old", NOW.minusYears(2), 1);
+        Task future = new Task(1, "Future", NOW.plusMinutes(1), 1);
+        Task completed = new Task(3, "Completed", NOW.minusYears(3), 0);
+        Task undated = Task.withoutDeadline(4, "Undated", 1);
+        Snapshot source = new Snapshot(List.of(exact, future, tie, completed, undated, old), List.of(), 11, 1);
+        assertEquals(List.of(old), service.overdue(source, NOW.minusNanos(1)));
+        for (LocalDateTime time : List.of(NOW, NOW.plusSeconds(1), NOW.plusMinutes(1).minusNanos(1))) {
+            List<Task> result = service.overdue(source, time);
+            assertEquals(List.of(old, tie, exact), result);
+            assertThrows(UnsupportedOperationException.class, () -> result.clear());
+        }
+        assertEquals(List.of(old, tie, exact, future), service.overdue(source, NOW.plusMinutes(1)));
+        assertEquals(List.of(exact, future, tie, completed, undated, old), source.tasks());
+    }
+
+    @Test
+    void queries_blankAndNullInputs_reportDomainErrorsOrNamedPreconditions() {
+        Snapshot source = editSource();
+        for (String query : List.of("", "  ", "\t\n", "\u2003")) {
+            assertEquals("Search query must not be blank.", assertThrows(ValidationException.class,
+                    () -> service.search(source, query, TaskScope.ALL)).getMessage());
+        }
+        for (Executable operation : List.<Executable>of(
+                () -> service.setPriority(null, 2, TaskPriority.HIGH),
+                () -> service.list(null, TaskScope.ALL), () -> service.listByPriority(null, TaskScope.ALL),
+                () -> service.search(null, "x", TaskScope.ALL), () -> service.overdue(null, NOW))) {
+            assertEquals("state", assertThrows(NullPointerException.class, operation).getMessage());
+        }
+        for (Executable operation : List.<Executable>of(() -> service.list(source, null),
+                () -> service.listByPriority(source, null), () -> service.search(source, "x", null))) {
+            assertEquals("scope", assertThrows(NullPointerException.class, operation).getMessage());
+        }
+        assertEquals("priority", assertThrows(NullPointerException.class,
+                () -> service.setPriority(source, 2, null)).getMessage());
+        assertEquals("query", assertThrows(NullPointerException.class,
+                () -> service.search(source, null, TaskScope.ALL)).getMessage());
+        assertEquals("capturedNow", assertThrows(NullPointerException.class,
+                () -> service.overdue(source, null)).getMessage());
+        assertEquals(editSource(), source);
     }
 
     /** Creates an unsorted mixed snapshot with exhausted counters and both kinds of custom hours. */

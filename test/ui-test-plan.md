@@ -81,6 +81,13 @@ There are no new Task parser/dispatcher commands. `taskEdited`,
 are unwired throwing skeletons and do not count as acceptance coverage. CLI cases
 for those operations remain deferred until integration and rendering are ready.
 
+PR3 review: priority mutation, scoped lists, priority sorting, literal Unicode
+search and exact-time overdue filtering are service APIs with deterministic
+`TaskServiceTest` coverage only. The five new priority/query renderer methods are
+unwired TODO(Tasks) throwing skeletons, not feature acceptance. No parser or
+dispatcher commands were added, so no new active UI commands or fixture changes
+are expected. All sixteen existing active cases remain regression coverage.
+
 Compatibility checks cover optional deadlines in existing add/list/remainder
 output, exact plan work totals (not rounded capacity), 45-minute work versus
 60-minute reservation, partial 30/15 allocation, completed-task exclusion, long

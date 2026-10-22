@@ -4,17 +4,20 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskPriority;
 import scheduleflow.planning.TimeRules;
 
 /**
- * Creates task mutation candidates without saving or changing live state.
+ * Creates task mutation candidates and immutable queries without saving or changing live state.
  * The caller must save each candidate before publishing it and invalidating a plan.
  * Uses the supplied command time rather than reading a clock.
  */
@@ -239,6 +242,52 @@ public final class TaskService {
         return replaceRemaining(state, task, positiveRemaining);
     }
 
+    /**
+     * Changes only priority at the stored position, including for completed or overdue tasks.
+     * Preserves IDs, other task data, unrelated records, counters and custom study hours.
+     *
+     * @param state immutable source snapshot
+     * @param taskId numeric identifier of the task to update
+     * @param priority replacement priority
+     * @return unsaved candidate, or the identical source snapshot if priority is unchanged
+     * @throws NullPointerException if state or priority is null
+     * @throws ValidationException if the task ID is unknown
+     */
+    public Snapshot setPriority(Snapshot state, int taskId, TaskPriority priority) {
+        Objects.requireNonNull(state, "state");
+        Objects.requireNonNull(priority, "priority");
+        LOGGER.log(Level.FINE, "Starting task priority update");
+        try {
+            Task original = findTask(state, taskId);
+            if (original.priority() == priority) {
+                LOGGER.log(Level.FINE, "Task priority unchanged; source snapshot returned");
+                return state;
+            }
+            Task replacement = new Task(original.id(), original.name(), original.deadline(),
+                    original.remainingMinutes(), priority);
+            List<Task> tasks = new ArrayList<>(state.tasks());
+            int position = tasks.indexOf(original);
+            tasks.set(position, replacement);
+            Snapshot candidate = new Snapshot(tasks, state.commitments(), state.nextTaskId(),
+                    state.nextCommitmentId(), state.studyHours());
+            assert candidate.tasks().get(position).equals(replacement)
+                    && candidate.tasks().subList(0, position).equals(state.tasks().subList(0, position))
+                    && candidate.tasks().subList(position + 1, tasks.size())
+                            .equals(state.tasks().subList(position + 1, tasks.size()))
+                    : "Priority update must replace only the target at its stored position";
+            assert candidate.nextTaskId() == state.nextTaskId()
+                    && candidate.nextCommitmentId() == state.nextCommitmentId()
+                    && candidate.commitments().equals(state.commitments())
+                    && candidate.studyHours().equals(state.studyHours())
+                    : "Priority update must preserve counters, commitments and study hours";
+            LOGGER.log(Level.FINE, "Task priority candidate created; not yet saved or published");
+            return candidate;
+        } catch (ValidationException exception) {
+            LOGGER.log(Level.FINE, "Task priority update rejected; source snapshot unchanged");
+            throw exception;
+        }
+    }
+
     /** Resolves a stored task without changing its source snapshot. */
     private Task findTask(Snapshot state, int taskId) {
         Objects.requireNonNull(state, "state");
@@ -311,6 +360,70 @@ public final class TaskService {
         assert tasks.size() == state.tasks().size() : "Listing must include every stored task";
         LOGGER.log(Level.FINE, "Task listing completed; source snapshot unchanged");
         return tasks;
+    }
+
+    /**
+     * Returns an immutable scoped view in numeric ID order without changing stored order or task data.
+     * @throws NullPointerException if state or scope is null
+     */
+    public List<Task> list(Snapshot state, TaskScope scope) {
+        return scopedTasks(state, scope).sorted(Comparator.comparingInt(Task::id)).toList();
+    }
+
+    /**
+     * Returns an immutable scoped view by HIGH, NORMAL, LOW, then dated before undated,
+     * ascending deadline and numeric ID. Does not reorder the source snapshot.
+     * @throws NullPointerException if state or scope is null
+     */
+    public List<Task> listByPriority(Snapshot state, TaskScope scope) {
+        return scopedTasks(state, scope).sorted(Comparator.comparing(Task::priority)
+                .thenComparing(task -> task.deadline().orElse(null), Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparingInt(Task::id)).toList();
+    }
+
+    /**
+     * Finds literal name substrings using stripped query text and {@link Locale#ROOT} lowercase mapping.
+     * Preserves Unicode text without regex interpretation or accent/normalization folding.
+     * Returns immutable matches in numeric ID order without mutation or saving.
+     * @throws NullPointerException if state, query or scope is null
+     * @throws ValidationException if the stripped query is blank
+     */
+    public List<Task> search(Snapshot state, String query, TaskScope scope) {
+        Objects.requireNonNull(state, "state");
+        Objects.requireNonNull(query, "query");
+        Objects.requireNonNull(scope, "scope");
+        String normalizedQuery = query.strip().toLowerCase(Locale.ROOT);
+        if (normalizedQuery.isBlank()) {
+            throw new ValidationException("Search query must not be blank.");
+        }
+        return scopedTasks(state, scope)
+                .filter(task -> task.name().toLowerCase(Locale.ROOT).contains(normalizedQuery))
+                .sorted(Comparator.comparingInt(Task::id)).toList();
+    }
+
+    /**
+     * Returns immutable active dated tasks due at or before the exact captured time, by deadline then numeric ID.
+     * Excludes completed and undated tasks; reads no clock and leaves the source unchanged.
+     * @throws NullPointerException if state or capturedNow is null
+     */
+    public List<Task> overdue(Snapshot state, LocalDateTime capturedNow) {
+        Objects.requireNonNull(state, "state");
+        Objects.requireNonNull(capturedNow, "capturedNow");
+        return scopedTasks(state, TaskScope.ACTIVE)
+                .filter(task -> task.deadline().isPresent() && !task.deadline().get().isAfter(capturedNow))
+                .sorted(Comparator.comparing((Task task) -> task.deadline().orElseThrow())
+                        .thenComparingInt(Task::id)).toList();
+    }
+
+    /** Selects retained task status without mutating or sorting the source collection. */
+    private Stream<Task> scopedTasks(Snapshot state, TaskScope scope) {
+        Objects.requireNonNull(state, "state");
+        Objects.requireNonNull(scope, "scope");
+        return state.tasks().stream().filter(task -> switch (scope) {
+            case ACTIVE -> task.remainingMinutes() > 0;
+            case COMPLETED -> task.remainingMinutes() == 0;
+            case ALL -> true;
+        });
     }
     // @@author
 }

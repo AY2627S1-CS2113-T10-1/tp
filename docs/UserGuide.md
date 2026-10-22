@@ -125,6 +125,15 @@ display `No deadline`; loaded completed tasks remain listed with `0 min` and
 receive no planning sessions or unallocated rows. No separate status/completed
 list rendering or priority commands are available yet.
 
+Priority changes, active/completed/all scoped lists, priority-ordered lists,
+literal case-insensitive name search and overdue queries are now supported by
+internal Java service APIs only. Priority changes may update completed records
+without reopening them. Overdue queries exclude completed and undated tasks and
+include a deadline equal to the captured time. Query results do not save or change
+tasks. Their new renderer methods are unwired throwing skeletons: **none of these
+operations has a console command yet**. `task list` remains an all-task numeric-ID
+listing; the planner's deadline-first policy is unchanged.
+
 ### Recording duration (tasks and commitments)
 
 Enter duration when adding a task or commitment using `d/MINUTES`; there is no

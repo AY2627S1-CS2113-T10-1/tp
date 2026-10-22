@@ -233,9 +233,8 @@ TaskPriority)`. The original four-argument concrete-date constructor defaults
 priority to NORMAL and still rejects null deadlines; there is no ambiguous
 four-argument Optional overload. Use `Task.withoutDeadline(id, name, minutes)`
 or the canonical constructor for explicit absence, never a sentinel date.
-HIGH/NORMAL/LOW are stored and used only for planner ties here; priority operations
-are reserved for PR3. No recurring templates, queries or other planned features
-are implemented by this change.
+HIGH/NORMAL/LOW are stored and used for planner ties and the service-level queries
+described below. No recurring templates are implemented.
 
 `TaskService` exposes these pure candidate APIs:
 
@@ -279,6 +278,45 @@ completed tasks, priority ties, deterministic results and long conservation.
 Codec/file tests cover explicit legacy migration, extended round trips, read-only
 loads and corruption. Renderer tests extend existing compatibility only, never
 claiming skeletons as acceptance. CLI acceptance for the new APIs is deferred.
+
+### Task queries and priorities (service APIs only)
+
+`TaskService.setPriority(state, id, priority)` changes only metadata, including on
+completed, overdue or undated tasks. It preserves stored position, all other task
+fields, unrelated records, both counters and custom study hours. An unchanged
+priority returns the identical snapshot. FINE diagnostics distinguish candidates,
+no-ops and rejected IDs without private values; assertions check preservation.
+Candidates are not saved or published by the service.
+
+`TaskScope.ACTIVE`, `COMPLETED` and `ALL` explicitly select positive remaining
+work, zero remaining work or every retained task. The original `list(state)` still
+returns all tasks in numeric ID order. `list(state, scope)` does the same within
+a scope. `listByPriority(state, scope)` orders HIGH, NORMAL, LOW, then dated before
+undated within each priority, ascending deadline and numeric ID. This is a query
+order, not a change to the planner's deadline-first allocation policy.
+
+`search(state, query, scope)` strips outer whitespace, rejects blank queries and
+matches literal name substrings using `Locale.ROOT` lowercase mapping. Unicode
+and punctuation are retained, with no regex, accent folding or normalization;
+matches use numeric ID order. `overdue(state, capturedNow)` includes only active
+dated tasks with deadline at or before that exact time, ordered by deadline then
+numeric ID. It does not round seconds/nanoseconds or read a clock. All query lists
+are immutable and leave source order, data and settings unchanged. Null arguments
+have named preconditions; blank queries and unknown mutation IDs use
+`ValidationException`.
+
+`TaskServiceTest` covers empty/nonempty scopes, numeric IDs, every priority
+transition, completed-task metadata, custom hours, exhausted counters, immutable
+results and source order, deadline/undated ties, fixed-time overdue boundaries,
+literal Unicode searches, Turkish JVM defaults restored in `finally` under
+`@Isolated`, invalid/null inputs and private diagnostics.
+
+The new `TextRenderer.taskPriorityUpdated(Task)`, `tasksByScope(List<Task>,TaskScope)`,
+`tasksByPriority(List<Task>)`, `taskSearchResults(List<Task>,String)` and
+`overdueTasks(List<Task>,LocalDateTime)` methods are TODO(Tasks) throwing skeletons
+only. Existing skeletons and renderer behavior are unchanged. No parser or
+dispatcher wiring, console commands or feature acceptance for these skeletons
+is included. Existing active UI fixtures remain applicable without changes.
 
 ### Basic saving and loading
 
