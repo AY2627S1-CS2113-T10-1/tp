@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Objects;
 import scheduleflow.common.ValidationException;
+import scheduleflow.model.StudyWindow;
 
 /**
  * Defines local wall-time study windows and the rolling calendar-year horizon.
@@ -29,12 +30,18 @@ public final class TimeRules {
      * Any fraction of a half-hour advances to the next slot, including a single nanosecond.
      */
     public static LocalDateTime eligibleStart(LocalDate date, LocalDateTime now) {
+        return eligibleStart(date, now, StudyWindow.DEFAULT);
+    }
+
+    /** Returns the rounded planning cutoff clamped to the selected date's effective window. */
+    public static LocalDateTime eligibleStart(LocalDate date, LocalDateTime now, StudyWindow window) {
         Objects.requireNonNull(now, "now");
+        Objects.requireNonNull(window, "window");
         if (date == null || date.isBefore(now.toLocalDate()) || !date.isBefore(horizonEnd(now).toLocalDate())) {
             throw new ValidationException("Date must lie inside the current planning horizon.");
         }
-        LocalDateTime windowStart = date.atTime(STUDY_START);
-        LocalDateTime windowEnd = date.atTime(STUDY_END);
+        LocalDateTime windowStart = date.atTime(window.start());
+        LocalDateTime windowEnd = date.atTime(window.end());
         if (date.isAfter(now.toLocalDate()) || !now.isAfter(windowStart)) {
             return windowStart;
         }

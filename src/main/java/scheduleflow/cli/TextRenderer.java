@@ -3,6 +3,7 @@ package scheduleflow.cli;
 
 import java.time.DayOfWeek;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.TextStyle;
@@ -13,6 +14,8 @@ import java.util.StringJoiner;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import scheduleflow.model.Commitment;
+import scheduleflow.model.StudyHours;
+import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 import scheduleflow.planning.Plan;
 import scheduleflow.planning.ScheduleEntry;
@@ -59,6 +62,9 @@ public final class TextRenderer {
                 "commitment add n/NAME day/DAY start/HHmm d/MINUTES - Add a weekly commitment.",
                 "commitment list - List weekly commitments.",
                 "commitment delete CNUMBER - Delete a weekly commitment.",
+                "hours DAY|YYYY-MM-DD /start HH:mm /end HH:mm - Set study hours.",
+                "hours DAY|YYYY-MM-DD - View effective study hours (full lowercase weekday).",
+                "hours reset DAY|YYYY-MM-DD - Restore inherited study hours.",
                 "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]"
                         + " - Edit at least one field; saves and clears the plan. Run plan again.",
                 "plan - Generate or replace the study plan.",
@@ -66,6 +72,27 @@ public final class TextRenderer {
                 "exit - Close the application."));
     }
 
+    // @@author GabrielYuSP
+    /** Formats the effective window for a selected weekday or calendar date. */
+    public String hours(String target, StudyWindow window) {
+        Objects.requireNonNull(target, "target");
+        Objects.requireNonNull(window, "window");
+        return "Study hours for " + target + ": " + TIME.format(window.start()) + " - " + TIME.format(window.end());
+    }
+
+    /** Shows whether a reset restores default hours or a configured recurring weekday window. */
+    public String hoursReset(String target, StudyHours hours) {
+        Objects.requireNonNull(hours, "hours");
+        StudyWindow window = hours.forTarget(target);
+        boolean inheritsWeekday = Character.isDigit(target.charAt(0)) && hours.windows().containsKey(
+                LocalDate.parse(target).getDayOfWeek().name().toLowerCase(Locale.ROOT));
+        String source = inheritsWeekday ? "recurring weekday hours" : "default hours";
+        return "Reset study hours for " + target + ".\nUsing " + source + ": "
+                + TIME.format(window.start()) + " - " + TIME.format(window.end())
+                + ".\nRun plan to regenerate.";
+    }
+
+    // @@author ka-how
     /**
      * Formats the added task.
      *

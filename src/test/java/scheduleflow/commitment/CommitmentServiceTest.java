@@ -13,6 +13,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -23,6 +24,8 @@ import org.junit.jupiter.api.parallel.Isolated;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
+import scheduleflow.model.StudyHours;
+import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 import scheduleflow.planning.EarliestDeadlinePlanner;
 import scheduleflow.planning.Plan;
@@ -39,6 +42,24 @@ import scheduleflow.task.TaskService;
 @Isolated("Logging checks temporarily configure the commitment service logger.")
 class CommitmentServiceTest {
     private final CommitmentService service = new CommitmentService();
+
+    @Test
+    void edit_customHours_preservesWeekdayAndDateOverridesThroughRestart(@TempDir Path directory) throws Exception {
+        StudyHours hours = new StudyHours(Map.of(
+                "monday", new StudyWindow(LocalTime.of(9, 0), LocalTime.of(18, 0)),
+                "2026-10-26", new StudyWindow(LocalTime.of(14, 0), LocalTime.of(19, 0))));
+        Snapshot source = service.add(Snapshot.empty().withStudyHours(hours), "Class",
+                DayOfWeek.MONDAY, LocalTime.of(10, 0), 60);
+        Snapshot edited = service.edit(source, 1, "Changed", null, LocalTime.of(11, 0), null);
+        assertEquals(hours, edited.studyHours());
+        assertEquals(hours, source.studyHours());
+        Path path = directory.resolve("scheduleflow.txt");
+        new FileStorage(path, new StateCodec()).save(edited);
+        Snapshot restored = new FileStorage(path, new StateCodec()).load();
+        assertEquals(edited, restored);
+        assertEquals(hours.forTarget("monday"), restored.studyHours().forTarget("monday"));
+        assertEquals(hours.forTarget("2026-10-26"), restored.studyHours().forTarget("2026-10-26"));
+    }
 
     @Test
     void edit_selectedFields_preservesOmissionsOrderTasksAndExhaustedCounters() {

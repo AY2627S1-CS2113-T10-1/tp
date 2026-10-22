@@ -11,6 +11,34 @@ import java.util.Objects;
  * Defines the complete command vocabulary as immutable transport values.
  */
 public sealed interface Command {
+    // @@author GabrielYuSP
+    /** Requests replacement of one recurring weekday or date-specific window. */
+    record SetHours(String target, LocalTime start, LocalTime end) implements Command {
+        /** Requires transport values; domain validation happens during execution. */
+        public SetHours {
+            Objects.requireNonNull(target, "target");
+            Objects.requireNonNull(start, "start");
+            Objects.requireNonNull(end, "end");
+        }
+    }
+
+    /** Requests the effective window for a weekday or date. */
+    record ShowHours(String target) implements Command {
+        /** Requires a target for lookup. */
+        public ShowHours {
+            Objects.requireNonNull(target, "target");
+        }
+    }
+
+    /** Removes the selected override, restoring inherited hours. */
+    record ResetHours(String target) implements Command {
+        /** Requires a target for reset. */
+        public ResetHours {
+            Objects.requireNonNull(target, "target");
+        }
+    }
+
+    // @@author ka-how
     /**
      * Requests command help.
      */

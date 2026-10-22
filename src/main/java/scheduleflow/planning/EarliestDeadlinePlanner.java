@@ -25,7 +25,7 @@ public final class EarliestDeadlinePlanner implements Planner {
         Objects.requireNonNull(now, "now");
 
         LocalDateTime horizonEnd = TimeRules.horizonEnd(now);
-        List<Slot> slots = createSlots(state.commitments(), now, horizonEnd);
+        List<Slot> slots = createSlots(state, now, horizonEnd);
         List<Task> tasks = new ArrayList<>(state.tasks());
         tasks.sort(Comparator.comparing(Task::deadline).thenComparingInt(Task::id));
 
@@ -41,15 +41,16 @@ public final class EarliestDeadlinePlanner implements Planner {
     /**
      * Creates every eligible half-hour slot and marks slots intersecting commitments unavailable.
      */
-    private static List<Slot> createSlots(List<Commitment> commitments, LocalDateTime now,
+    private static List<Slot> createSlots(Snapshot state, LocalDateTime now,
             LocalDateTime horizonEnd) {
         List<Slot> slots = new ArrayList<>();
         for (var date = now.toLocalDate(); date.isBefore(horizonEnd.toLocalDate()); date = date.plusDays(1)) {
-            LocalDateTime slotStart = TimeRules.eligibleStart(date, now);
-            LocalDateTime windowEnd = date.atTime(TimeRules.STUDY_END);
+            var window = state.studyHours().forDate(date);
+            LocalDateTime slotStart = TimeRules.eligibleStart(date, now, window);
+            LocalDateTime windowEnd = date.atTime(window.end());
             while (!slotStart.plusMinutes(TimeRules.SLOT_MINUTES).isAfter(windowEnd)) {
                 Slot slot = new Slot(slotStart);
-                if (isBlocked(slotStart, commitments)) {
+                if (isBlocked(slotStart, state.commitments())) {
                     slot.available = false;
                 }
                 slots.add(slot);

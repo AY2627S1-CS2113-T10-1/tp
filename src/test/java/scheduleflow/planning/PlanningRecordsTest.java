@@ -37,8 +37,8 @@ class PlanningRecordsTest {
         assertThrows(ValidationException.class, () -> new StudySession(1, start, start));
         assertThrows(ValidationException.class, () -> new StudySession(1, start.plusMinutes(30), start));
         assertThrows(ValidationException.class, () -> new StudySession(1, start, start.plusDays(1)));
-        assertThrows(ValidationException.class, () -> new StudySession(1, start.minusMinutes(30), start));
-        assertThrows(ValidationException.class, () -> new StudySession(1, start, DATE.atTime(22, 30)));
+        assertEquals(30, new StudySession(1, start.minusMinutes(30), start).minutes());
+        assertEquals(870, new StudySession(1, start, DATE.atTime(22, 30)).minutes());
         assertThrows(ValidationException.class, () -> new StudySession(1, start.plusMinutes(1), start.plusMinutes(30)));
         assertThrows(ValidationException.class, () -> new StudySession(1, start.plusSeconds(1), start.plusMinutes(30)));
         assertThrows(ValidationException.class, () -> new StudySession(1, start, start.plusMinutes(30).plusNanos(1)));
@@ -127,8 +127,8 @@ class PlanningRecordsTest {
         assertThrows(ValidationException.class, () -> entry(8, 9, null, "", ""));
         assertThrows(ValidationException.class, () -> entry(8, 9, SlotKind.FREE, null, ""));
         assertThrows(ValidationException.class, () -> entry(8, 9, SlotKind.FREE, "", null));
-        assertThrows(ValidationException.class, () -> entry(7, 8, SlotKind.FREE, "", ""));
-        assertThrows(ValidationException.class, () -> entry(21, 23, SlotKind.FREE, "", ""));
+        assertEquals(DATE.atTime(7, 0), entry(7, 8, SlotKind.FREE, "", "").start());
+        assertEquals(DATE.atTime(23, 0), entry(21, 23, SlotKind.FREE, "", "").end());
         assertThrows(ValidationException.class, () -> entry(8, 8, SlotKind.FREE, "", ""));
         assertThrows(ValidationException.class,
                 () -> new ScheduleEntry(DATE.atTime(8, 1), DATE.atTime(9, 0), SlotKind.FREE, "", ""));

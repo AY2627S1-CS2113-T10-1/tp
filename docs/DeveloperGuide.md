@@ -60,7 +60,7 @@ conventions and CS2113 code-quality guidelines used by this project.
 
 ### Command transport
 
-The sealed `Command` interface contains the twelve supported command records.
+The sealed `Command` interface contains fifteen supported command records.
 Records that only carry values use Java's generated canonical constructors;
 redundant empty compact constructors have been removed. Records with required
 reference fields retain their null checks. Parsing and the services still own
@@ -78,7 +78,7 @@ tasks keep their full work estimate as unallocated; eligible tasks retain any
 sessions that fit before their deadline. Adjacent slots for one task merge
 within a day. Source task estimates remain unchanged.
 
-`ScheduleService` projects the frozen plan across the complete 08:00-22:00
+`ScheduleService` projects the frozen plan across the complete configured daily
 window. Each slot is classified as busy, assigned to a task, before the
 generation cutoff, or free, in that order. Merging preserves commitment and
 task identities. `Plan`, `StudySession`, `UnallocatedWork`, `ScheduleEntry` and
@@ -86,6 +86,46 @@ task identities. `Plan`, `StudySession`, `UnallocatedWork`, `ScheduleEntry` and
 allocation relationships remain the planner's responsibility. Fixed-date
 planner and projection tests verify deadline order, conservation of minutes,
 cutoff rounding, clipping, midnight commitments and allowed schedule dates.
+
+### Configurable study hours
+
+`StudyWindow` validates positive same-day intervals on half-hour boundaries.
+`StudyHours` holds an immutable map keyed by full lowercase weekday names or
+canonical ISO dates. Resolution is date override, then weekday, then
+`StudyWindow.DEFAULT` (08:00–22:00). Resets remove only the selected key.
+Overnight windows and 24:00 endpoints are unsupported; the latest endpoint is 23:30.
+
+`Snapshot` now includes `studyHours`; its original four-argument constructor
+remains available and supplies defaults. Task and commitment services carry the
+settings into all candidates. `SetHours`, `ShowHours` and `ResetHours` commands
+use the agreed `hours TARGET /start HH:mm /end HH:mm` grammar, full lowercase
+weekday names and strict ISO dates. The dispatcher saves a changed snapshot
+before publication and plan invalidation; failed saves retain the old plan.
+Reset dispatch uses a separate confirmation from setting hours. The renderer
+identifies whether the restored window comes from a recurring weekday setting
+or the default and prints its endpoints. Dispatcher tests cover both sources
+and resetting an unset date; UI-015 checks the exact reset confirmations.
+
+Both slot allocation and schedule projection resolve the window from the
+snapshot. `TimeRules.eligibleStart` has a window-aware overload; the original
+overload retains default behavior. `StudySession` and `ScheduleEntry` validate
+same-day, positive, aligned intervals; the planner enforces configured hours.
+`ScheduleView` carries and validates its effective window, retaining the original
+four-argument constructor for default-window callers. Plans freeze their source
+settings, so later time or unrelated snapshots do not alter projections.
+
+The codec reads versions 1 and 2. It writes version 2 when custom hours are
+present, appending sorted `HOURS|TARGET|HH:mm|HH:mm` rows. Duplicate targets,
+invalid dates, unknown weekdays and invalid intervals reject the whole file.
+Snapshots without custom settings retain version 1 encoding. Existing version 1
+files load with defaults; older applications reject files containing version 2.
+Atomic replacement still saves tasks, commitments, counters and hours together.
+
+JUnit coverage checks precedence/reset, immutable maps, input boundaries,
+legacy and new codec round trips, malformed records, save rollback, preservation
+through task/commitment changes, recurring allocation, clipping and rounded
+cutoffs outside the old window. UI-015 verifies commands and persistence through
+three isolated console sessions, including reset and plan invalidation.
 
 ### Task operations and defensive checks
 
@@ -150,7 +190,7 @@ The existing packaged UI fixtures require no changed output expectations.
 `FileStorage` loads UTF-8 or returns `Snapshot.empty()` for a definitely missing
 file. Saving creates missing parent directories, writes a sibling temporary
 file, then atomically replaces the target. There is no non-atomic fallback.
-Constructors perform no I/O; existing public interfaces remain unchanged.
+Constructors perform no I/O; existing constructor call sites remain supported.
 
 Version 1 uses one record per line:
 
@@ -365,6 +405,10 @@ The existing model and overlap helper remain the validation authorities. Only
 the target ID is excluded from conflict checks. Stored position, other records,
 tasks and both counters are preserved, even when the next ID is exhausted.
 No delete/add intermediate state or storage-format change is required.
+The edit candidate explicitly carries the source study-hours settings; using the
+legacy four-argument snapshot constructor here would silently restore defaults.
+A regression test round-trips both weekday and dated settings after editing.
+UI-014 also checks settings survive an edit and a fresh process restart.
 
 `Command.EditCommitment` transports partial values. The parser accepts subsets
 in `n/`, `day/`, `start/`, `d/` order with the existing strict weekday/time/integer
@@ -617,7 +661,7 @@ estimates or commitments before the deadline.
 
 * *Task* - An unfinished item with a deadline and a remaining-work estimate.
 * *Commitment* - A busy interval repeated on one weekday until deleted.
-* *Snapshot* - Immutable tasks, commitments and their independent next-ID counters.
+* *Snapshot* - Immutable tasks, commitments, study hours and independent next-ID counters.
 * *Plan* - Temporary allocations and unallocated work derived from a snapshot.
 * *Planning horizon* - The calendar range ending at midnight on the same date
   next year, with February 29 adjusted to February 28 when necessary.

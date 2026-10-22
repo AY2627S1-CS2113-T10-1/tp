@@ -11,6 +11,8 @@ import java.util.logging.Logger;
 import scheduleflow.commitment.CommitmentService;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
+import scheduleflow.model.StudyHours;
+import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 import scheduleflow.planning.Plan;
 import scheduleflow.planning.Planner;
@@ -97,6 +99,11 @@ public final class CommandDispatcher {
         LOGGER.log(Level.FINE, "Command time captured");
         String output = switch (command) {
             case Command.Help ignored -> renderer.help();
+            case Command.SetHours hours -> changeHours(hours.target(), state.snapshot().studyHours()
+                    .withWindow(hours.target(), new StudyWindow(hours.start(), hours.end())), state);
+            case Command.ResetHours hours -> resetHours(hours.target(), state);
+            case Command.ShowHours hours -> renderer.hours(hours.target(),
+                    state.snapshot().studyHours().forTarget(hours.target()));
             case Command.AddTask add -> addTask(add, state, now);
             case Command.ListTasks ignored -> renderer.tasks(tasks.list(state.snapshot()));
             case Command.DeleteTask delete -> deleteTask(delete.id(), state);
@@ -114,6 +121,21 @@ public final class CommandDispatcher {
         return response;
     }
 
+    // @@author GabrielYuSP
+    /** Saves hours before clearing a plan, preserving the live settings and plan if saving fails. */
+    private String changeHours(String target, StudyHours hours, AppState state) throws StorageException {
+        saveAndCommit(state.snapshot().withStudyHours(hours), state);
+        return renderer.hours(target, hours.forTarget(target)) + "\nSaved study hours. Run plan to regenerate.";
+    }
+
+    /** Confirms a reset and its inherited hours only after saving succeeds. */
+    private String resetHours(String target, AppState state) throws StorageException {
+        StudyHours hours = state.snapshot().studyHours().reset(target);
+        saveAndCommit(state.snapshot().withStudyHours(hours), state);
+        return renderer.hoursReset(target, hours);
+    }
+
+    // @@author ka-how
     /**
      * Resolves the allocated ID from the validated candidate before saving and publishing it.
      */

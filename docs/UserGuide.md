@@ -7,7 +7,7 @@ description: Manage tasks, recurring commitments, and study plans with the Sched
 
 ScheduleFlow is a command line application for university students balancing coursework deadlines, project work, and recurring classes. Add your tasks and weekly commitments, then generate a study plan that allocates work to available time before each deadline.
 
-Study hours are **08:00–22:00 every day**, including weekends. Work is scheduled in **30-minute slots**, and any work that does not fit is reported explicitly.
+Study hours default to **08:00–22:00 every day**, including weekends. You can set recurring weekday hours and override individual dates. Work is scheduled in **30-minute slots**, and any work that does not fit is reported explicitly.
 
 > **Implementation status:** All supported commands are connected to the console application. Changes save before success is printed, IDs survive restarts, and plans remain temporary. Java tests cover transactions and fixed-clock planning; packaged console tests cover startup, recovery and saved restarts.
 
@@ -24,6 +24,7 @@ Study hours are **08:00–22:00 every day**, including weekends. Work is schedul
   - [Editing a commitment](#editing-a-commitment)
   - [Listing commitments](#listing-commitments)
   - [Deleting a commitment](#deleting-a-commitment)
+- [Study hours](#study-hours)
 - [Study plans](#study-plans)
   - [Generating a plan](#generating-a-plan)
   - [Planning hours and date range](#planning-hours-and-date-range)
@@ -70,7 +71,7 @@ Study hours are **08:00–22:00 every day**, including weekends. Work is schedul
 
    Replace the example deadline with a future date within the [allowed date range](#planning-hours-and-date-range) when necessary.
 
-6. Enter `exit` when finished. Successful task and commitment changes are already saved automatically.
+6. Enter `exit` when finished. Successful task, commitment and study-hours changes are already saved automatically.
 
 ## Command format
 
@@ -82,11 +83,13 @@ Enter each command on one line. In syntax examples, uppercase placeholders such 
 | Fields | Fields must appear in the stated order; bracketed edit fields are optional | `n/NAME due/DATE_TIME d/MINUTES` |
 | Names | Nonblank; may contain spaces and Unicode, but no `/`, tabs, newlines, or other control characters | `CS2113 draft` |
 | Dates | Real dates in `YYYY-MM-DD` format; years `0001`–`9999` | `2026-10-06` |
-| Times | Four digits in 24-hour `HHmm` format, from `0000` to `2359` | `0930`, `1800` |
+| Task/commitment times | Four digits in 24-hour `HHmm` format, from `0000` to `2359` | `0930`, `1800` |
+| Study hours | `HH:mm`, on half-hour boundaries; start before end within the same day | `09:00`, `22:30` |
 | Deadlines | Date and time separated by a space; any minute is allowed | `2026-10-06 2359` |
 | Durations | Positive whole minutes, divisible by 30; no sign or leading zeroes | `30`, `90`, `180` |
 | Commitment starts | Must be on the hour or half hour | `1000`, `1030` |
-| Weekdays | Exactly `MON`, `TUE`, `WED`, `THU`, `FRI`, `SAT`, or `SUN` | `MON` |
+| Commitment weekdays | Exactly `MON`, `TUE`, `WED`, `THU`, `FRI`, `SAT`, or `SUN` | `MON` |
+| Study-hours weekdays | Full lowercase weekday names | `tuesday` |
 | Task IDs | `T` followed by a positive integer, without leading zeroes | `T1`, `T12` |
 | Commitment IDs | `C` followed by a positive integer, without leading zeroes | `C1`, `C12` |
 
@@ -258,6 +261,7 @@ Successful edits save automatically and clear the plan; run `plan` again. This
 also applies when you explicitly supply an existing value. Invalid edits and failed
 saves leave the saved data, IDs, current records and plan unchanged. Correct the
 input or save problem and retry. Edited values survive restarting the application.
+Editing a commitment also preserves configured study hours and date overrides.
 
 ### Listing commitments
 
@@ -306,6 +310,56 @@ Deleted commitment C1: CS2113 lecture
 
 A successful deletion saves the change and clears the current plan. Run `plan` again to make the released time available for study sessions.
 
+## Study hours
+
+Set a recurring window independently for each weekday:
+
+```text
+hours tuesday /start 09:00 /end 22:00
+hours wednesday /start 10:00 /end 18:00
+```
+
+Override a single calendar date without changing its recurring weekday setting:
+
+```text
+hours 2026-10-27 /start 14:00 /end 19:00
+```
+
+The date override takes priority over the weekday setting, which takes priority
+over the default 08:00–22:00 window. Thus October 27 uses 14:00–19:00, other
+Tuesdays use 09:00–22:00, Wednesdays use 10:00–18:00, and other days keep the default.
+
+View the effective window or remove only the selected setting:
+
+```text
+hours tuesday
+hours 2026-10-27
+hours reset 2026-10-27
+hours reset tuesday
+```
+
+Resetting a date restores its weekday hours (or the default). Resetting a
+weekday restores its default but preserves date overrides. Resetting an unset
+target is allowed. Viewing hours does not require or change a plan.
+
+Reset confirmations explicitly show the restored hours. For example,
+`hours reset tuesday` reports `Using default hours: 08:00 - 22:00.`
+A date reset reports `Using recurring weekday hours` instead when that weekday
+has a configured setting, followed by its actual start and end times.
+
+Times must use `HH:mm` and fall on `:00` or `:30`, from `00:00` through `23:30`.
+Start must be strictly before end on the same day. Overnight, zero-length and
+`24:00` windows are unsupported. Each day has one continuous study window;
+use commitments to block breaks within it. Dates may be any valid date in years
+0001–9999; configuring hours does not extend the planning horizon.
+
+Successful sets and resets save automatically and clear the current plan. Run
+`plan` again to apply the change. Invalid commands and failed saves preserve
+both settings and the current plan. Task and commitment changes preserve hours,
+and settings survive restarting the application. Existing saves without hours
+continue to use the default. A save containing custom hours requires this version
+of ScheduleFlow; older versions cannot read the new format.
+
 ## Study plans
 
 ### Generating a plan
@@ -338,9 +392,10 @@ Each `plan` command replaces the previous plan. It does not change stored task d
 
 ### Planning hours and date range
 
-Study windows are fixed at **08:00–22:00 every local calendar day**, including weekends.
+Study windows default to **08:00–22:00 every local calendar day**, including weekends.
+The planner uses each date's effective [study hours](#study-hours).
 
-For the day on which you generate a plan, scheduling starts at the later of 08:00 and the current time rounded up to the next half hour. At or after 22:00, there are no study slots left for that day. Future days start at 08:00.
+For the day on which you generate a plan, scheduling starts at the later of the configured start and the current time rounded up to the next half hour. At or after the configured end, no study slots remain that day. Future days start at their configured start. The following examples use default hours.
 
 | Time when `plan` runs | Earliest eligible start that day |
 | --- | --- |
@@ -356,7 +411,7 @@ For example, on 5 October 2026:
 
 - A new task's deadline must be later than the current time and at or before **5 October 2027 at 00:00**.
 - A new plan covers **5 October 2026 through 4 October 2027**, inclusive.
-- The latest possible study session still ends at **22:00 on 4 October 2027**.
+- With default hours, the latest possible study session ends at **22:00 on 4 October 2027**.
 
 This is a calendar year, not a fixed 365 days. For a 29 February start date, the following year's boundary adjusts to 28 February. There is no first-startup limit and no need to delete saved data to move the range forward.
 
@@ -396,7 +451,7 @@ schedule YYYY-MM-DD
 
 `today` means the computer's current local date when the command runs. A dated command selects that calendar date explicitly.
 
-The schedule displays the latest plan's full 08:00–22:00 window in chronological order, along with the time the plan was generated. Commitments are clipped to the study window: a 07:30–09:00 commitment appears as 08:00–09:00. Commitments entirely outside study hours remain visible in `commitment list` but do not appear in the schedule.
+The schedule displays the latest plan's full configured window in chronological order, along with the time the plan was generated. Commitments are clipped to the study window: with default hours, a 07:30–09:00 commitment appears as 08:00–09:00. Commitments entirely outside study hours remain visible in `commitment list` but do not appear in the schedule.
 
 ### Schedule labels
 
@@ -463,7 +518,7 @@ No current plan. Run plan to generate one.
 
 A selected date must fall within the current plan's date range. An out-of-range request reports the earliest and latest allowed dates; it does not produce an empty schedule. Run `plan` again when you need a fresh range.
 
-**Plans remain fixed until regenerated.** Viewing a schedule later does not move its sessions, update its generation time, or account for completed work. Successful additions, deletions and commitment edits clear the plan; failed commands preserve it. Restarting also clears the plan.
+**Plans remain fixed until regenerated.** Viewing a schedule later does not move its sessions, update its generation time, or account for completed work. Successful task or commitment additions, deletions and commitment edits, and study-hours sets and resets, clear the plan; failed commands preserve it. Restarting also clears the plan.
 
 ## Help and exit
 
@@ -487,9 +542,9 @@ Goodbye for now!
 ## Saving and restoring data
 
 The application loads saved data before showing its first prompt and saves
-each successful task or commitment change automatically.
+each successful task, commitment or study-hours change automatically.
 
-Tasks, commitments, and the next ID counters are saved automatically after each successful addition, deletion or commitment edit and restored at startup. No manual save or load command is needed.
+Tasks, commitments, study hours and the next ID counters are saved automatically after each successful change and restored at startup. No manual save or load command is needed.
 
 - **Location:** `data/scheduleflow.txt`, relative to the folder from which you launch the application. Launch from the same folder to use the same data.
 - **First launch:** If the file is absent, the app starts empty. The first successful change creates the saved data.
@@ -518,11 +573,11 @@ completed work, replace the task with your revised remaining-work estimate.
 
 ### Why did my schedule disappear?
 
-A successful task or commitment addition or deletion, or commitment edit, clears the current plan. Plans also disappear when the application restarts. Run `plan` to generate another one.
+A successful task or commitment addition, deletion or commitment edit, or a study-hours set or reset, clears the current plan. Plans also disappear when the application restarts. Run `plan` to generate another one.
 
 ### Can I change the study hours or slot size?
 
-The MVP uses fixed study hours of 08:00–22:00 and 30-minute slots. These settings are not configurable.
+Use `hours` to configure weekday hours and date overrides. The slot size remains fixed at 30 minutes.
 
 ### Can I schedule more than a year ahead?
 
@@ -554,6 +609,9 @@ these storage logs do not include your task names or saved file contents.
 | Add a weekly commitment | `commitment add n/NAME day/DAY start/HHmm d/MINUTES` |
 | List commitments | `commitment list` |
 | Delete a weekly commitment | `commitment delete CNUMBER` |
+| Set study hours | `hours DAY\|YYYY-MM-DD /start HH:mm /end HH:mm` |
+| View effective study hours | `hours DAY\|YYYY-MM-DD` |
+| Reset study hours | `hours reset DAY\|YYYY-MM-DD` |
 | Edit a weekly commitment | `commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]` |
 | Generate or replace the plan | `plan` |
 | View today's schedule | `schedule today` |

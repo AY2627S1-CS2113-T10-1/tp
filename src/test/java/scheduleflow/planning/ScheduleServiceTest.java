@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
+import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 
 /**
@@ -23,6 +24,24 @@ class ScheduleServiceTest {
     private static final LocalDateTime MORNING = MONDAY.atTime(7, 0);
     private final ScheduleService schedules = new ScheduleService();
 
+    // @@author GabrielYuSP
+    @Test
+    void forDate_customWindow_clipsBusyAndUsesFrozenCutoff() {
+        Snapshot initial = new Snapshot(List.of(), List.of(
+                new Commitment(1, "Class", DayOfWeek.MONDAY, LocalTime.of(5, 30), 60)), 1, 2);
+        StudyWindow window = new StudyWindow(LocalTime.of(6, 0), LocalTime.of(7, 30));
+        Snapshot source = initial.withStudyHours(initial.studyHours().withWindow("monday", window));
+        Plan generated = new EarliestDeadlinePlanner().generate(source, MONDAY.atTime(6, 30, 1));
+        ScheduleView view = schedules.forDate(generated, MONDAY);
+        assertEquals(window, view.window());
+        assertEquals(List.of(entry(6, 0, 6, 30, SlotKind.BUSY, "C1", "Class"),
+                entry(6, 30, 7, 0, SlotKind.UNPLANNED, "", ""),
+                entry(7, 0, 7, 30, SlotKind.FREE, "", "")), view.entries());
+        assertEquals(LocalTime.of(8, 0), schedules.forDate(generated, MONDAY.plusDays(1))
+                .entries().getFirst().start().toLocalTime());
+    }
+
+    // @@author
     @Test
     void forDate_correctedContractExample_preservesAdjacentCommitmentIds() {
         Task task = new Task(1, "Draft", MONDAY.plusDays(1).atTime(18, 0), 180);

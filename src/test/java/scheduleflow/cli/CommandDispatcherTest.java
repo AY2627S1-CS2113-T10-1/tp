@@ -40,6 +40,53 @@ class CommandDispatcherTest {
     private static final Clock CLOCK = Clock.fixed(NOW.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
     private final TextRenderer renderer = new TextRenderer();
 
+    // @@author GabrielYuSP
+    @Test
+    void execute_hoursMutations_saveBeforeInvalidatingAndPreserveSettingsAcrossOtherChanges() throws Exception {
+        FakeStorage storage = new FakeStorage(Snapshot.empty());
+        AppState state = new AppState(storage.saved);
+        CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
+        CommandParser parser = new CommandParser();
+        dispatcher.execute(parser.parse("hours tuesday /start 09:00 /end 22:00"), state);
+        dispatcher.execute(parser.parse("hours 2026-10-27 /start 14:00 /end 19:00"), state);
+        var expected = state.snapshot().studyHours();
+        dispatcher.execute(addTask(), state);
+        dispatcher.execute(addCommitment(), state);
+        dispatcher.execute(new Command.DeleteTask(1), state);
+        dispatcher.execute(new Command.DeleteCommitment(1), state);
+        assertEquals(expected, state.snapshot().studyHours());
+        dispatcher.execute(new Command.GeneratePlan(), state);
+        var plan = state.currentPlan().orElseThrow();
+        int saves = storage.saveCalls;
+        assertEquals("Study hours for 2026-10-27: 14:00 - 19:00",
+                dispatcher.execute(parser.parse("hours 2026-10-27"), state).output());
+        assertEquals(saves, storage.saveCalls);
+        assertSame(plan, state.currentPlan().orElseThrow());
+        for (String input : List.of("hours tuesday /start 10:00 /end 18:00", "hours reset 2026-10-27")) {
+            storage.failSave = true;
+            assertThrows(StorageException.class, () -> dispatcher.execute(parser.parse(input), state));
+            assertEquals(expected, state.snapshot().studyHours());
+            assertSame(plan, state.currentPlan().orElseThrow());
+        }
+        storage.failSave = false;
+        assertThrows(ValidationException.class, () -> dispatcher.execute(
+                parser.parse("hours tuesday /start 22:00 /end 09:00"), state));
+        assertSame(plan, state.currentPlan().orElseThrow());
+        assertEquals("Reset study hours for 2026-10-27.\nUsing recurring weekday hours: 09:00 - 22:00.\n"
+                + "Run plan to regenerate.",
+                dispatcher.execute(parser.parse("hours reset 2026-10-27"), state).output());
+        assertTrue(state.currentPlan().isEmpty());
+        assertEquals("Study hours for 2026-10-27: 09:00 - 22:00",
+                dispatcher.execute(parser.parse("hours 2026-10-27"), state).output());
+        assertEquals(state.snapshot(), storage.saved);
+        assertEquals("Reset study hours for tuesday.\nUsing default hours: 08:00 - 22:00.\nRun plan to regenerate.",
+                dispatcher.execute(parser.parse("hours reset tuesday"), state).output());
+        assertEquals("Reset study hours for 2026-10-27.\nUsing default hours: 08:00 - 22:00.\n"
+                + "Run plan to regenerate.",
+                dispatcher.execute(parser.parse("hours reset 2026-10-27"), state).output());
+    }
+
+    // @@author ka-how
     @Test
     void execute_nullArguments_rejectsBeforeClockReadsOrSaves() {
         CountingClock clock = new CountingClock();

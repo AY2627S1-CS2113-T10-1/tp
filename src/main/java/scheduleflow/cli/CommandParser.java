@@ -32,8 +32,15 @@ public final class CommandParser {
     private static final String COMMITMENT_EDIT_USAGE =
             "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]";
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
+    private static final String HOURS_USAGE = "hours DAY|YYYY-MM-DD [/start HH:mm /end HH:mm]"
+            + " OR hours reset DAY|YYYY-MM-DD";
     private static final String DATE_TOKEN = "[0-9]{4}-[0-9]{2}-[0-9]{2}";
     private static final String TIME_TOKEN = "[0-9]{4}";
+    private static final Pattern HOURS_PATTERN = Pattern.compile("hours +(?<reset>reset +)?(?<target>"
+            + "monday|tuesday|wednesday|thursday|friday|saturday|sunday|" + DATE_TOKEN + ")"
+            + "(?: +/start +(?<start>[0-9]{2}:[0-9]{2}) +/end +(?<end>[0-9]{2}:[0-9]{2}))?");
+    private static final DateTimeFormatter HOURS_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT)
+            .withResolverStyle(ResolverStyle.STRICT);
     private static final String POSITIVE_INT_TOKEN = "[1-9][0-9]*";
 
     /**
@@ -109,6 +116,7 @@ public final class CommandParser {
                         match(COMMITMENT_DELETE_PATTERN, input, usage).group("id")));
                 case "plan" -> parseNoArguments(input, command, new Command.GeneratePlan());
                 case "schedule" -> parseSchedule(input);
+                case "hours" -> parseHours(input);
                 case "exit" -> parseNoArguments(input, command, new Command.Exit());
                 default -> throw new ParseException("Unknown command", HELP_USAGE);
             };
@@ -148,6 +156,7 @@ public final class CommandParser {
             case "commitment edit" -> COMMITMENT_EDIT_USAGE;
             case "commitment delete" -> COMMITMENT_DELETE_USAGE;
             case "schedule" -> SCHEDULE_USAGE;
+            case "hours" -> HOURS_USAGE;
             case "help", "task list", "commitment list", "plan", "exit" -> command;
             default -> HELP_USAGE;
         };
@@ -231,6 +240,28 @@ public final class CommandParser {
         return new Command.ScheduleDate(date);
     }
 
+    // @@author GabrielYuSP
+    /** Parses explicit hours targets without reading state or validating interval ordering. */
+    private Command parseHours(String input) throws ParseException {
+        Matcher fields = match(HOURS_PATTERN, input, HOURS_USAGE);
+        String target = fields.group("target");
+        if (Character.isDigit(target.charAt(0))) {
+            requireSupportedYear(LocalDate.parse(target, DATE_FORMAT), HOURS_USAGE);
+        }
+        if (fields.group("reset") != null) {
+            if (fields.group("start") != null) {
+                throw new ParseException("Reset accepts only a weekday or date", HOURS_USAGE);
+            }
+            return new Command.ResetHours(target);
+        }
+        if (fields.group("start") == null) {
+            return new Command.ShowHours(target);
+        }
+        return new Command.SetHours(target, LocalTime.parse(fields.group("start"), HOURS_TIME_FORMAT),
+                LocalTime.parse(fields.group("end"), HOURS_TIME_FORMAT));
+    }
+
+    // @@author ka-how
     /**
      * Requires a match of the entire input, including the final field or argument.
      */

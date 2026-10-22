@@ -25,6 +25,22 @@ class CommandParserTest {
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
     private final CommandParser parser = new CommandParser();
 
+    // @@author GabrielYuSP
+    @Test
+    void parse_hoursCommands_supportsWeekdaysDatesAndResets() throws ParseException {
+        assertEquals(new Command.SetHours("tuesday", LocalTime.of(9, 0), LocalTime.of(22, 0)),
+                parser.parse("hours tuesday /start 09:00 /end 22:00"));
+        assertEquals(new Command.ShowHours("2026-10-27"), parser.parse("hours 2026-10-27"));
+        assertEquals(new Command.ResetHours("tuesday"), parser.parse("hours reset tuesday"));
+        for (String input : List.of("hours Tuesday", "hours tue", "hours 2026-02-30", "hours 0000-01-01",
+                "hours tuesday /start 24:00 /end 22:00", "hours tuesday /start 0900 /end 2200",
+                "hours tuesday /end 22:00 /start 09:00", "hours tuesday /start 09:00",
+                "hours reset tuesday /start 09:00 /end 22:00", "hours tuesday extra")) {
+            assertThrows(ParseException.class, () -> parser.parse(input), input);
+        }
+    }
+
+    // @@author ka-how
     //@@author Darren50
     @Test
     void parse_commitmentEdit_allFieldSubsetsPreserveOmission() throws ParseException {
@@ -55,7 +71,6 @@ class CommandParserTest {
         }
     }
     //@@author ka-how
-
     @Test
     void parse_nullLine_rejectsWithArgumentName() {
         assertEquals("line", assertThrows(NullPointerException.class, () -> parser.parse(null)).getMessage());

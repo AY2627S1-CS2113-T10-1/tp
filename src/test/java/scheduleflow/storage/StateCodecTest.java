@@ -10,6 +10,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
+import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 
 // @@author ernestgoh-god
@@ -19,6 +20,27 @@ import scheduleflow.model.Task;
 class StateCodecTest {
     private final StateCodec codec = new StateCodec();
 
+    // @@author GabrielYuSP
+    @Test
+    void encodeAndDecode_hours_preservesSettingsAndLoadsLegacyData() throws StorageException {
+        Snapshot empty = Snapshot.empty();
+        Snapshot state = empty.withStudyHours(empty.studyHours()
+                .withWindow("tuesday", new StudyWindow(LocalTime.of(9, 0), LocalTime.of(22, 0)))
+                .withWindow("2026-10-27", new StudyWindow(LocalTime.of(14, 0), LocalTime.of(19, 0))));
+        assertEquals("SCHEDULEFLOW|2\nNEXT|1|1\nHOURS|2026-10-27|14:00|19:00\n"
+                + "HOURS|tuesday|09:00|22:00\n", codec.encode(state));
+        assertEquals(state, codec.decode(codec.encode(state)));
+        assertEquals(empty, codec.decode("SCHEDULEFLOW|1\nNEXT|1|1\n"));
+        for (String row : List.of("HOURS|tuesday|22:00|09:00", "HOURS|tuesday|09:15|22:00",
+                "HOURS|2026-02-30|09:00|22:00", "HOURS|Tuesday|09:00|22:00", "HOURS|tuesday|09:00",
+                "HOURS|tuesday|09:00|22:00|extra", "HOURS|tuesday|09:00|22:00\nHOURS|tuesday|10:00|20:00")) {
+            assertThrows(StorageException.class, () -> codec.decode("SCHEDULEFLOW|2\nNEXT|1|1\n" + row));
+        }
+        assertThrows(StorageException.class,
+                () -> codec.decode("SCHEDULEFLOW|1\nNEXT|1|1\nHOURS|tuesday|09:00|22:00"));
+    }
+
+    // @@author ernestgoh-god
     @Test
     void encode_nullSnapshot_reportsNamedPrecondition() {
         assertEquals("state", assertThrows(NullPointerException.class, () -> codec.encode(null)).getMessage());

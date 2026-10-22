@@ -93,8 +93,10 @@ class TextRendererTest {
         assertTrue(output.startsWith("=== ScheduleFlow Command Help ===\n"));
         List<String> formats = List.of("help", "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES", "task list",
                 "task delete TNUMBER", "commitment add n/NAME day/DAY start/HHmm d/MINUTES", "commitment list",
-                "commitment delete CNUMBER", "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]",
-                "plan", "schedule today OR schedule YYYY-MM-DD", "exit");
+                "commitment delete CNUMBER", "hours DAY|YYYY-MM-DD /start HH:mm /end HH:mm",
+                "hours DAY|YYYY-MM-DD", "hours reset DAY|YYYY-MM-DD",
+                "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]", "plan",
+                "schedule today OR schedule YYYY-MM-DD", "exit");
         List<String> lines = output.lines().skip(1).toList();
         assertEquals(formats.size(), lines.size());
         for (int i = 0; i < formats.size(); i++) {
