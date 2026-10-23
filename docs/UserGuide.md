@@ -109,6 +109,11 @@ Examples below are independent unless a sequence is explicitly described. Use ex
 
 ## Tasks
 
+Task name/deadline editing is implemented only as an internal Java service API.
+Console integration and edit-confirmation rendering are pending; no task-edit
+command is supported yet. The existing add, list and delete commands below are
+unchanged. Deadline removal and progress tracking are not supported.
+
 > **Planned issue #40 command:** The parser recognizes `task progress T1 done/30`
 > and `task progress T1 session/60 percent/50`, but the application does not
 > execute them yet. Use the existing task commands until progress dispatch and
