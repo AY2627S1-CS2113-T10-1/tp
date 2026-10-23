@@ -44,6 +44,29 @@ class CommitmentServiceTest {
     private final CommitmentService service = new CommitmentService();
 
     @Test
+    void addAndEdit_dateBounds_validateActualOccurrencesAndPreserveOmissions() {
+        LocalDate semesterStart = LocalDate.of(2026, 8, 10);
+        LocalDate semesterEnd = LocalDate.of(2026, 11, 16);
+        Snapshot first = service.add(Snapshot.empty(), "Semester one", DayOfWeek.MONDAY,
+                LocalTime.of(10, 0), 60, semesterStart, semesterEnd);
+        Snapshot both = service.add(first, "Semester two", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
+                LocalDate.of(2027, 1, 11), LocalDate.of(2027, 5, 3));
+        assertEquals(2, both.commitments().size());
+        assertEquals(semesterStart, both.commitments().getFirst().startDate());
+        assertThrows(ValidationException.class, () -> service.add(first, "Clash", DayOfWeek.MONDAY,
+                LocalTime.of(10, 30), 30, semesterStart, semesterEnd));
+
+        Snapshot renamed = service.edit(first, 1, "Renamed", null, null, null);
+        assertEquals(semesterStart, renamed.commitments().getFirst().startDate());
+        assertEquals(semesterEnd, renamed.commitments().getFirst().endDate());
+        Snapshot moved = service.edit(first, 1, null, null, null, null,
+                LocalDate.of(2027, 1, 11), LocalDate.of(2027, 5, 3));
+        assertEquals(LocalDate.of(2027, 1, 11), moved.commitments().getFirst().startDate());
+        assertEquals(first.nextCommitmentId(), moved.nextCommitmentId());
+        assertEquals(semesterStart, first.commitments().getFirst().startDate());
+    }
+
+    @Test
     void edit_customHours_preservesWeekdayAndDateOverridesThroughRestart(@TempDir Path directory) throws Exception {
         StudyHours hours = new StudyHours(Map.of(
                 "monday", new StudyWindow(LocalTime.of(9, 0), LocalTime.of(18, 0)),

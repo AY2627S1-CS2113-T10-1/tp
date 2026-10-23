@@ -170,7 +170,7 @@ public final class CommandDispatcher {
         LOGGER.log(Level.FINE, "Validating commitment addition");
         Snapshot original = state.snapshot();
         Snapshot candidate = commitments.add(original, command.name(), command.day(), command.start(),
-                command.minutes());
+                command.minutes(), command.startDate(), command.endDate());
         Commitment added = candidate.commitments().stream()
                 .filter(commitment -> commitment.id() == original.nextCommitmentId()).findFirst()
                 .orElseThrow(() -> new IllegalStateException("Commitment candidate is missing the allocated ID."));
@@ -184,7 +184,7 @@ public final class CommandDispatcher {
      */
     private String editCommitment(Command.EditCommitment command, AppState state) throws StorageException {
         Snapshot candidate = commitments.edit(state.snapshot(), command.id(), command.name(), command.day(),
-                command.start(), command.minutes());
+                command.start(), command.minutes(), command.startDate(), command.endDate());
         Commitment edited = candidate.commitments().stream()
                 .filter(commitment -> commitment.id() == command.id()).findFirst()
                 .orElseThrow(() -> new IllegalStateException("Validated commitment edit is missing its target."));

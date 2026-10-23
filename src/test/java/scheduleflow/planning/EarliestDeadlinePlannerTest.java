@@ -104,6 +104,20 @@ class EarliestDeadlinePlannerTest {
     }
 
     @Test
+    void generate_boundedCommitment_blocksOnlyInclusiveSemesterDates() {
+        Commitment semester = new Commitment(1, "Lecture", DayOfWeek.MONDAY, LocalTime.of(8, 0), 60,
+                MONDAY.plusWeeks(1), MONDAY.plusWeeks(2));
+        Task before = task(1, "Before", MONDAY.atTime(9, 0), 30);
+        Plan beforeResult = planner.generate(snapshot(List.of(before), List.of(semester)), EARLY_MORNING);
+        assertEquals(MONDAY.atTime(8, 0), beforeResult.sessions().getFirst().start());
+
+        LocalDate insideDate = MONDAY.plusWeeks(1);
+        Task inside = task(2, "Inside", insideDate.atTime(10, 0), 30);
+        Plan insideResult = planner.generate(snapshot(List.of(inside), List.of(semester)), insideDate.atTime(7, 0));
+        assertEquals(insideDate.atTime(9, 0), insideResult.sessions().getFirst().start());
+    }
+
+    @Test
     void generate_equalDeadlines_usesNumericTaskIdOrder() {
         LocalDateTime deadline = MONDAY.atTime(9, 0);
         Snapshot source = snapshot(List.of(task(10, "Later ID", deadline, 30), task(2, "Earlier ID", deadline, 30)),

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
@@ -19,6 +20,27 @@ import scheduleflow.model.Task;
  */
 class StateCodecTest {
     private final StateCodec codec = new StateCodec();
+
+    // @@author Darren50
+    @Test
+    void encodeAndDecode_boundedCommitments_usesVersionThreeAndRetainsLegacyRows() throws StorageException {
+        Commitment bounded = new Commitment(1, "Semester | lecture", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
+                LocalDate.of(2026, 8, 10), LocalDate.of(2026, 11, 16));
+        Commitment unbounded = new Commitment(2, "Weekly", DayOfWeek.TUESDAY, LocalTime.of(12, 0), 30);
+        Snapshot initial = new Snapshot(List.of(), List.of(bounded, unbounded), 1, 3);
+        Snapshot state = initial.withStudyHours(initial.studyHours()
+                .withWindow("monday", new StudyWindow(LocalTime.of(8, 0), LocalTime.of(20, 0))));
+        String expected = "SCHEDULEFLOW|3\nNEXT|1|3\n"
+                + "COMMITMENT|1|MONDAY|10:00|60|2026-08-10|2026-11-16|Semester | lecture\n"
+                + "COMMITMENT|2|TUESDAY|12:00|30|-|-|Weekly\n"
+                + "HOURS|monday|08:00|20:00\n";
+        assertEquals(expected, codec.encode(state));
+        assertEquals(state, codec.decode(expected));
+        assertThrows(StorageException.class, () -> codec.decode("SCHEDULEFLOW|3\nNEXT|1|2\n"
+                + "COMMITMENT|1|MONDAY|10:00|60|2026-08-10|-|Lecture\n"));
+        assertThrows(StorageException.class, () -> codec.decode("SCHEDULEFLOW|3\nNEXT|1|2\n"
+                + "COMMITMENT|1|MONDAY|10:00|60|2026-11-16|2026-08-10|Lecture\n"));
+    }
 
     // @@author GabrielYuSP
     @Test

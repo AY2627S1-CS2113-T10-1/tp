@@ -1,6 +1,7 @@
 package scheduleflow.model;
 
 import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Objects;
 import scheduleflow.common.InputRules;
@@ -16,10 +17,20 @@ import scheduleflow.planning.TimeRules;
  * @param day nonnull recurrence weekday
  * @param start nonnull local time aligned to a half-hour boundary
  * @param durationMinutes positive multiple of 30 ending no later than midnight
+ * @param startDate inclusive first date, or null together with endDate for an unbounded series
+ * @param endDate inclusive last date, or null together with startDate
  */
-public record Commitment(int id, String name, DayOfWeek day, LocalTime start, int durationMinutes) {
+public record Commitment(int id, String name, DayOfWeek day, LocalTime start, int durationMinutes,
+        LocalDate startDate, LocalDate endDate) {
     private static final int MINUTES_PER_HOUR = 60;
     private static final int MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR;
+
+    //@@author Darren50
+    /** Retains the original constructor for weekly series without date limits. */
+    public Commitment(int id, String name, DayOfWeek day, LocalTime start, int durationMinutes) {
+        this(id, name, day, start, durationMinutes, null, null);
+    }
+    //@@author
 
     /**
      * Creates an aligned commitment and normalizes its name using the shared validation rules.
@@ -36,6 +47,7 @@ public record Commitment(int id, String name, DayOfWeek day, LocalTime start, in
         if (start == null) {
             throw new ValidationException("Commitment start time must be provided.");
         }
+        validateDates(day, startDate, endDate);
         name = InputRules.normalizeName(name);
         InputRules.requireDuration(durationMinutes);
         if (start.getSecond() != 0 || start.getNano() != 0 || start.getMinute() % TimeRules.SLOT_MINUTES != 0) {
@@ -47,6 +59,50 @@ public record Commitment(int id, String name, DayOfWeek day, LocalTime start, in
             throw new ValidationException("Commitment must not continue past midnight.");
         }
     }
+
+    //@@author Darren50
+    /** Validates a paired inclusive range containing at least one occurrence of the weekday. */
+    private static void validateDates(DayOfWeek day, LocalDate first, LocalDate last) {
+        if (first == null && last == null) {
+            return;
+        }
+        if (first == null || last == null) {
+            throw new ValidationException("Provide both commitment start and end dates.");
+        }
+        if (first.getYear() < 1 || last.getYear() > 9999) {
+            throw new ValidationException("Commitment dates must use years 0001 to 9999.");
+        }
+        if (first.isAfter(last)) {
+            throw new ValidationException("Commitment start date must not be after its end date.");
+        }
+        if (!containsWeekday(first, last, day)) {
+            throw new ValidationException("Commitment date range must contain its weekday.");
+        }
+    }
+
+    /** Checks for a matching day without stepping beyond the maximum supported date. */
+    private static boolean containsWeekday(LocalDate first, LocalDate last, DayOfWeek day) {
+        int offset = Math.floorMod(day.getValue() - first.getDayOfWeek().getValue(), 7);
+        return last.toEpochDay() - first.toEpochDay() >= offset;
+    }
+
+    /** Returns whether this weekly series reserves time on the supplied calendar date. */
+    public boolean occursOn(LocalDate date) {
+        Objects.requireNonNull(date, "date");
+        return date.getDayOfWeek() == day
+                && (startDate == null || (!date.isBefore(startDate) && !date.isAfter(endDate)));
+    }
+
+    /** Checks whether two series share an actual occurrence, not merely intersecting date ranges. */
+    private boolean sharesOccurrence(Commitment other) {
+        if (startDate == null || other.startDate == null) {
+            return true;
+        }
+        LocalDate first = startDate.isAfter(other.startDate) ? startDate : other.startDate;
+        LocalDate last = endDate.isBefore(other.endDate) ? endDate : other.endDate;
+        return !first.isAfter(last) && containsWeekday(first, last, day);
+    }
+    //@@author
 
     /**
      * Returns the stable commitment identifier with no zero padding.
@@ -77,6 +133,7 @@ public record Commitment(int id, String name, DayOfWeek day, LocalTime start, in
         Objects.requireNonNull(other, "other");
         int thisStart = endMinuteOfDay() - durationMinutes;
         int otherStart = other.endMinuteOfDay() - other.durationMinutes;
-        return day == other.day && thisStart < other.endMinuteOfDay() && otherStart < endMinuteOfDay();
+        return day == other.day && thisStart < other.endMinuteOfDay() && otherStart < endMinuteOfDay()
+                && sharesOccurrence(other);
     }
 }

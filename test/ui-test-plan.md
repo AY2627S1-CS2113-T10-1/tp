@@ -1,6 +1,6 @@
 # ScheduleFlow UI test plan
 
-All fifteen maintained process scenarios are active. They exercise the packaged
+All sixteen maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -91,8 +91,12 @@ timeouts and expected output; Java 25 and isolated workspace data were retained.
 | UI-013 | Multiple commitment conflicts in time order, saved-data retention and retry ID | Active |
 | UI-014 | Partial commitment edits, unchanged IDs, rejection, plan invalidation and Unicode restart | Active |
 | UI-015 | Study hours precedence, validation, resets, plan invalidation and saved restarts | Active |
+| UI-016 | Inclusive recurring-commitment bounds, actual-occurrence overlap and version 3 restart | Active |
 
 UI-015 asserts reset confirmations name the restored source and its endpoints.
+UI-016 adds nonoverlapping semester series at the same weekly time, rejects a
+real in-range clash and an interval without the selected weekday, edits the
+inclusive bounds, and confirms version 3 persistence and retry ID stability.
 
 The original eight scenarios retain their exact expectations. UI-009 through
 UI-012 add release acceptance without a production clock flag. Their saved

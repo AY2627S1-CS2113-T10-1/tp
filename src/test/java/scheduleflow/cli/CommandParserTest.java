@@ -20,7 +20,9 @@ class CommandParserTest {
     private static final String HELP_USAGE = "Type help to see available commands";
     private static final String TASK_ADD_USAGE = "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES";
     private static final String TASK_DELETE_USAGE = "task delete TNUMBER";
-    private static final String COMMITMENT_ADD_USAGE = "commitment add n/NAME day/DAY start/HHmm d/MINUTES";
+    private static final String DATE_RANGE_USAGE = " [from/YYYY-MM-DD until/YYYY-MM-DD]";
+    private static final String COMMITMENT_ADD_USAGE = "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
+            + DATE_RANGE_USAGE;
     private static final String COMMITMENT_DELETE_USAGE = "commitment delete CNUMBER";
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
     private final CommandParser parser = new CommandParser();
@@ -60,7 +62,8 @@ class CommandParserTest {
 
     @Test
     void parse_commitmentEdit_rejectsMalformedAndDuplicateFieldsWithUsage() {
-        String usage = "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]";
+        String usage = "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]"
+                + DATE_RANGE_USAGE;
         for (String suffix : List.of("", "1 n/A", "T1 n/A", "C01 n/A", "C0 n/A", "C2147483648 n/A",
                 "C1 n/A n/B", "C1 day/MON day/TUE", "C1 start/1000 start/1100", "C1 d/30 d/60",
                 "C1 d/30 n/A", "C1 day/MONDAY", "C1 day/mon", "C1 on/2026-10-26", "C1 start/2400",
@@ -68,6 +71,24 @@ class CommandParserTest {
                 "C1 d/30 extra", "C1 n/A/foo", "C1 day/", "C1 start/", "C1 d/", "C1 n/A\tB")) {
             assertEquals(usage, assertThrows(ParseException.class,
                     () -> parser.parse("commitment edit " + suffix), suffix).usage());
+        }
+    }
+
+    @Test
+    void parse_commitmentDateRanges_preservesInclusiveDatesAndRejectsIncompleteSyntax() throws ParseException {
+        LocalDate first = LocalDate.of(2026, 8, 10);
+        LocalDate last = LocalDate.of(2026, 11, 16);
+        assertEquals(new Command.AddCommitment("Lecture", DayOfWeek.MONDAY, LocalTime.of(10, 0), 120,
+                first, last), parser.parse("commitment add n/Lecture day/MON start/1000 d/120"
+                        + " from/2026-08-10 until/2026-11-16"));
+        assertEquals(new Command.EditCommitment(3, null, null, null, null, first, last),
+                parser.parse("commitment edit C3 from/2026-08-10 until/2026-11-16"));
+        for (String input : List.of(
+                "commitment add n/A day/MON start/1000 d/30 from/2026-08-10",
+                "commitment add n/A day/MON start/1000 d/30 until/2026-11-16",
+                "commitment add n/A day/MON start/1000 d/30 until/2026-11-16 from/2026-08-10",
+                "commitment add n/A day/MON start/1000 d/30 from/2026-02-30 until/2026-11-16")) {
+            assertRejected(input, COMMITMENT_ADD_USAGE);
         }
     }
     //@@author ka-how
