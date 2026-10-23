@@ -64,12 +64,12 @@ public final class ScheduleService {
     }
 
     /**
-     * Classifies a slot using commitments, saved sessions, then the original generation cutoff.
+     * Classifies a slot using commitments, saved sessions, reserved breaks and the generation cutoff.
      *
      * @param plan the frozen source of commitments and sessions
      * @param start the start of the half-hour study slot
      * @param cutoff the earliest eligible allocation time on the requested date
-     * @return the slot's busy, task, unplanned, or free entry in that precedence order
+     * @return the slot's busy, task, break, unplanned, or free entry in that precedence order
      * @throws ValidationException if an assigned session refers to a missing source task
      */
     private static ScheduleEntry classifySlot(Plan plan, LocalDateTime start, LocalDateTime cutoff) {
@@ -88,6 +88,11 @@ public final class ScheduleService {
             if (!start.isBefore(session.start()) && !end.isAfter(session.end())) {
                 Task task = findTask(plan, session.taskId());
                 return new ScheduleEntry(start, end, SlotKind.TASK, task.displayId(), task.name());
+            }
+        }
+        for (ScheduleEntry rest : plan.breaks()) {
+            if (!start.isBefore(rest.start()) && !end.isAfter(rest.end())) {
+                return new ScheduleEntry(start, end, SlotKind.BREAK, "", "");
             }
         }
         SlotKind kind = start.isBefore(cutoff) ? SlotKind.UNPLANNED : SlotKind.FREE;

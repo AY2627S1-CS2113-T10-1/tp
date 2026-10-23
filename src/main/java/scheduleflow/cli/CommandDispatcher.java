@@ -26,6 +26,8 @@ import scheduleflow.task.TaskService;
  * Routes parsed commands and owns the candidate, save, commit, response transaction order.
  */
 public final class CommandDispatcher {
+    // TODO(Printing): implement issue #55 settings transactions and construct the planner with StudyPolicy.
+    // Save settings before publication/invalidation; keep the old settings and plan on save failure.
     /**
      * Records command stages and save boundaries without including record names.
      */

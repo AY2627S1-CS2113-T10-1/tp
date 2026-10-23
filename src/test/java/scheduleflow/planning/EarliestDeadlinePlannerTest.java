@@ -2,6 +2,7 @@ package scheduleflow.planning;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.DayOfWeek;
@@ -205,10 +206,202 @@ class EarliestDeadlinePlannerTest {
         assertEquals(availableMinutes + 30, source.tasks().getFirst().remainingMinutes());
     }
 
+    @Test
+    void generate_policy_splitsStudyAndReservesOnlyRequiredBreaks() {
+        Snapshot source = snapshot(List.of(task(1, "Draft", MONDAY.atTime(12, 0), 180)), List.of());
+        EarliestDeadlinePlanner limited = new EarliestDeadlinePlanner(new StudyPolicy(60, 30));
+        Plan result = limited.generate(source, EARLY_MORNING);
+        assertEquals(List.of(study(1, 8, 0, 9, 0), study(1, 9, 30, 10, 30), study(1, 11, 0, 12, 0)),
+                result.sessions());
+        assertEquals(List.of(rest(9, 0, 9, 30), rest(10, 30, 11, 0)), result.breaks());
+        assertTrue(result.isComplete());
+        assertSame(source, result.source());
+        assertEquals(180, source.tasks().getFirst().remainingMinutes());
+        assertEquals(result, limited.generate(source, EARLY_MORNING));
+    }
+
+    @Test
+    void generate_taskSwitch_keepsSharedLimitAndNumericDeadlineOrder() {
+        Snapshot source = snapshot(List.of(task(10, "Second", MONDAY.atTime(10, 0), 60),
+                task(2, "First", MONDAY.atTime(10, 0), 30)), List.of());
+        Plan result = new EarliestDeadlinePlanner(new StudyPolicy(60, 30)).generate(source, EARLY_MORNING);
+        assertEquals(List.of(study(2, 8, 0, 8, 30), study(10, 8, 30, 9, 0), study(10, 9, 30, 10, 0)),
+                result.sessions());
+        assertEquals(List.of(rest(9, 0, 9, 30)), result.breaks());
+    }
+
+    @Test
+    void generate_commitmentBelowLimit_allocatesTaskDirectlyAfterward() {
+        Snapshot source = snapshot(List.of(task(1, "Draft", MONDAY.atTime(11, 0), 60)),
+                List.of(new Commitment(1, "Lecture", DayOfWeek.MONDAY, LocalTime.of(8, 0), 60)));
+        Plan result = new EarliestDeadlinePlanner(new StudyPolicy(90, 30)).generate(source, EARLY_MORNING);
+        assertEquals(List.of(study(1, 9, 0, 9, 30), study(1, 10, 0, 10, 30)), result.sessions());
+        assertEquals(List.of(rest(9, 30, 10, 0)), result.breaks());
+    }
+
+    @Test
+    void generate_commitmentAtOrBeyondLimit_requiresOneFixedBreak() {
+        for (int minutes : new int[] {60, 120, 180}) {
+            LocalDateTime end = MONDAY.atTime(8, 0).plusMinutes(minutes);
+            Snapshot source = snapshot(List.of(task(1, "Draft", MONDAY.atTime(15, 0), 30)),
+                    List.of(new Commitment(1, "Lecture", DayOfWeek.MONDAY, LocalTime.of(8, 0), minutes)));
+            Plan result = new EarliestDeadlinePlanner(new StudyPolicy(60, 30)).generate(source, EARLY_MORNING);
+            assertEquals(List.of(new StudySession(1, end.plusMinutes(30), end.plusMinutes(60))), result.sessions());
+            assertEquals(List.of(new ScheduleEntry(end, end.plusMinutes(30), SlotKind.BREAK, "", "")),
+                    result.breaks());
+        }
+    }
+
+    @Test
+    void generate_adjacentCommitments_accumulatesAcrossSeparateIds() {
+        Snapshot source = snapshot(List.of(task(1, "Draft", MONDAY.atTime(12, 0), 30)), List.of(
+                new Commitment(1, "First", DayOfWeek.MONDAY, LocalTime.of(8, 0), 30),
+                new Commitment(2, "Second", DayOfWeek.MONDAY, LocalTime.of(8, 30), 30)));
+        Plan result = new EarliestDeadlinePlanner(new StudyPolicy(60, 30)).generate(source, EARLY_MORNING);
+        assertEquals(List.of(study(1, 9, 30, 10, 0)), result.sessions());
+        assertEquals(List.of(rest(9, 0, 9, 30)), result.breaks());
+    }
+
+    @Test
+    void generate_studyBeforeCommitment_countsBothAndKeepsCommitmentFixed() {
+        Commitment lecture = new Commitment(1, "Lecture", DayOfWeek.MONDAY, LocalTime.of(8, 30), 90);
+        Snapshot source = snapshot(List.of(task(1, "Draft", MONDAY.atTime(12, 0), 60)), List.of(lecture));
+        Plan result = new EarliestDeadlinePlanner(new StudyPolicy(60, 30)).generate(source, EARLY_MORNING);
+        assertEquals(List.of(study(1, 8, 0, 8, 30), study(1, 10, 30, 11, 0)), result.sessions());
+        assertEquals(List.of(rest(10, 0, 10, 30)), result.breaks());
+        assertEquals(List.of(lecture), result.source().commitments());
+    }
+
+    @Test
+    void generate_interruptedBreak_requiresConsecutiveRestAgain() {
+        Snapshot source = snapshot(List.of(task(1, "Draft", MONDAY.atTime(13, 0), 30)), List.of(
+                new Commitment(1, "First", DayOfWeek.MONDAY, LocalTime.of(8, 0), 60),
+                new Commitment(2, "Second", DayOfWeek.MONDAY, LocalTime.of(9, 30), 30)));
+        Plan result = new EarliestDeadlinePlanner(new StudyPolicy(60, 60)).generate(source, EARLY_MORNING);
+        assertEquals(List.of(study(1, 11, 0, 11, 30)), result.sessions());
+        assertEquals(List.of(rest(9, 0, 9, 30), rest(10, 0, 11, 0)), result.breaks());
+    }
+
+    @Test
+    void generate_commitmentBeforeWindow_countsActualDurationAndNaturalRest() {
+        for (int startHour : new int[] {6, 7}) {
+            Snapshot source = snapshot(List.of(task(1, "Draft", MONDAY.atTime(10, 0), 30)),
+                    List.of(new Commitment(1, "Lecture", DayOfWeek.MONDAY, LocalTime.of(startHour, 0), 60)));
+            Plan result = new EarliestDeadlinePlanner(new StudyPolicy(60, 30)).generate(source, EARLY_MORNING);
+            LocalDateTime expectedStart = MONDAY.atTime(8, startHour == 7 ? 30 : 0);
+            assertEquals(List.of(new StudySession(1, expectedStart, expectedStart.plusMinutes(30))),
+                    result.sessions());
+            assertEquals(startHour == 7 ? List.of(rest(8, 0, 8, 30)) : List.of(), result.breaks());
+        }
+    }
+
+    @Test
+    void generate_midCommitmentCutoff_countsElapsedCommitmentAndRoundsStart() {
+        Snapshot source = snapshot(List.of(task(1, "Draft", MONDAY.atTime(12, 0), 30)),
+                List.of(new Commitment(1, "Lecture", DayOfWeek.MONDAY, LocalTime.of(8, 0), 90)));
+        Plan result = new EarliestDeadlinePlanner(new StudyPolicy(90, 30))
+                .generate(source, MONDAY.atTime(9, 0, 1));
+        assertEquals(List.of(study(1, 10, 0, 10, 30)), result.sessions());
+        assertEquals(List.of(rest(9, 30, 10, 0)), result.breaks());
+    }
+
+    @Test
+    void generate_requiredBreakAfterCutoff_countsEarlierNaturalRest() {
+        Snapshot source = snapshot(List.of(task(1, "Draft", MONDAY.atTime(12, 0), 30)),
+                List.of(new Commitment(1, "Lecture", DayOfWeek.MONDAY, LocalTime.of(8, 0), 60)));
+        Plan result = new EarliestDeadlinePlanner(new StudyPolicy(60, 60))
+                .generate(source, MONDAY.atTime(9, 30));
+        assertEquals(List.of(study(1, 10, 0, 10, 30)), result.sessions());
+        assertEquals(List.of(rest(9, 30, 10, 0)), result.breaks());
+    }
+
+    @Test
+    void generate_breakReducesCapacity_preservesRemaindersAndInvalidDeadlineReasons() {
+        Snapshot source = snapshot(List.of(task(1, "Draft", MONDAY.atTime(9, 30), 90),
+                task(2, "Overdue", MONDAY.atTime(6, 0), 30),
+                task(3, "Future", TimeRules.horizonEnd(EARLY_MORNING).plusMinutes(30), 60)), List.of());
+        Plan result = new EarliestDeadlinePlanner(new StudyPolicy(60, 30)).generate(source, EARLY_MORNING);
+        assertEquals(List.of(study(1, 8, 0, 9, 0)), result.sessions());
+        assertEquals(List.of(UnallocatedReason.DEADLINE_PASSED, UnallocatedReason.INSUFFICIENT_CAPACITY,
+                UnallocatedReason.OUTSIDE_HORIZON),
+                result.unallocated().stream().map(UnallocatedWork::reason).toList());
+        for (Task task : source.tasks()) {
+            int scheduled = result.sessions().stream().filter(session -> session.taskId() == task.id())
+                    .mapToInt(StudySession::minutes).sum();
+            int unallocated = result.unallocated().stream().filter(work -> work.taskId() == task.id())
+                    .mapToInt(UnallocatedWork::minutes).sum();
+            assertEquals(task.remainingMinutes(), scheduled + unallocated);
+        }
+    }
+
+    @Test
+    void generate_overnightRest_resetsBeforeNextStudyWindow() {
+        Snapshot source = snapshot(List.of(task(1, "Draft", MONDAY.plusDays(1).atTime(9, 0), 120)), List.of());
+        Plan result = new EarliestDeadlinePlanner(new StudyPolicy(60, 30)).generate(source, MONDAY.atTime(21, 0));
+        assertEquals(List.of(study(1, 21, 0, 22, 0), new StudySession(1, MONDAY.plusDays(1).atTime(8, 0),
+                MONDAY.plusDays(1).atTime(9, 0))), result.sessions());
+        assertTrue(result.breaks().isEmpty());
+    }
+
+    @Test
+    void generate_emptyTasks_doesNotReserveBreaksAfterCommitments() {
+        Snapshot source = snapshot(List.of(),
+                List.of(new Commitment(1, "Lecture", DayOfWeek.MONDAY, LocalTime.of(8, 0), 180)));
+        Plan result = new EarliestDeadlinePlanner(new StudyPolicy(60, 30)).generate(source, EARLY_MORNING);
+        assertTrue(result.sessions().isEmpty());
+        assertTrue(result.breaks().isEmpty());
+        assertTrue(result.isComplete());
+    }
+
+    @Test
+    void constructor_nullPolicy_rejects() {
+        assertThrows(NullPointerException.class, () -> new EarliestDeadlinePlanner(null));
+    }
+
+    @Test
+    void generate_configuredWindow_limitsBreaksAndPreservesDateOverride() {
+        Snapshot initial = snapshot(List.of(task(1, "Draft", MONDAY.atTime(16, 0), 90)), List.of());
+        Snapshot source = initial.withStudyHours(initial.studyHours()
+                .withWindow("monday", new StudyWindow(LocalTime.of(9, 0), LocalTime.of(10, 0)))
+                .withWindow(MONDAY.toString(), new StudyWindow(LocalTime.of(14, 0), LocalTime.of(15, 30))));
+        Plan result = new EarliestDeadlinePlanner(new StudyPolicy(30, 30)).generate(source, EARLY_MORNING);
+        assertEquals(List.of(study(1, 14, 0, 14, 30), study(1, 15, 0, 15, 30)), result.sessions());
+        assertEquals(List.of(rest(14, 30, 15, 0)), result.breaks());
+        assertEquals(30, result.unallocated().getFirst().minutes());
+    }
+
+    @Test
+    void generate_commitmentAcrossCalendarBoundary_doesNotResetWorkAtMidnight() {
+        Snapshot initial = snapshot(List.of(task(1, "Draft", MONDAY.plusDays(1).atTime(2, 0), 30)), List.of(
+                new Commitment(1, "Late", DayOfWeek.MONDAY, LocalTime.of(23, 0), 60),
+                new Commitment(2, "Early", DayOfWeek.TUESDAY, LocalTime.MIDNIGHT, 30)));
+        Snapshot source = initial.withStudyHours(initial.studyHours().withWindow("tuesday",
+                new StudyWindow(LocalTime.MIDNIGHT, LocalTime.of(2, 0))));
+        Plan result = new EarliestDeadlinePlanner(new StudyPolicy(60, 30)).generate(source, MONDAY.atTime(23, 0));
+        LocalDateTime restStart = MONDAY.plusDays(1).atTime(0, 30);
+        assertEquals(List.of(new StudySession(1, restStart.plusMinutes(30), restStart.plusMinutes(60))),
+                result.sessions());
+        assertEquals(List.of(new ScheduleEntry(restStart, restStart.plusMinutes(30), SlotKind.BREAK, "", "")),
+                result.breaks());
+    }
+
+    /** Creates an expected study interval on the fixed generation date. */
+    private static StudySession study(int id, int startHour, int startMinute, int endHour, int endMinute) {
+        return new StudySession(id, MONDAY.atTime(startHour, startMinute), MONDAY.atTime(endHour, endMinute));
+    }
+
+    /** Creates an expected reserved break without task or commitment identity. */
+    private static ScheduleEntry rest(int startHour, int startMinute, int endHour, int endMinute) {
+        return new ScheduleEntry(MONDAY.atTime(startHour, startMinute), MONDAY.atTime(endHour, endMinute),
+                SlotKind.BREAK, "", "");
+    }
+
+    /** Creates a fixed task without consulting the system clock. */
     private static Task task(int id, String name, LocalDateTime deadline, int minutes) {
         return new Task(id, name, deadline, minutes);
     }
 
+    /** Creates isolated source data with counters above the supplied IDs. */
     private static Snapshot snapshot(List<Task> tasks, List<Commitment> commitments) {
         return new Snapshot(tasks, commitments, tasks.stream().mapToInt(Task::id).max().orElse(0) + 1,
                 commitments.stream().mapToInt(Commitment::id).max().orElse(0) + 1);

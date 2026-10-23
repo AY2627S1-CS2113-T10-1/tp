@@ -385,6 +385,8 @@ public final class TextRenderer {
             case TASK -> range + " " + entry.reference() + ": " + entry.name()
                     + " (" + Duration.between(entry.start(), entry.end()).toMinutes() + " min)";
             case FREE, UNPLANNED -> range;
+            // TODO(Printing): implement TextRenderer.formatScheduleRow BREAK output for issue #55.
+            case BREAK -> throw new UnsupportedOperationException("Break rendering awaits Printing integration.");
         };
     }
 

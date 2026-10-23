@@ -401,6 +401,18 @@ Even with no tasks, `plan` creates a current plan. You can then view commitments
 
 Each `plan` command replaces the previous plan. It does not change stored task durations or save a plan to disk. This allocator follows deadline order; it does not guarantee the fewest sessions or the greatest number of fully completed tasks.
 
+### Session limits and breaks (planned console feature)
+
+Issue #55's planning algorithm supports a continuous-work limit counting both
+study tasks and commitments. Once the limit is reached, further study waits
+for a fixed consecutive break. Commitments remain fixed even if they exceed
+the limit; a longer commitment does not increase the required break duration.
+
+This feature is currently available only through the Java planning API.
+Settings commands, saving those settings and break-row display are awaiting
+integration. The console's existing `plan` command does not enforce these
+limits yet; there is no supported command to configure them.
+
 ### Planning hours and date range
 
 Study windows default to **08:00–22:00 every local calendar day**, including weekends.
