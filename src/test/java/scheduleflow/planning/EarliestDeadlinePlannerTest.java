@@ -17,6 +17,8 @@ import scheduleflow.model.Snapshot;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 import scheduleflow.model.TaskPriority;
+import scheduleflow.task.RecurringTaskService;
+import scheduleflow.task.TaskEdit;
 import scheduleflow.task.TaskService;
 
 /**
@@ -30,6 +32,67 @@ class EarliestDeadlinePlannerTest {
      */
     private static final int STUDY_MINUTES_PER_DAY = 14 * 60;
     private final EarliestDeadlinePlanner planner = new EarliestDeadlinePlanner();
+
+    // @@author nickpatt
+    @Test
+    void generate_extendedOccurrenceDeadline_waitsForFutureOriginalRelease() {
+        LocalDateTime originalDue = EARLY_MORNING.plusWeeks(2).withHour(18);
+        LocalDateTime release = originalDue.minusWeeks(1);
+        Snapshot source = new RecurringTaskService().add(Snapshot.empty(), "Quiz", originalDue, 45,
+                Optional.of(originalDue.toLocalDate()), TaskPriority.NORMAL, EARLY_MORNING);
+        Snapshot edited = new TaskService().edit(source, 1,
+                new TaskEdit(Optional.empty(), Optional.of(originalDue.plusWeeks(1)), false), EARLY_MORNING);
+
+        Plan plan = planner.generate(edited, EARLY_MORNING);
+
+        assertTrue(release.isAfter(EARLY_MORNING));
+        assertEquals(Optional.of(originalDue.plusWeeks(1)), edited.tasks().getFirst().deadline());
+        assertEquals(List.of(new StudySession(1, release, release.plusHours(1), 45)), plan.sessions());
+        assertTrue(plan.unallocated().isEmpty());
+    }
+
+    @Test
+    void generate_occurrenceDeadlineBeforeRelease_keepsFullRemainderWithoutSessions() {
+        LocalDateTime originalDue = EARLY_MORNING.plusWeeks(2).withHour(18);
+        LocalDateTime release = originalDue.minusWeeks(1);
+        LocalDateTime editedDue = release.minusDays(1);
+        Snapshot source = new RecurringTaskService().add(Snapshot.empty(), "Quiz", originalDue, 45,
+                Optional.of(originalDue.toLocalDate()), TaskPriority.NORMAL, EARLY_MORNING);
+        Snapshot edited = new TaskService().edit(source, 1,
+                new TaskEdit(Optional.empty(), Optional.of(editedDue), false), EARLY_MORNING);
+
+        Plan plan = planner.generate(edited, EARLY_MORNING);
+
+        assertTrue(editedDue.isAfter(EARLY_MORNING));
+        assertTrue(plan.sessions().isEmpty());
+        assertEquals(List.of(new UnallocatedWork(1, "Quiz", Optional.of(editedDue), 45, 60,
+                UnallocatedReason.INSUFFICIENT_CAPACITY)), plan.unallocated());
+        assertEquals(Optional.of(originalDue), edited.tasks().getFirst().occurrence()
+                .map(occurrence -> occurrence.originalDeadline()));
+    }
+
+    @Test
+    void generate_weeklyOccurrences_releaseRemainsOriginalDespiteDeadlineEditOrClear() {
+        LocalDateTime first = EARLY_MORNING.plusDays(1).withHour(18).withMinute(7);
+        Snapshot source = new RecurringTaskService().add(Snapshot.empty(), "Quiz", first, 45,
+                Optional.of(first.plusWeeks(1).toLocalDate()), TaskPriority.HIGH, EARLY_MORNING);
+        TaskService tasks = new TaskService();
+        source = tasks.edit(source, 1, new TaskEdit(Optional.empty(), Optional.of(first.plusDays(2)), false),
+                EARLY_MORNING);
+        source = tasks.edit(source, 2, new TaskEdit(Optional.empty(), Optional.empty(), true), EARLY_MORNING);
+        Plan plan = planner.generate(source, EARLY_MORNING);
+        assertEquals(2, plan.sessions().size());
+        assertEquals(MONDAY.atTime(8, 0), plan.sessions().getFirst().start());
+        assertEquals(first.withMinute(30), plan.sessions().getLast().start());
+        assertEquals(45, plan.sessions().getLast().workMinutes());
+        assertEquals(60, plan.sessions().getLast().minutes());
+        for (StudySession session : plan.sessions()) {
+            Task task = source.tasks().stream().filter(value -> value.id() == session.taskId())
+                    .findFirst().orElseThrow();
+            assertTrue(!session.start().isBefore(task.occurrence().orElseThrow().release()));
+        }
+    }
+    // @@author
 
     // @@author GabrielYuSP
     @Test

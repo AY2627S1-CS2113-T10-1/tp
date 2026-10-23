@@ -14,6 +14,7 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -27,6 +28,7 @@ import scheduleflow.model.Snapshot;
 import scheduleflow.model.StudyHours;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskPriority;
 import scheduleflow.planning.EarliestDeadlinePlanner;
 import scheduleflow.planning.Plan;
 import scheduleflow.planning.StudySession;
@@ -34,6 +36,7 @@ import scheduleflow.planning.UnallocatedReason;
 import scheduleflow.storage.FileStorage;
 import scheduleflow.storage.StateCodec;
 import scheduleflow.storage.StorageException;
+import scheduleflow.task.RecurringTaskService;
 import scheduleflow.task.TaskService;
 
 /**
@@ -42,6 +45,27 @@ import scheduleflow.task.TaskService;
 @Isolated("Logging checks temporarily configure the commitment service logger.")
 class CommitmentServiceTest {
     private final CommitmentService service = new CommitmentService();
+
+    // @@author nickpatt
+    @Test
+    void mutations_recurrence_preserveTemplatesOccurrencesCountersAndHours() {
+        var now = LocalDate.of(2026, 9, 21).atTime(7, 0);
+        Snapshot generated = new RecurringTaskService().add(Snapshot.empty(), "Quiz", now.plusDays(1), 45,
+                Optional.empty(), TaskPriority.HIGH, now);
+        generated = generated.withStudyHours(generated.studyHours().withWindow("monday",
+                new StudyWindow(LocalTime.of(9, 0), LocalTime.of(18, 0))));
+        Snapshot added = service.add(generated, "Class", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60);
+        Snapshot edited = service.edit(added, 1, "Renamed", null, null, null);
+        Snapshot deleted = service.delete(edited, 1);
+        for (Snapshot candidate : List.of(added, edited, deleted)) {
+            assertEquals(generated.tasks(), candidate.tasks());
+            assertEquals(generated.recurringTasks(), candidate.recurringTasks());
+            assertEquals(generated.nextTaskId(), candidate.nextTaskId());
+            assertEquals(generated.nextRecurringTaskId(), candidate.nextRecurringTaskId());
+            assertEquals(generated.studyHours(), candidate.studyHours());
+        }
+    }
+    // @@author Darren50
 
     @Test
     void edit_customHours_preservesWeekdayAndDateOverridesThroughRestart(@TempDir Path directory) throws Exception {

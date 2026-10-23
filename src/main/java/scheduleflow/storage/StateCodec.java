@@ -2,6 +2,7 @@ package scheduleflow.storage;
 
 import java.time.DateTimeException;
 import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -16,10 +17,12 @@ import java.util.logging.Logger;
 import scheduleflow.common.InputRules;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
+import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.StudyHours;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskOccurrence;
 import scheduleflow.model.TaskPriority;
 
 /**
@@ -46,7 +49,7 @@ public final class StateCodec {
 
     // @@author ernestgoh-god
     /**
-     * Encodes a complete snapshot as version 2, retaining the existing study-hours rows.
+     * Encodes a complete snapshot as version 3, retaining recurrence history and study-hours rows.
      * Stores names last so names containing pipes do not need escaping.
      *
      * @param state validated immutable snapshot to encode in its existing list order
@@ -57,17 +60,29 @@ public final class StateCodec {
         Objects.requireNonNull(state, "state");
         LOGGER.log(Level.FINE, "Starting snapshot encoding");
         // @@author nickpatt
-        StringBuilder text = new StringBuilder("SCHEDULEFLOW|2").append('\n');
-        // @@author ernestgoh-god
-        text.append("NEXT|").append(state.nextTaskId()).append('|').append(state.nextCommitmentId()).append('\n');
+        StringBuilder text = new StringBuilder("SCHEDULEFLOW|3").append('\n');
+        text.append("NEXT|").append(state.nextTaskId()).append('|').append(state.nextCommitmentId())
+                .append('|').append(state.nextRecurringTaskId()).append('\n');
         for (Task task : state.tasks()) {
             // @@author nickpatt
-            text.append("TASK2|").append(task.id()).append('|')
+            text.append("TASK3|").append(task.id()).append('|')
                     .append(task.deadline().map(LocalDateTime::toString).orElse("NONE")).append('|')
                     .append(task.remainingMinutes()).append('|').append(task.priority()).append('|')
+                    .append(task.occurrence().map(value -> Integer.toString(value.templateId())).orElse("NONE"))
+                    .append('|').append(task.occurrence().map(value -> value.originalDeadline().toString())
+                            .orElse("NONE")).append('|')
                     .append(task.name()).append('\n');
             // @@author ernestgoh-god
         }
+        // @@author nickpatt
+        for (RecurringTask template : state.recurringTasks()) {
+            text.append("RECURRING|").append(template.id()).append('|').append(template.firstDeadline()).append('|')
+                    .append(template.until().map(LocalDate::toString).orElse("NONE")).append('|')
+                    .append(template.minutes()).append('|').append(template.priority()).append('|')
+                    .append(template.generatedThrough().map(LocalDateTime::toString).orElse("NONE")).append('|')
+                    .append(template.name()).append('\n');
+        }
+        // @@author ernestgoh-god
         for (Commitment commitment : state.commitments()) {
             text.append("COMMITMENT|").append(commitment.id()).append('|').append(commitment.day()).append('|')
                     .append(commitment.start()).append('|').append(commitment.durationMinutes()).append('|')
@@ -77,7 +92,7 @@ public final class StateCodec {
                 .append(target).append('|').append(window.start()).append('|').append(window.end()).append('\n'));
         String encoded = text.toString();
         assert encoded.lines().count() == 2L + state.tasks().size() + state.commitments().size()
-                + state.studyHours().windows().size()
+                + state.studyHours().windows().size() + state.recurringTasks().size()
                 : "Encoding must produce a header, counters and one line per record";
         LOGGER.log(Level.FINE, "Snapshot encoding completed");
         return encoded;
@@ -101,18 +116,39 @@ public final class StateCodec {
         try {
             validateHeader(lines);
             LOGGER.log(Level.FINE, "Saved data header validated; reading counters and records");
-            String[] counters = splitFields(lines.get(1), 3);
+            boolean version3 = lines.getFirst().equals("SCHEDULEFLOW|3");
+            boolean extended = !lines.getFirst().equals(HEADER);
+            String[] counters = splitFields(lines.get(1), version3 ? 4 : 3);
             if (!counters[0].equals("NEXT")) {
                 throw new StorageException("Missing next ID counters.");
             }
             List<Task> tasks = new ArrayList<>();
             List<Commitment> commitments = new ArrayList<>();
+            List<RecurringTask> templates = new ArrayList<>();
             Map<String, StudyWindow> windows = new HashMap<>();
             for (int i = 2; i < lines.size(); i++) {
                 String line = lines.get(i);
-                if (lines.getFirst().equals("SCHEDULEFLOW|2") && line.startsWith("HOURS|")) {
+                if (version3 && line.startsWith("RECURRING|")) {
+                    // @@author nickpatt
+                    String[] fields = splitFields(line, 8);
+                    templates.add(new RecurringTask(Integer.parseInt(fields[1]), fields[7],
+                            LocalDateTime.parse(fields[2]), fields[3].equals("NONE")
+                                    ? Optional.empty() : Optional.of(LocalDate.parse(fields[3])),
+                            Integer.parseInt(fields[4]), TaskPriority.valueOf(fields[5]),
+                            optionalDeadline(fields[6])));
+                } else if (version3 && line.startsWith("TASK3|")) {
+                    String[] fields = splitFields(line, 8);
+                    Optional<TaskOccurrence> occurrence = Optional.empty();
+                    if (!fields[5].equals("NONE") || !fields[6].equals("NONE")) {
+                        occurrence = Optional.of(new TaskOccurrence(Integer.parseInt(fields[5]),
+                                LocalDateTime.parse(fields[6])));
+                    }
+                    tasks.add(new Task(Integer.parseInt(fields[1]), fields[7], optionalDeadline(fields[2]),
+                            Integer.parseInt(fields[3]), TaskPriority.valueOf(fields[4]), occurrence));
+                    // @@author ernestgoh-god
+                } else if (extended && line.startsWith("HOURS|")) {
                     decodeHours(line, windows);
-                } else if (lines.getFirst().equals("SCHEDULEFLOW|2") && line.startsWith("TASK2|")) {
+                } else if (extended && line.startsWith("TASK2|")) {
                     // @@author nickpatt
                     String[] fields = splitFields(line, 6);
                     tasks.add(new Task(Integer.parseInt(fields[1]), fields[5], fields[2].equals("NONE")
@@ -123,11 +159,12 @@ public final class StateCodec {
                     decodeRecord(line, tasks, commitments);
                 }
             }
-            assert (long) tasks.size() + commitments.size() + windows.size() == lines.size() - 2L
+            assert (long) tasks.size() + commitments.size() + windows.size() + templates.size() == lines.size() - 2L
                     : "Every saved record line must decode to exactly one record";
             LOGGER.log(Level.FINE, "Saved records decoded; validating snapshot invariants");
             Snapshot decoded = new Snapshot(tasks, commitments,
-                    Integer.parseInt(counters[1]), Integer.parseInt(counters[2]), new StudyHours(windows));
+                    Integer.parseInt(counters[1]), Integer.parseInt(counters[2]), new StudyHours(windows),
+                    templates, version3 ? Integer.parseInt(counters[3]) : 1);
             LOGGER.log(Level.FINE, "Saved data decoding completed");
             return decoded;
         } catch (StorageException exception) {
@@ -148,7 +185,8 @@ public final class StateCodec {
         if (lines.isEmpty() || !lines.getFirst().startsWith("SCHEDULEFLOW|")) {
             throw new StorageException("Invalid saved data header.");
         }
-        if (!lines.getFirst().equals(HEADER) && !lines.getFirst().equals("SCHEDULEFLOW|2")) {
+        if (!lines.getFirst().equals(HEADER) && !lines.getFirst().equals("SCHEDULEFLOW|2")
+                && !lines.getFirst().equals("SCHEDULEFLOW|3")) {
             throw new StorageException("Unsupported file version: "
                     + lines.getFirst().substring("SCHEDULEFLOW|".length()));
         }
@@ -156,6 +194,13 @@ public final class StateCodec {
             throw new StorageException("Missing next ID counters.");
         }
     }
+
+    // @@author nickpatt
+    /** Decodes explicit absence without using a sentinel deadline. */
+    private static Optional<LocalDateTime> optionalDeadline(String value) {
+        return value.equals("NONE") ? Optional.empty() : Optional.of(LocalDateTime.parse(value));
+    }
+    // @@author ernestgoh-god
 
     /**
      * Appends exactly one validated record to its corresponding private accumulation list.

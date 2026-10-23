@@ -41,6 +41,23 @@ class FileStorageTest {
 
     // @@author nickpatt
     @Test
+    void load_version3WithUnprocessedTemplate_doesNotMaterializeOrRewriteBytes() throws Exception {
+        Path file = directory.resolve("weekly.txt");
+        String text = "SCHEDULEFLOW|3\r\nNEXT|4|1|2\r\n"
+                + "TASK3|3|NONE|0|LOW|1|2000-01-08T18:00|Edited|café\r\n"
+                + "RECURRING|1|2000-01-08T18:00|2000-02-01|45|HIGH|2000-01-08T18:00|每周|Quiz";
+        Files.writeString(file, text);
+        Snapshot loaded = new FileStorage(file, new StateCodec()).load();
+        assertEquals(1, loaded.tasks().size());
+        assertEquals(0, loaded.tasks().getFirst().remainingMinutes());
+        assertEquals("Edited|café", loaded.tasks().getFirst().name());
+        assertEquals("每周|Quiz", loaded.recurringTasks().getFirst().name());
+        assertEquals(text, Files.readString(file));
+        assertEquals(loaded, new FileStorage(file, new StateCodec()).load());
+        assertEquals(text, Files.readString(file));
+    }
+
+    @Test
     void saveAndLoad_lifecycleCandidates_preservesExactStateAndReadOnlyMigration() throws Exception {
         Path file = directory.resolve("lifecycle.txt");
         String legacy = "SCHEDULEFLOW|1\r\nNEXT|4|2\r\nTASK|3|2000-01-01T09:00|60|Old|task\r\n"
@@ -60,7 +77,7 @@ class FileStorageTest {
             byte[] bytes = Files.readAllBytes(file);
             assertEquals(candidate, new FileStorage(file, new StateCodec()).load());
             assertArrayEquals(bytes, Files.readAllBytes(file));
-            assertTrue(Files.readString(file).startsWith("SCHEDULEFLOW|2\n"));
+            assertTrue(Files.readString(file).startsWith("SCHEDULEFLOW|3\n"));
         }
         assertEquals(60, source.tasks().getFirst().remainingMinutes());
         assertEquals(4, source.nextTaskId());

@@ -15,6 +15,7 @@ import java.util.StringJoiner;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import scheduleflow.model.Commitment;
+import scheduleflow.model.RecurringTask;
 import scheduleflow.model.StudyHours;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
@@ -209,6 +210,33 @@ public final class TextRenderer {
     public String overdueTasks(List<Task> tasks, LocalDateTime capturedNow) {
         // TODO(Tasks): implement TextRenderer.overdueTasks
         throw new UnsupportedOperationException("Overdue task rendering is not implemented yet.");
+    }
+
+    /**
+     * Reserves an unwired weekly-template addition confirmation.
+     * @throws UnsupportedOperationException always, pending Task rendering
+     */
+    public String recurringTaskAdded(RecurringTask task) {
+        // TODO(Tasks): implement TextRenderer.recurringTaskAdded
+        throw new UnsupportedOperationException("Recurring task addition rendering is not implemented yet.");
+    }
+
+    /**
+     * Reserves an unwired weekly-template removal confirmation.
+     * @throws UnsupportedOperationException always, pending Task rendering
+     */
+    public String recurringTaskDeleted(RecurringTask task) {
+        // TODO(Tasks): implement TextRenderer.recurringTaskDeleted
+        throw new UnsupportedOperationException("Recurring task deletion rendering is not implemented yet.");
+    }
+
+    /**
+     * Reserves an unwired immutable-template list presentation.
+     * @throws UnsupportedOperationException always, pending Task rendering
+     */
+    public String recurringTasks(List<RecurringTask> tasks) {
+        // TODO(Tasks): implement TextRenderer.recurringTasks
+        throw new UnsupportedOperationException("Recurring task list rendering is not implemented yet.");
     }
     // @@author
     // @@author ka-how

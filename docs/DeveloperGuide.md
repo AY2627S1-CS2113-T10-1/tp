@@ -129,12 +129,12 @@ same-day, positive, aligned intervals; the planner enforces configured hours.
 four-argument constructor for default-window callers. Plans freeze their source
 settings, so later time or unrelated snapshots do not alter projections.
 
-The codec reads versions 1 and 2. It now always writes version 2, appending sorted
+The codec reads versions 1, 2 and 3. It now always writes version 3, appending sorted
 `HOURS|TARGET|HH:mm|HH:mm` rows. Duplicate targets,
 invalid dates, unknown weekdays and invalid intervals reject the whole file.
 Existing version 1 files load with default hours. Previously written version 2
 files with legacy TASK rows and custom hours remain readable. Older applications
-cannot read the extended TASK2 records described below.
+cannot read the version 3 recurrence records described below.
 Atomic replacement still saves tasks, commitments, counters and hours together.
 
 JUnit coverage checks precedence/reset, immutable maps, input boundaries,
@@ -229,12 +229,13 @@ always throws `UnsupportedOperationException`, not a working rendering feature.
 ### Task progress and lifecycle (service APIs only)
 
 The canonical model is `Task(id, name, Optional<LocalDateTime>, remainingMinutes,
-TaskPriority)`. The original four-argument concrete-date constructor defaults
+TaskPriority, Optional<TaskOccurrence>)`. The five-argument constructor defaults
+provenance to empty. The original four-argument concrete-date constructor defaults
 priority to NORMAL and still rejects null deadlines; there is no ambiguous
 four-argument Optional overload. Use `Task.withoutDeadline(id, name, minutes)`
 or the canonical constructor for explicit absence, never a sentinel date.
 HIGH/NORMAL/LOW are stored and used for planner ties and the service-level queries
-described below. No recurring templates are implemented.
+described below. Weekly recurrence is implemented through the APIs below.
 
 `TaskService` exposes these pure candidate APIs:
 
@@ -318,6 +319,72 @@ only. Existing skeletons and renderer behavior are unchanged. No parser or
 dispatcher wiring, console commands or feature acceptance for these skeletons
 is included. Existing active UI fixtures remain applicable without changes.
 
+### Weekly Task Recurrence (Service APIs)
+
+`RecurringTask(id, name, firstDeadline, Optional<LocalDate> until, minutes,
+priority, Optional<LocalDateTime> generatedThrough)` defines a weekly-only template.
+Its positive independent ID displays as R1, R2, etc. First deadlines have minute
+precision in years 0001-9999 and must allow a release one week earlier within
+those years. Positive exact minutes, normalized names and inclusive until dates
+are validated without a clock. A present cursor must be a real weekly deadline
+within the template's bounds, not the time a command happened to run.
+
+`RecurringTaskService.add(state, name, firstDeadline, minutes, until, priority, now)`
+requires a future first deadline (which may be beyond the current horizon),
+allocates the next R ID and materializes all templates in one candidate.
+`materialize(state, now)` generates only previously unprocessed deadlines strictly
+after now and at or before the rolling horizon and inclusive until date.
+Ungenerated deadlines at or before now are skipped; previously generated overdue
+tasks remain. Arithmetic weekly jumps avoid enumerating missed centuries. Only
+future horizon occurrences are enumerated, in deadline then numeric R-ID order,
+and receive ordinary T IDs. Processing is clipped to year 9999. Cursor-only
+advances are real mutations; no effective change returns the identical snapshot.
+Insufficient task IDs reject the whole candidate, including newly added templates
+and all cursor advances. Integer.MAX_VALUE is an exhausted counter, not an allocatable ID.
+
+`TaskOccurrence(templateId, originalDeadline)` is immutable provenance and the
+logical uniqueness key. Its `release()` is originalDeadline minus one week.
+Task editing, deadline clearing, priority changes, progress, completion and
+reopening preserve it. Allocation never starts before release, even after a
+deadline edit. Task deletion/completion does not alter the template cursor, so
+committed occurrences are never recreated after restart or clock rollback.
+`delete(state, templateId)` removes only the template; retained tasks keep their
+provenance. `list(state)` is immutable numeric R-ID order. No template edits or
+other frequencies are supported.
+
+`Snapshot` adds immutable `recurringTasks` and `nextRecurringTaskId`; its old
+four/five-argument constructors default to no templates and R counter 1.
+It validates unique template IDs, logical occurrence keys, sequence membership
+and cursor coverage for live templates, and counters above live IDs and retained
+provenance IDs. Deleted templates need not exist. `withTasks`, `withCommitments`
+and `withStudyHours` preserve recurrence data across all ownership mutations.
+
+The existing `plan` route materializes a candidate, generates its plan, and checks
+plan-source equality **before saving**. Only changed source data is saved, once,
+before snapshot and temporary-plan publication. Generation, source validation or
+save failure preserves the old snapshot, counters and plan. A no-op materialization
+does not save. `AppState.replacePlan` retains its source invariant. Exact saved
+plans (S01) are not implemented: restarting still requires `plan`.
+
+`recurringTaskAdded`, `recurringTaskDeleted` and `recurringTasks` in `TextRenderer`
+are unwired TODO(Tasks) skeletons that always throw. No Task command parsing or
+dispatch routing was added, and no recurring CLI feature completion is claimed.
+Deterministic JUnit covers bounds/cursors, mixed-template ordering, horizon/until,
+no backfill, no-op identity, exhaustion atomicity, deletion/completion and file
+restart, mutation preservation, release allocation and dispatcher rollback.
+UI-017 exercises existing commands against restored bounded recurrence data only.
+
+Focused reviewer regressions additionally verify dated occurrences with a future
+original release after extending the current deadline, and full exact/capacity
+remainders when that deadline moves before release. Dispatcher tests cover
+cursor-only expired-template save failure/retry/no-op transactions and fixed-clock
+year-9999 generation, file restoration and replanning while the plan horizon is
+in year 10000. Batch-exhaustion tests distinguish individually fitting templates
+from their oversized combined demand, including adding a new template while old
+occurrences are pending; rejected candidates consume no IDs or cursors and valid
+retries receive the expected final IDs. These are deterministic API regressions,
+not additional recurring CLI acceptance. The User Guide's behavior is unchanged.
+
 ### Basic saving and loading
 
 `StateCodec` converts the existing `Snapshot` to and from plain text.
@@ -346,7 +413,7 @@ validate the complete snapshot, including overlaps and counters. Past deadlines
 remain valid; plans are never stored. Invalid data raises `StorageException`
 without returning a partial snapshot or modifying the file.
 
-All new writes use this actual version 2 layout:
+Previously written version 2 files remain readable with this layout:
 
 ```text
 SCHEDULEFLOW|2
@@ -366,9 +433,32 @@ TASK2 discriminator avoids confusing legacy v2 names containing pipes with new
 fields. Version 2 also accepts the previous TASK rows unchanged, including their
 positive-half-hour validation; version 1 does not accept TASK2 or HOURS. Mixed
 legacy/extended rows still share normal duplicate-ID/counter validation. Tasks
-and commitments retain stored order; HOURS rows sort by target. No templates or
-plans are persisted. Loading either legacy version is read-only; the next save
-writes extended v2. FileStorage constructors and atomic save behavior are unchanged.
+and commitments retain stored order; HOURS rows sort by target. Version 2 has no
+templates or provenance. Loading any version is read-only, with no clock reads,
+materialization or writes. The next successful save writes version 3:
+
+```text
+SCHEDULEFLOW|3
+NEXT|3|2|2
+TASK3|1|2026-11-20T18:00|45|HIGH|1|2026-11-20T18:00|Quiz|name
+TASK3|2|NONE|0|NORMAL|NONE|NONE|Ordinary completed
+RECURRING|1|2026-11-20T18:00|2026-12-04|45|HIGH|2026-11-20T18:00|Quiz|name
+COMMITMENT|1|MONDAY|10:30|90|Class
+HOURS|monday|08:00|20:00
+```
+
+Version 3 `NEXT|nextT|nextC|nextR` persists all three counters.
+`TASK3|id|deadline-or-NONE|remaining|priority|template-id-or-NONE|original-deadline-or-NONE|name`
+requires both provenance fields or neither. Current deadlines may be edited or
+absent without changing original deadlines.
+`RECURRING|id|first-deadline|until-date-or-NONE|minutes|priority|cursor-or-NONE|name`
+stores the exact weekly cursor. Names are always last and literal pipes/Unicode
+round-trip unchanged. Task/template lists retain stored order; hours sort by key.
+V3 also accepts legacy TASK/TASK2 and COMMITMENT/HOURS records. V1/v2 do not accept
+the new discriminators. Missing templates are valid only as retained provenance;
+nextR must still exceed their IDs. Duplicate logical keys, mismatched sequences,
+cursors, IDs or counters reject the complete load. No version stores plans.
+FileStorage constructors and atomic replacement are unchanged.
 
 `StateCodecTest` covers the format and validation. `FileStorageTest` demonstrates
 a save followed by a fresh reader, replacement, missing/corrupt files, and
@@ -661,7 +751,8 @@ formats success. A failed save propagates without publishing the candidate,
 consuming an ID or clearing the current plan. Shared public APIs are unchanged.
 
 Help, lists, schedule and exit preserve state and make no save call. Planning
-replaces only the temporary plan; partial and empty results remain usable.
+saves changed recurrence source data before replacing the temporary plan;
+partial and empty results remain usable. With no recurrence change it does not save.
 Schedule requests project that frozen plan; absence takes precedence over date
 validation. Exceptions from domain services remain their owners' validation.
 
@@ -820,7 +911,7 @@ estimates or commitments before the deadline.
 
 * *Task* - A retained item with an optional deadline and exact remaining work; zero means complete.
 * *Commitment* - A busy interval repeated on one weekday until deleted.
-* *Snapshot* - Immutable tasks, commitments, study hours and independent next-ID counters.
+* *Snapshot* - Immutable tasks, commitments, weekly task templates, study hours and independent next-ID counters.
 * *Plan* - Temporary allocations and unallocated work derived from a snapshot.
 * *Planning horizon* - The calendar range ending at midnight on the same date
   next year, with February 29 adjusted to February 28 when necessary.

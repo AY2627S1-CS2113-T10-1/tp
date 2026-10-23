@@ -104,7 +104,8 @@ public final class EarliestDeadlinePlanner implements Planner {
                 break;
             }
             LocalDateTime slotEnd = slot.start.plusMinutes(TimeRules.SLOT_MINUTES);
-            if (slot.available && (task.deadline().isEmpty() || !slotEnd.isAfter(task.deadline().get()))) {
+            if (slot.available && (task.deadline().isEmpty() || !slotEnd.isAfter(task.deadline().get()))
+                    && (task.occurrence().isEmpty() || !slot.start.isBefore(task.occurrence().get().release()))) {
                 slot.available = false;
                 slot.taskId = task.id();
                 slot.workMinutes = Math.min(remainingMinutes, TimeRules.SLOT_MINUTES);
