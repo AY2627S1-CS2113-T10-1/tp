@@ -1,5 +1,10 @@
 # ScheduleFlow UI test plan
 
+Issue #40 progress grammar has parser-level JUnit coverage. Packaged progress
+acceptance remains planned until task-service integration, dispatcher
+transactions and Printing's confirmation are implemented. Existing active
+scenarios continue to exercise the unchanged console commands.
+
 All sixteen maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
@@ -73,6 +78,11 @@ timeouts and expected output; Java 25 and isolated workspace data were retained.
   Preserve evidence before running Gradle `clean`.
 
 ## Active packaged scenarios
+
+Task name/deadline edit API cases are covered by deterministic JUnit tests only.
+They are not process-active until task-edit CLI wiring and rendering are integrated;
+the new renderer method is an unwired skeleton, not acceptance coverage. All current
+active fixture expectations remain unchanged.
 
 | ID | Coverage | Status |
 | --- | --- | --- |

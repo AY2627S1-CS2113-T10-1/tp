@@ -187,6 +187,31 @@ privacy and absence of false completion after rejection. Run the owned tests wit
 `./gradlew test --tests 'scheduleflow.task.*' --tests 'scheduleflow.common.*' --tests 'scheduleflow.model.TaskTest'`.
 The existing packaged UI fixtures require no changed output expectations.
 
+### Task detail editing (service API only)
+
+`TaskService.edit(state, id, TaskEdit, now)` implements immutable partial name and
+deadline edits. `TaskEdit` uses nonnull `Optional` containers; omitted fields retain
+their values. Empty edits, unknown IDs and `clearDeadline` requests raise
+`ValidationException`; deadline removal is not a supported domain feature yet.
+The full replacement is validated by `Task`. Only an actually changed deadline
+must satisfy `now < deadline <= TimeRules.horizonEnd(now)`. Renaming overdue or
+out-of-horizon work, or explicitly retaining its existing deadline, is valid.
+
+Edits preserve the exact stored position, ID, remaining estimate, other records,
+both counters (including exhausted counters) and configured study hours. A valid
+edit with no effective change after normalization returns the original snapshot
+instance. The API does not save, publish or invalidate plans. FINE diagnostics
+omit private values; assertions check candidate preservation. Nickhil's additions
+use scoped `// @@author nickpatt` markers without replacing teammates' attribution.
+
+Deterministic `TaskServiceTest` and `TaskEditTest` cases cover all field subsets,
+atomic rejection, no-ops, immutable mixed snapshots and custom hours, precise
+command times, structural deadline limits, inclusive/moving/leap-day horizons,
+null preconditions and private diagnostics. Existing console fixtures are unchanged.
+There is no task-edit command, parser or dispatcher integration in this change.
+`TextRenderer.taskEdited(Task)` is an unwired planned-contract skeleton that
+always throws `UnsupportedOperationException`, not a working rendering feature.
+
 ### Basic saving and loading
 
 `StateCodec` converts the existing `Snapshot` to and from plain text.
@@ -298,6 +323,19 @@ comment placement and accuracy alongside Checkstyle before committing. These
 rules are required by the root `AGENTS.md` and do not change command behaviour.
 
 ### Commands and parsing
+
+Issue #40 parser preparation recognizes `task progress TNUMBER done/MINUTES`
+and `task progress TNUMBER session/MINUTES percent/PERCENT`. It returns
+`RecordTaskWork` or `RecordTaskSession` transport values without reading state;
+the task service will enforce remaining-work limits and apply percentage
+rounding. The command is not dispatched yet because the progress service is
+still on an unmerged teammate branch. `TextRenderer.taskProgressUpdated` is a
+throwing Printing skeleton and is not called by the application. The new
+production parser blocks and parser tests carry scoped Ernest author tags;
+existing Printing blocks retain Ka How's tag. The reserved renderer method is
+tagged to the commit author until Ka How implements its real output. Progress
+acceptance and rollback tests remain pending integration with the task service
+and renderer.
 
 `CommandParser.parse` implements all command formats in the User Guide and
 returns the existing nested `Command` records. The parser has no clock, storage

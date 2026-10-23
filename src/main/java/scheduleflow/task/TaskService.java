@@ -85,6 +85,72 @@ public final class TaskService {
     }
 
     /**
+     * Replaces supplied details of a known task without saving or changing live state.
+     * Validates the complete resulting task; only an actually changed deadline must be future and
+     * within the rolling horizon. Renaming overdue or out-of-horizon work is allowed.
+     * Preserves stored position, IDs, estimates, other records, counters and study hours.
+     *
+     * @param state immutable source snapshot
+     * @param taskId numeric suffix of an existing task identifier
+     * @param edit partial replacement details; at least one field must be supplied
+     * @param now captured local command time, including seconds and nanoseconds
+     * @return a validated candidate, or the original snapshot instance if no value effectively changes
+     * @throws NullPointerException if state, edit or now is null
+     * @throws ValidationException if the edit is empty, clears a deadline, has invalid fields or an unknown ID
+     */
+    public Snapshot edit(Snapshot state, int taskId, TaskEdit edit, LocalDateTime now) {
+        Objects.requireNonNull(state, "state");
+        Objects.requireNonNull(edit, "edit");
+        Objects.requireNonNull(now, "now");
+        LOGGER.log(Level.FINE, "Starting task edit");
+        try {
+            if (edit.clearDeadline()) {
+                throw new ValidationException("Clearing a task deadline is not supported yet.");
+            }
+            if (edit.name().isEmpty() && edit.deadline().isEmpty()) {
+                throw new ValidationException("Supply at least one task field to edit.");
+            }
+            Task original = state.tasks().stream().filter(task -> task.id() == taskId).findFirst()
+                    .orElseThrow(() -> new ValidationException("Unknown task ID: T" + taskId));
+            Task replacement = new Task(original.id(), edit.name().orElse(original.name()),
+                    edit.deadline().orElse(original.deadline()), original.remainingMinutes());
+            if (!replacement.deadline().equals(original.deadline())) {
+                if (!replacement.deadline().isAfter(now)) {
+                    throw new ValidationException("Deadline must be in the future.");
+                }
+                if (replacement.deadline().isAfter(TimeRules.horizonEnd(now))) {
+                    throw new ValidationException("Deadline must be within the rolling one-year horizon.");
+                }
+            }
+            if (replacement.equals(original)) {
+                LOGGER.log(Level.FINE, "Task edit has no effective change; source snapshot returned");
+                return state;
+            }
+            List<Task> tasks = new ArrayList<>(state.tasks());
+            int position = tasks.indexOf(original);
+            tasks.set(position, replacement);
+            Snapshot candidate = new Snapshot(tasks, state.commitments(), state.nextTaskId(),
+                    state.nextCommitmentId(), state.studyHours());
+            assert candidate.tasks().size() == state.tasks().size()
+                    && candidate.tasks().get(position).equals(replacement)
+                    && candidate.tasks().subList(0, position).equals(state.tasks().subList(0, position))
+                    && candidate.tasks().subList(position + 1, tasks.size())
+                            .equals(state.tasks().subList(position + 1, tasks.size()))
+                    : "Editing must replace only the target at its original position";
+            assert candidate.nextTaskId() == state.nextTaskId()
+                    && candidate.nextCommitmentId() == state.nextCommitmentId()
+                    && candidate.commitments().equals(state.commitments())
+                    && candidate.studyHours().equals(state.studyHours())
+                    : "Editing must preserve counters, commitments and study hours";
+            LOGGER.log(Level.FINE, "Task edit candidate created; not yet saved or published");
+            return candidate;
+        } catch (ValidationException exception) {
+            LOGGER.log(Level.FINE, "Task edit rejected; source snapshot unchanged");
+            throw exception;
+        }
+    }
+
+    /**
      * Removes a known task from a candidate while preserving both counters.
      * Preserves every other record and its stored order; deleted IDs are never reused.
      *

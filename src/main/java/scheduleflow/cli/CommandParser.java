@@ -27,12 +27,19 @@ public final class CommandParser {
     private static final String HELP_USAGE = "Type help to see available commands";
     private static final String TASK_ADD_USAGE = "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES";
     private static final String TASK_DELETE_USAGE = "task delete TNUMBER";
+    // @@author ernestgoh-god
+    private static final String TASK_PROGRESS_USAGE =
+            "task progress TNUMBER done/MINUTES OR task progress TNUMBER session/MINUTES percent/PERCENT";
+    //@@author Darren50
     private static final String DATE_RANGE_USAGE = " [from/YYYY-MM-DD until/YYYY-MM-DD]";
+    // @@author ka-how
     private static final String COMMITMENT_ADD_USAGE = "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
             + DATE_RANGE_USAGE;
     private static final String COMMITMENT_DELETE_USAGE = "commitment delete CNUMBER";
+    //@@author Darren50
     private static final String COMMITMENT_EDIT_USAGE =
             "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]" + DATE_RANGE_USAGE;
+    // @@author ka-how
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
     private static final String HOURS_USAGE = "hours DAY|YYYY-MM-DD [/start HH:mm /end HH:mm]"
             + " OR hours reset DAY|YYYY-MM-DD";
@@ -60,6 +67,13 @@ public final class CommandParser {
                     + DATE_RANGE_PATTERN);
     private static final Pattern TASK_DELETE_PATTERN = Pattern.compile(
             "task +delete +T(?<id>" + POSITIVE_INT_TOKEN + ")");
+    // @@author ernestgoh-god
+    private static final Pattern TASK_PROGRESS_WORK_PATTERN = Pattern.compile(
+            "task +progress +T(?<id>" + POSITIVE_INT_TOKEN + ") +done/(?<done>0|" + POSITIVE_INT_TOKEN + ")");
+    private static final Pattern TASK_PROGRESS_SESSION_PATTERN = Pattern.compile(
+            "task +progress +T(?<id>" + POSITIVE_INT_TOKEN + ") +session/(?<session>"
+                    + POSITIVE_INT_TOKEN + ") +percent/(?<percent>0|" + POSITIVE_INT_TOKEN + ")");
+    // @@author ka-how
     private static final Pattern COMMITMENT_DELETE_PATTERN = Pattern.compile(
             "commitment +delete +C(?<id>" + POSITIVE_INT_TOKEN + ")");
     private static final Pattern SCHEDULE_PATTERN = Pattern.compile("schedule +(?<date>today|" + DATE_TOKEN + ")");
@@ -114,6 +128,9 @@ public final class CommandParser {
                 case "task list" -> parseNoArguments(input, command, new Command.ListTasks());
                 case "task delete" -> new Command.DeleteTask(Integer.parseInt(
                         match(TASK_DELETE_PATTERN, input, usage).group("id")));
+                // @@author ernestgoh-god
+                case "task progress" -> parseTaskProgress(input);
+                // @@author ka-how
                 case "commitment add" -> parseAddCommitment(input);
                 case "commitment edit" -> parseEditCommitment(input);
                 case "commitment list" -> parseNoArguments(input, command, new Command.ListCommitments());
@@ -157,6 +174,9 @@ public final class CommandParser {
         return switch (command) {
             case "task add" -> TASK_ADD_USAGE;
             case "task delete" -> TASK_DELETE_USAGE;
+            // @@author ernestgoh-god
+            case "task progress" -> TASK_PROGRESS_USAGE;
+            // @@author ka-how
             case "commitment add" -> COMMITMENT_ADD_USAGE;
             case "commitment edit" -> COMMITMENT_EDIT_USAGE;
             case "commitment delete" -> COMMITMENT_DELETE_USAGE;
@@ -187,6 +207,27 @@ public final class CommandParser {
         requireSupportedYear(deadline.toLocalDate(), TASK_ADD_USAGE);
         return new Command.AddTask(fields.group("name").strip(), deadline, Integer.parseInt(fields.group("minutes")));
     }
+
+    // @@author ernestgoh-god
+    /** Parses either progress form without applying task-state validation. */
+    private Command parseTaskProgress(String input) throws ParseException {
+        Matcher work = TASK_PROGRESS_WORK_PATTERN.matcher(input);
+        if (work.matches()) {
+            return new Command.RecordTaskWork(Integer.parseInt(work.group("id")),
+                    Integer.parseInt(work.group("done")));
+        }
+        Matcher session = TASK_PROGRESS_SESSION_PATTERN.matcher(input);
+        if (session.matches()) {
+            int percent = Integer.parseInt(session.group("percent"));
+            if (percent > 100) {
+                throw new ParseException("Percentage must be from 0 to 100", TASK_PROGRESS_USAGE);
+            }
+            return new Command.RecordTaskSession(Integer.parseInt(session.group("id")),
+                    Integer.parseInt(session.group("session")), percent);
+        }
+        throw new ParseException("Invalid command format or missing fields", TASK_PROGRESS_USAGE);
+    }
+    // @@author ka-how
 
     /**
      * Extracts weekly-series fields and maps the supported three-letter weekday tokens.

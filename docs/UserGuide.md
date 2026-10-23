@@ -109,6 +109,11 @@ Examples below are independent unless a sequence is explicitly described. Use ex
 
 ## Tasks
 
+Task name/deadline editing is implemented only as an internal Java service API.
+Console integration and edit-confirmation rendering are pending; no task-edit
+command is supported yet. The existing add, list and delete commands below are
+unchanged. Deadline removal and progress tracking are not supported.
+
 ### Recording duration (tasks and commitments)
 
 Enter duration when adding a task or commitment using `d/MINUTES`; there is no
@@ -122,6 +127,12 @@ from its start time, and that occurrence must not cross midnight. Planning
 does not reduce either stored value. Saving and loading preserve both values.
 
 Every stored task represents unfinished work. Its duration is your estimate of the work still required. Generating a plan or letting time pass does not reduce that estimate.
+
+> **Planned issue #40 command:** The parser recognizes `task progress T1 done/30`
+> and `task progress T1 session/60 percent/50`, but the application does not
+> execute them yet. Use the existing task commands until progress dispatch and
+> its response are integrated. A percentage describes work completed during the
+> reported session; it is not a percentage of the whole task.
 
 ### Adding a task
 

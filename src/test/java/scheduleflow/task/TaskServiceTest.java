@@ -2,6 +2,7 @@
 package scheduleflow.task;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -10,6 +11,8 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -21,6 +24,8 @@ import scheduleflow.common.InputRules;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
+import scheduleflow.model.StudyHours;
+import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 import scheduleflow.planning.TimeRules;
 
@@ -293,6 +298,133 @@ class TaskServiceTest {
         assertEquals(List.of(ten, two, seven), original.tasks());
         assertThrows(UnsupportedOperationException.class, () -> listed.clear());
         assertEquals(List.of(), service.list(Snapshot.empty()));
+    }
+
+    @Test
+    void edit_eachFieldSubset_preservesMixedSnapshotPositionAndHours() {
+        Snapshot source = editSource();
+        Task original = source.tasks().get(1);
+        for (TaskEdit edit : List.of(new TaskEdit(Optional.of("  Renamed  "), Optional.empty(), false),
+                new TaskEdit(Optional.empty(), Optional.of(DEADLINE.plusDays(1)), false),
+                new TaskEdit(Optional.of("  Renamed  "), Optional.of(DEADLINE.plusDays(1)), false))) {
+            Snapshot candidate = service.edit(source, original.id(), edit, NOW);
+            Task expected = new Task(original.id(), edit.name().orElse(original.name()),
+                    edit.deadline().orElse(original.deadline()), original.remainingMinutes());
+            assertEquals(new Snapshot(List.of(source.tasks().getFirst(), expected, source.tasks().getLast()),
+                    source.commitments(), source.nextTaskId(), source.nextCommitmentId(), source.studyHours()),
+                    candidate);
+            assertSame(source.studyHours(), candidate.studyHours());
+            assertEquals(editSource(), source);
+            assertSame(source.tasks().getFirst(), candidate.tasks().getFirst());
+            assertSame(source.tasks().getLast(), candidate.tasks().getLast());
+            assertThrows(UnsupportedOperationException.class, () -> candidate.tasks().clear());
+        }
+    }
+
+    @Test
+    void edit_unchangedOrRenamedOldDeadline_doesNotRevalidateTemporalRange() {
+        for (LocalDateTime deadline : List.of(NOW.minusYears(1), NOW, NOW.plusYears(2))) {
+            Task task = new Task(1, "Draft", deadline, 60);
+            Snapshot source = new Snapshot(List.of(task), List.of(), 2, 1);
+            assertSame(source, service.edit(source, 1,
+                    new TaskEdit(Optional.of("  Draft  "), Optional.of(deadline), false), NOW));
+            assertSame(source, service.edit(source, 1,
+                    new TaskEdit(Optional.empty(), Optional.of(deadline), false), NOW));
+            assertEquals(new Task(1, "Renamed", deadline, 60), service.edit(source, 1,
+                    new TaskEdit(Optional.of("Renamed"), Optional.empty(), false), NOW).tasks().getFirst());
+            assertEquals(new Task(1, "Renamed", deadline, 60), service.edit(source, 1,
+                    new TaskEdit(Optional.of("Renamed"), Optional.of(deadline), false), NOW).tasks().getFirst());
+        }
+    }
+
+    @Test
+    void edit_invalidFullEdits_rejectsAtomicallyAndAllowsRetry() {
+        Snapshot source = editSource();
+        List<TaskEdit> invalid = new ArrayList<>();
+        invalid.add(new TaskEdit(Optional.empty(), Optional.empty(), false));
+        invalid.add(new TaskEdit(Optional.empty(), Optional.empty(), true));
+        invalid.add(new TaskEdit(Optional.of("Valid"), Optional.of(DEADLINE), true));
+        for (String name : List.of("", "   ", "Bad/name", "Bad\tname", "Bad\nname")) {
+            invalid.add(new TaskEdit(Optional.of(name), Optional.of(DEADLINE.plusDays(1)), false));
+        }
+        for (LocalDateTime deadline : List.of(NOW.minusMinutes(1), NOW,
+                TimeRules.horizonEnd(NOW).plusMinutes(1), DEADLINE.withSecond(1), DEADLINE.withNano(1),
+                DEADLINE.withYear(0), DEADLINE.withYear(10000))) {
+            invalid.add(new TaskEdit(Optional.of("Valid new name"), Optional.of(deadline), false));
+        }
+        for (TaskEdit edit : invalid) {
+            assertThrows(ValidationException.class, () -> service.edit(source, 2, edit, NOW));
+            assertEquals(editSource(), source);
+        }
+        assertEquals("Retry", service.edit(source, 2,
+                new TaskEdit(Optional.of("Retry"), Optional.empty(), false), NOW).tasks().get(1).name());
+    }
+
+    @Test
+    void edit_unknownIdsAndNullInputs_rejectsWithoutChangingSource() {
+        Snapshot source = editSource();
+        TaskEdit edit = new TaskEdit(Optional.of("Renamed"), Optional.empty(), false);
+        for (int id : new int[] {-1, 0, 1, Integer.MAX_VALUE}) {
+            assertEquals("Unknown task ID: T" + id, assertThrows(ValidationException.class,
+                    () -> service.edit(source, id, edit, NOW)).getMessage());
+        }
+        assertThrows(ValidationException.class, () -> service.edit(Snapshot.empty(), 1, edit, NOW));
+        assertEquals("state", assertThrows(NullPointerException.class,
+                () -> service.edit(null, 2, edit, NOW)).getMessage());
+        assertEquals("edit", assertThrows(NullPointerException.class,
+                () -> service.edit(source, 2, null, NOW)).getMessage());
+        assertEquals("now", assertThrows(NullPointerException.class,
+                () -> service.edit(source, 2, edit, null)).getMessage());
+        assertEquals(editSource(), source);
+    }
+
+    @Test
+    void edit_changedDeadline_checksPreciseNowAndInclusiveCalendarHorizon() {
+        Snapshot source = editSource();
+        for (LocalDateTime now : List.of(NOW, NOW.plusNanos(1), NOW.plusSeconds(59).plusNanos(999999999),
+                LocalDateTime.of(2028, 2, 29, 12, 0))) {
+            LocalDateTime nextMinute = now.withSecond(0).withNano(0).plusMinutes(1);
+            for (LocalDateTime deadline : List.of(nextMinute, TimeRules.horizonEnd(now))) {
+                assertEquals(deadline, service.edit(source, 2,
+                        new TaskEdit(Optional.empty(), Optional.of(deadline), false), now)
+                        .tasks().get(1).deadline());
+            }
+            for (LocalDateTime deadline : List.of(now.withSecond(0).withNano(0),
+                    TimeRules.horizonEnd(now).plusMinutes(1))) {
+                assertThrows(ValidationException.class, () -> service.edit(source, 2,
+                        new TaskEdit(Optional.empty(), Optional.of(deadline), false), now));
+            }
+        }
+        LocalDateTime movingDeadline = TimeRules.horizonEnd(NOW).plusDays(1);
+        TaskEdit edit = new TaskEdit(Optional.empty(), Optional.of(movingDeadline), false);
+        assertThrows(ValidationException.class, () -> service.edit(source, 2, edit, NOW));
+        assertEquals(movingDeadline, service.edit(source, 2, edit, NOW.plusDays(1)).tasks().get(1).deadline());
+    }
+
+    @Test
+    void edit_enabledLogging_distinguishesCandidateNoOpAndRejectionWithoutPrivateValues() throws Throwable {
+        Snapshot source = editSource();
+        List<LogRecord> records = captureLogs(TaskService.class, () -> {
+            service.edit(source, 2, new TaskEdit(Optional.of("Private task"), Optional.empty(), false), NOW);
+            service.edit(source, 2, new TaskEdit(Optional.of("Draft"), Optional.empty(), false), NOW);
+            assertThrows(ValidationException.class, () -> service.edit(source, 2,
+                    new TaskEdit(Optional.of("Private task/invalid"), Optional.empty(), false), NOW));
+        });
+        assertEquals(List.of("Starting task edit", "Task edit candidate created; not yet saved or published",
+                "Starting task edit", "Task edit has no effective change; source snapshot returned",
+                "Starting task edit", "Task edit rejected; source snapshot unchanged"),
+                records.stream().map(LogRecord::getMessage).toList());
+        assertPrivateStageRecords(records);
+    }
+
+    /** Creates an unsorted mixed snapshot with exhausted counters and both kinds of custom hours. */
+    private Snapshot editSource() {
+        StudyHours hours = new StudyHours(Map.of(
+                "monday", new StudyWindow(LocalTime.of(9, 0), LocalTime.of(20, 0)),
+                "2026-09-22", new StudyWindow(LocalTime.of(10, 0), LocalTime.of(18, 0))));
+        return new Snapshot(List.of(new Task(10, "First", NOW.minusYears(1), 30),
+                new Task(2, "Draft", DEADLINE, 90), new Task(7, "Last", NOW.plusYears(2), 60)),
+                List.of(LECTURE), Integer.MAX_VALUE, Integer.MAX_VALUE, hours);
     }
 
     /**
