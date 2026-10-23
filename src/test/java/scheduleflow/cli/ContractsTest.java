@@ -41,7 +41,9 @@ class ContractsTest {
         // @@author ernestgoh-god
         assertEquals(0, new Command.RecordTaskWork(1, 0).doneMinutes());
         assertEquals(101, new Command.RecordTaskSession(1, 1, 101).percent());
-        assertEquals(17, Command.class.getPermittedSubclasses().length);
+        // @@author
+        assertEquals(18, Command.class.getPermittedSubclasses().length);
+        // @@author ernestgoh-god
         // @@author ka-how
     }
 

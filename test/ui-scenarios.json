@@ -2,6 +2,28 @@
   "version": 1,
   "cases": [
     {
+      "id": "UI-017", "aim": "Skipped recurring occurrences validate, free conflicts and survive restart",
+      "status": "active", "setup": "No data file; one bounded recurring commitment",
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "commitment add n/Lecture day/MON start/1000 d/60 from/2026-10-19 until/2026-11-02", "output": "Added C1: Lecture | Monday 10:00 - 11:00 (60 min) | 2026-10-19 to 2026-11-02" },
+          { "input": "commitment skip C1 on/2026-10-26", "output": "Skipped C1 on 2026-10-26: Lecture" },
+          { "input": "commitment skip C1 on/2026-10-26", "output": "Error: C1 is already skipped on 2026-10-26." },
+          { "input": "commitment skip C1 on/2026-10-27", "output": "Error: C1 has no occurrence on 2026-10-27." },
+          { "input": "commitment skip C9 on/2026-10-26", "output": "Error: Unknown commitment ID: C9" },
+          { "input": "commitment list", "output": "=== Recurring Weekly Commitments ===\n[Monday]\nC1. 10:00 - 11:00 | Lecture | 2026-10-19 to 2026-11-02 | skipped: 2026-10-26\n\nTotal: 1 recurring commitments across the week." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "commitment list", "output": "=== Recurring Weekly Commitments ===\n[Monday]\nC1. 10:00 - 11:00 | Lecture | 2026-10-19 to 2026-11-02 | skipped: 2026-10-26\n\nTotal: 1 recurring commitments across the week." },
+          { "input": "commitment add n/Replacement day/MON start/1030 d/30 from/2026-10-26 until/2026-10-26", "output": "Added C2: Replacement | Monday 10:30 - 11:00 (30 min) | 2026-10-26 to 2026-10-26" },
+          { "input": "commitment add n/Clash day/MON start/1030 d/30 from/2026-11-02 until/2026-11-02", "output": "Error: Commitment overlaps C1: Lecture" },
+          { "input": "commitment add n/Available ID day/TUE start/1000 d/30", "output": "Added C3: Available ID | Tuesday 10:00 - 10:30 (30 min)" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
       "id": "UI-016", "aim": "Recurring commitment date bounds validate, persist and control overlap",
       "status": "active", "setup": "No data file; bounded and unbounded weekly series",
       "sessions": [

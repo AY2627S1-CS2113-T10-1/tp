@@ -489,6 +489,37 @@ candidate immutability, parser syntax, version 3 round trips, planning and daily
 projection. UI-016 verifies validation, editing, restart persistence, conflict
 reporting and unconsumed retry IDs through the packaged application.
 
+### Skipping one recurring occurrence (issue #66)
+
+`Commitment` stores an immutable set of skipped calendar dates. `recursOn`
+checks the weekday and optional inclusive bounds without exceptions, while
+`occursOn` additionally excludes skipped dates. The constructor rejects a
+skipped date outside the series or on another weekday. Editing retains the set,
+so an edit that would move an existing exception outside the resulting series
+is rejected instead of silently losing it.
+
+`CommitmentService.skip` resolves the stable ID, rejects non-occurrence and
+duplicate dates, and replaces the record at its original stored position. The
+candidate preserves tasks, study hours and both ID counters. Printing saves the
+candidate before publishing it or returning `Skipped CNUMBER on DATE: NAME`;
+therefore save failure leaves the live snapshot, current plan and saved data
+unchanged. The command grammar is `commitment skip CNUMBER on/YYYY-MM-DD`.
+
+Overlap checks search the finite range whenever either series is bounded and
+require an unskipped shared occurrence. Two unbounded series always share a
+future occurrence because each stores only finitely many skipped dates. This
+allows another bounded commitment to use a cancelled date without weakening
+conflict checks on the remaining dates. The planner and schedule projection
+already use `occursOn`, so they require no separate exception logic.
+
+Version 4 storage adds one comma-separated skipped-date field to every
+commitment row, using `-` when a series has no exceptions. Dates are encoded in
+chronological order. Versions 1 through 3 remain readable, and the encoder still
+uses the oldest format capable of representing the snapshot. Model, service,
+parser, dispatcher, renderer, codec and planning regressions cover valid,
+invalid and rollback paths. UI-017 verifies exact output, restart persistence,
+released overlap and unconsumed IDs through the packaged JAR.
+
 ### Commitment deletion and listing
 
 `CommitmentService.delete` removes an entire weekly series by its stable numeric

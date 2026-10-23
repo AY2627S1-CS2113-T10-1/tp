@@ -10,6 +10,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
@@ -106,7 +107,7 @@ class EarliestDeadlinePlannerTest {
     @Test
     void generate_boundedCommitment_blocksOnlyInclusiveSemesterDates() {
         Commitment semester = new Commitment(1, "Lecture", DayOfWeek.MONDAY, LocalTime.of(8, 0), 60,
-                MONDAY.plusWeeks(1), MONDAY.plusWeeks(2));
+                MONDAY.plusWeeks(1), MONDAY.plusWeeks(2), Set.of(MONDAY.plusWeeks(1)));
         Task before = task(1, "Before", MONDAY.atTime(9, 0), 30);
         Plan beforeResult = planner.generate(snapshot(List.of(before), List.of(semester)), EARLY_MORNING);
         assertEquals(MONDAY.atTime(8, 0), beforeResult.sessions().getFirst().start());
@@ -114,7 +115,12 @@ class EarliestDeadlinePlannerTest {
         LocalDate insideDate = MONDAY.plusWeeks(1);
         Task inside = task(2, "Inside", insideDate.atTime(10, 0), 30);
         Plan insideResult = planner.generate(snapshot(List.of(inside), List.of(semester)), insideDate.atTime(7, 0));
-        assertEquals(insideDate.atTime(9, 0), insideResult.sessions().getFirst().start());
+        assertEquals(insideDate.atTime(8, 0), insideResult.sessions().getFirst().start());
+
+        LocalDate blockedDate = MONDAY.plusWeeks(2);
+        Task blocked = task(3, "Blocked", blockedDate.atTime(10, 0), 30);
+        Plan blockedResult = planner.generate(snapshot(List.of(blocked), List.of(semester)), blockedDate.atTime(7, 0));
+        assertEquals(blockedDate.atTime(9, 0), blockedResult.sessions().getFirst().start());
     }
 
     @Test

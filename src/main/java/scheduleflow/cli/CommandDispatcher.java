@@ -116,6 +116,9 @@ public final class CommandDispatcher {
             // @@author ka-how
             case Command.AddCommitment add -> addCommitment(add, state);
             case Command.EditCommitment edit -> editCommitment(edit, state);
+            // @@author
+            case Command.SkipCommitment skip -> skipCommitment(skip, state);
+            // @@author ka-how
             case Command.ListCommitments ignored -> renderer.commitments(commitments.list(state.snapshot()));
             case Command.DeleteCommitment delete -> deleteCommitment(delete.id(), state);
             case Command.GeneratePlan ignored -> generatePlan(state, now);
@@ -197,6 +200,16 @@ public final class CommandDispatcher {
                 .orElseThrow(() -> new IllegalStateException("Validated commitment edit is missing its target."));
         saveAndCommit(candidate, state);
         return renderer.commitmentEdited(edited);
+    }
+
+    /** Saves a skipped occurrence before clearing the temporary plan and confirming success. */
+    private String skipCommitment(Command.SkipCommitment command, AppState state) throws StorageException {
+        Snapshot candidate = commitments.skip(state.snapshot(), command.id(), command.date());
+        Commitment updated = candidate.commitments().stream()
+                .filter(commitment -> commitment.id() == command.id()).findFirst()
+                .orElseThrow(() -> new IllegalStateException("Validated commitment skip is missing its target."));
+        saveAndCommit(candidate, state);
+        return renderer.commitmentSkipped(updated, command.date());
     }
     //@@author ka-how
 

@@ -117,6 +117,14 @@ public sealed interface Command {
             this(id, name, day, start, minutes, null, null);
         }
     }
+
+    /** Carries one calendar occurrence to remove from a recurring commitment. */
+    record SkipCommitment(int id, LocalDate date) implements Command {
+        /** Requires the occurrence date while leaving ID and recurrence validation to the service. */
+        public SkipCommitment {
+            Objects.requireNonNull(date, "date");
+        }
+    }
     //@@author ka-how
 
     /**

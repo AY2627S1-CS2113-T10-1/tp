@@ -5,7 +5,7 @@ acceptance remains planned until task-service integration, dispatcher
 transactions and Printing's confirmation are implemented. Existing active
 scenarios continue to exercise the unchanged console commands.
 
-All sixteen maintained process scenarios are active. They exercise the packaged
+All seventeen maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -86,6 +86,7 @@ active fixture expectations remain unchanged.
 
 | ID | Coverage | Status |
 | --- | --- | --- |
+| UI-017 | One-date recurrence skips, validation, version 4 restart and released overlap | Active |
 | UI-001 | Missing file, empty lists and absent plan | Active |
 | UI-002 | Adjacency, midnight and commitment IDs after deletion/restart | Active |
 | UI-003 | EOF prints goodbye and exits 0 | Active |
@@ -107,6 +108,9 @@ UI-015 asserts reset confirmations name the restored source and its endpoints.
 UI-016 adds nonoverlapping semester series at the same weekly time, rejects a
 real in-range clash and an interval without the selected weekday, edits the
 inclusive bounds, and confirms version 3 persistence and retry ID stability.
+UI-017 skips one bounded Monday occurrence, rejects duplicate, wrong-date and
+unknown-ID requests, confirms version 4 restart persistence, allows another
+series to use the released occurrence and retains the rejected-addition ID.
 
 The original eight scenarios retain their exact expectations. UI-009 through
 UI-012 add release acceptance without a production clock flag. Their saved

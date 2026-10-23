@@ -4,6 +4,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Objects;
+import java.util.Set;
 import scheduleflow.common.InputRules;
 import scheduleflow.common.ValidationException;
 import scheduleflow.planning.TimeRules;
@@ -19,16 +20,23 @@ import scheduleflow.planning.TimeRules;
  * @param durationMinutes positive multiple of 30 ending no later than midnight
  * @param startDate inclusive first date, or null together with endDate for an unbounded series
  * @param endDate inclusive last date, or null together with startDate
+ * @param skippedDates immutable calendar occurrences excluded from this series
  */
 public record Commitment(int id, String name, DayOfWeek day, LocalTime start, int durationMinutes,
-        LocalDate startDate, LocalDate endDate) {
+        LocalDate startDate, LocalDate endDate, Set<LocalDate> skippedDates) {
     private static final int MINUTES_PER_HOUR = 60;
     private static final int MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR;
 
     //@@author Darren50
     /** Retains the original constructor for weekly series without date limits. */
     public Commitment(int id, String name, DayOfWeek day, LocalTime start, int durationMinutes) {
-        this(id, name, day, start, durationMinutes, null, null);
+        this(id, name, day, start, durationMinutes, null, null, Set.of());
+    }
+
+    /** Retains date-bounded construction without skipped occurrences. */
+    public Commitment(int id, String name, DayOfWeek day, LocalTime start, int durationMinutes,
+            LocalDate startDate, LocalDate endDate) {
+        this(id, name, day, start, durationMinutes, startDate, endDate, Set.of());
     }
     //@@author
 
@@ -48,6 +56,12 @@ public record Commitment(int id, String name, DayOfWeek day, LocalTime start, in
             throw new ValidationException("Commitment start time must be provided.");
         }
         validateDates(day, startDate, endDate);
+        skippedDates = Set.copyOf(Objects.requireNonNull(skippedDates, "skippedDates"));
+        for (LocalDate skippedDate : skippedDates) {
+            if (!recursOn(day, startDate, endDate, skippedDate)) {
+                throw new ValidationException("Skipped date must be an occurrence of the commitment.");
+            }
+        }
         name = InputRules.normalizeName(name);
         InputRules.requireDuration(durationMinutes);
         if (start.getSecond() != 0 || start.getNano() != 0 || start.getMinute() % TimeRules.SLOT_MINUTES != 0) {
@@ -88,19 +102,43 @@ public record Commitment(int id, String name, DayOfWeek day, LocalTime start, in
 
     /** Returns whether this weekly series reserves time on the supplied calendar date. */
     public boolean occursOn(LocalDate date) {
+        return recursOn(date) && !skippedDates.contains(date);
+    }
+
+    /** Returns whether the recurrence includes a date before applying individual skips. */
+    public boolean recursOn(LocalDate date) {
+        Objects.requireNonNull(date, "date");
+        return recursOn(day, startDate, endDate, date);
+    }
+
+    /** Checks weekday and optional inclusive bounds without consulting skipped dates. */
+    private static boolean recursOn(DayOfWeek day, LocalDate first, LocalDate last, LocalDate date) {
         Objects.requireNonNull(date, "date");
         return date.getDayOfWeek() == day
-                && (startDate == null || (!date.isBefore(startDate) && !date.isAfter(endDate)));
+                && (first == null || (!date.isBefore(first) && !date.isAfter(last)));
     }
 
     /** Checks whether two series share an actual occurrence, not merely intersecting date ranges. */
     private boolean sharesOccurrence(Commitment other) {
-        if (startDate == null || other.startDate == null) {
+        if (startDate == null && other.startDate == null) {
             return true;
         }
-        LocalDate first = startDate.isAfter(other.startDate) ? startDate : other.startDate;
-        LocalDate last = endDate.isBefore(other.endDate) ? endDate : other.endDate;
-        return !first.isAfter(last) && containsWeekday(first, last, day);
+        LocalDate first = startDate == null ? other.startDate
+                : other.startDate == null || startDate.isAfter(other.startDate) ? startDate : other.startDate;
+        LocalDate last = endDate == null ? other.endDate
+                : other.endDate == null || endDate.isBefore(other.endDate) ? endDate : other.endDate;
+        if (first.isAfter(last)) {
+            return false;
+        }
+        int offset = Math.floorMod(day.getValue() - first.getDayOfWeek().getValue(), 7);
+        long finalEpochDay = last.toEpochDay();
+        for (long epochDay = first.toEpochDay() + offset; epochDay <= finalEpochDay; epochDay += 7) {
+            LocalDate occurrence = LocalDate.ofEpochDay(epochDay);
+            if (!skippedDates.contains(occurrence) && !other.skippedDates.contains(occurrence)) {
+                return true;
+            }
+        }
+        return false;
     }
     //@@author
 

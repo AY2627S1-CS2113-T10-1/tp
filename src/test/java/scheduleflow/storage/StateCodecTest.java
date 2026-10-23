@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
@@ -40,6 +41,27 @@ class StateCodecTest {
                 + "COMMITMENT|1|MONDAY|10:00|60|2026-08-10|-|Lecture\n"));
         assertThrows(StorageException.class, () -> codec.decode("SCHEDULEFLOW|3\nNEXT|1|2\n"
                 + "COMMITMENT|1|MONDAY|10:00|60|2026-11-16|2026-08-10|Lecture\n"));
+    }
+
+    @Test
+    void encodeAndDecode_skippedOccurrences_usesVersionFourAndValidatesDates() throws StorageException {
+        LocalDate first = LocalDate.of(2026, 8, 10);
+        LocalDate second = first.plusWeeks(1);
+        Commitment skipped = new Commitment(1, "Semester | lecture", DayOfWeek.MONDAY,
+                LocalTime.of(10, 0), 60, first, second, Set.of(second, first));
+        Commitment ordinary = new Commitment(2, "Weekly", DayOfWeek.TUESDAY, LocalTime.NOON, 30);
+        Snapshot state = new Snapshot(List.of(), List.of(skipped, ordinary), 1, 3);
+        String expected = "SCHEDULEFLOW|4\nNEXT|1|3\n"
+                + "COMMITMENT|1|MONDAY|10:00|60|2026-08-10|2026-08-17|2026-08-10,2026-08-17|"
+                + "Semester | lecture\n"
+                + "COMMITMENT|2|TUESDAY|12:00|30|-|-|-|Weekly\n";
+        assertEquals(expected, codec.encode(state));
+        assertEquals(state, codec.decode(expected));
+        for (String skippedToken : List.of("2026-08-10,2026-08-10", "2026-08-11", "")) {
+            assertThrows(StorageException.class, () -> codec.decode("SCHEDULEFLOW|4\nNEXT|1|2\n"
+                    + "COMMITMENT|1|MONDAY|10:00|60|2026-08-10|2026-08-17|" + skippedToken
+                    + "|Lecture\n"));
+        }
     }
 
     // @@author GabrielYuSP

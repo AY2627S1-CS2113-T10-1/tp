@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
 import scheduleflow.model.Commitment;
@@ -94,7 +95,8 @@ class TextRendererTest {
         List<String> formats = List.of("help", "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES", "task list",
                 "task delete TNUMBER", "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
                         + " [from/YYYY-MM-DD until/YYYY-MM-DD]", "commitment list",
-                "commitment delete CNUMBER", "hours DAY|YYYY-MM-DD /start HH:mm /end HH:mm",
+                "commitment delete CNUMBER", "commitment skip CNUMBER on/YYYY-MM-DD",
+                "hours DAY|YYYY-MM-DD /start HH:mm /end HH:mm",
                 "hours DAY|YYYY-MM-DD", "hours reset DAY|YYYY-MM-DD",
                 "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]"
                         + " [from/YYYY-MM-DD until/YYYY-MM-DD]", "plan",
@@ -199,6 +201,19 @@ class TextRendererTest {
         assertOutput("=== Recurring Weekly Commitments ===\n[Monday]\n"
                 + "C4. 10:00 - 12:00 | Semester lecture" + range
                 + "\n\nTotal: 1 recurring commitments across the week.", renderer.commitments(List.of(bounded)));
+    }
+
+    @Test
+    void commitmentMessages_skippedOccurrences_displayChronologically() {
+        LocalDate first = LocalDate.of(2026, 8, 10);
+        LocalDate second = first.plusWeeks(1);
+        Commitment commitment = new Commitment(4, "Lecture", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
+                first, second, Set.of(second, first));
+        assertOutput("Skipped C4 on 2026-08-10: Lecture", renderer.commitmentSkipped(commitment, first));
+        assertOutput("=== Recurring Weekly Commitments ===\n[Monday]\nC4. 10:00 - 11:00 | Lecture"
+                + " | 2026-08-10 to 2026-08-17 | skipped: 2026-08-10, 2026-08-17"
+                + "\n\nTotal: 1 recurring commitments across the week.",
+                renderer.commitments(List.of(commitment)));
     }
     //@@author ka-how
 
