@@ -128,6 +128,12 @@ does not reduce either stored value. Saving and loading preserve both values.
 
 Every stored task represents unfinished work. Its duration is your estimate of the work still required. Generating a plan or letting time pass does not reduce that estimate.
 
+> **Planned issue #40 command:** The parser recognizes `task progress T1 done/30`
+> and `task progress T1 session/60 percent/50`, but the application does not
+> execute them yet. Use the existing task commands until progress dispatch and
+> its response are integrated. A percentage describes work completed during the
+> reported session; it is not a percentage of the whole task.
+
 ### Adding a task
 
 **Command:** `task add`

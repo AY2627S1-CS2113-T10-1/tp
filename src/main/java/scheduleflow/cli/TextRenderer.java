@@ -49,6 +49,21 @@ public final class TextRenderer {
     public TextRenderer() {
     }
 
+    // @@author ernestgoh-god
+    /**
+     * Reserves the confirmation for recorded task progress.
+     *
+     * @param task persisted task after progress
+     * @param creditedMinutes whole minutes credited, including percentage rounding
+     * @return confirmation text once Printing implements this method
+     * @throws UnsupportedOperationException until Printing supplies the response
+     */
+    public String taskProgressUpdated(Task task, int creditedMinutes) {
+        // TODO(ka-how): implement task progress confirmation and exact-output tests.
+        throw new UnsupportedOperationException("Task progress rendering is not implemented yet.");
+    }
+    // @@author ka-how
+
     /**
      * Returns command help.
      */
