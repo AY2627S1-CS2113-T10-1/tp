@@ -107,6 +107,22 @@ public final class TextRenderer {
                 + " | Duration: " + task.remainingMinutes() + " min");
     }
 
+    // @@author nickpatt
+    /**
+     * Reserves formatting of a successfully saved task edit; not implemented or connected to the CLI.
+     * The planned response will use the stored ID, name, deadline and estimate without mutation or I/O.
+     *
+     * @param task successfully saved edited task
+     * @return planned edit confirmation without a trailing newline
+     * @throws UnsupportedOperationException always, until task edit rendering is implemented
+     */
+    public String taskEdited(Task task) {
+        // TODO(Tasks): implement TextRenderer.taskEdited
+        throw new UnsupportedOperationException("Task edit rendering is not implemented yet.");
+    }
+    // @@author
+    // @@author ka-how
+
     /**
      * Formats the removed task.
      *

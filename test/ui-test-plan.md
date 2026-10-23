@@ -74,6 +74,11 @@ timeouts and expected output; Java 25 and isolated workspace data were retained.
 
 ## Active packaged scenarios
 
+Task name/deadline edit API cases are covered by deterministic JUnit tests only.
+They are not process-active until task-edit CLI wiring and rendering are integrated;
+the new renderer method is an unwired skeleton, not acceptance coverage. All current
+active fixture expectations remain unchanged.
+
 | ID | Coverage | Status |
 | --- | --- | --- |
 | UI-001 | Missing file, empty lists and absent plan | Active |

@@ -184,6 +184,31 @@ privacy and absence of false completion after rejection. Run the owned tests wit
 `./gradlew test --tests 'scheduleflow.task.*' --tests 'scheduleflow.common.*' --tests 'scheduleflow.model.TaskTest'`.
 The existing packaged UI fixtures require no changed output expectations.
 
+### Task detail editing (service API only)
+
+`TaskService.edit(state, id, TaskEdit, now)` implements immutable partial name and
+deadline edits. `TaskEdit` uses nonnull `Optional` containers; omitted fields retain
+their values. Empty edits, unknown IDs and `clearDeadline` requests raise
+`ValidationException`; deadline removal is not a supported domain feature yet.
+The full replacement is validated by `Task`. Only an actually changed deadline
+must satisfy `now < deadline <= TimeRules.horizonEnd(now)`. Renaming overdue or
+out-of-horizon work, or explicitly retaining its existing deadline, is valid.
+
+Edits preserve the exact stored position, ID, remaining estimate, other records,
+both counters (including exhausted counters) and configured study hours. A valid
+edit with no effective change after normalization returns the original snapshot
+instance. The API does not save, publish or invalidate plans. FINE diagnostics
+omit private values; assertions check candidate preservation. Nickhil's additions
+use scoped `// @@author nickpatt` markers without replacing teammates' attribution.
+
+Deterministic `TaskServiceTest` and `TaskEditTest` cases cover all field subsets,
+atomic rejection, no-ops, immutable mixed snapshots and custom hours, precise
+command times, structural deadline limits, inclusive/moving/leap-day horizons,
+null preconditions and private diagnostics. Existing console fixtures are unchanged.
+There is no task-edit command, parser or dispatcher integration in this change.
+`TextRenderer.taskEdited(Task)` is an unwired planned-contract skeleton that
+always throws `UnsupportedOperationException`, not a working rendering feature.
+
 ### Basic saving and loading
 
 `StateCodec` converts the existing `Snapshot` to and from plain text.
