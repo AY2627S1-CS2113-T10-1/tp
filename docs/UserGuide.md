@@ -541,6 +541,26 @@ may overlap planned task sessions, but it cannot overlap another commitment
 occurring on that date. Rejected additions preserve the existing plan and data.
 There is no separate `unavailable` command or command to select a session by ID.
 
+### Blocking multiple dates (planned)
+
+Two extensions are specified for implementation but are not accepted by the
+console yet:
+
+```text
+unavailable continuous n/Trip from/2026-10-26 1500 until/2026-10-28 1100
+unavailable daily n/Appointment from/2026-10-26 until/2026-10-28 start/1500 end/1700
+```
+
+Continuous mode will block every moment from the first date/time up to, but
+excluding, the last date/time. Daily mode will block only 15:00-17:00 on each
+included date, leaving other hours available. Each generated period will have
+its own commitment ID for independent editing/deletion. The full request will
+be rejected if any period conflicts with an existing commitment.
+
+For now, use the existing single-date `commitment add ... on/DATE` commands.
+The [Developer Guide handoff](DeveloperGuide.md#multi-date-unavailable-periods-implementation-handoff-planned)
+contains proposed outputs, owner responsibilities and acceptance tests.
+
 ### Planning hours and date range
 
 Study windows default to **08:00–22:00 every local calendar day**, including weekends.

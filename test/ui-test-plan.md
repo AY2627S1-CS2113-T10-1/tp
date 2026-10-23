@@ -160,6 +160,39 @@ dependent scenarios; ready active cases must run even if another component is
 unfinished. Exit 0 means active scenarios passed, exit 1 means FAILED, and
 exit 2 means BLOCKED. A planned or diagnostic scaffold case is never a pass.
 
+## Planned multi-date unavailability (issue #48)
+
+The separate `test/ui-unavailable-ranges.planned.json` file holds proposed
+exact inputs and outputs. It is excluded from the main release fixture, which
+requires every maintained release case to be active. No range command is
+currently parsed. Service, parser, dispatcher and renderer skeletons throw
+explicitly and are not feature passes. New command-record tests cover only
+their implemented transport/reference contracts.
+
+| ID | Proposed acceptance coverage | Status |
+| --- | --- | --- |
+| UI-020 | Continuous three-date expansion, confirmation, invalidation and restart | Planned |
+| UI-021 | Daily inclusive windows, confirmation, restart and independent deletion | Planned |
+| UI-022 | Invalid ordering, alignment, overnight windows, syntax and retained retry IDs | Planned |
+| UI-023 | Conflict on a later continuous segment rejects the whole batch | Planned |
+| UI-024 | Conflict on a later daily window rejects the whole batch | Planned |
+| UI-025 | Midnight-exclusive and same-day continuous ends, adjacency and leap-day daily expansion | Planned |
+
+Run the separate file using
+`node .agents/skills/test-ui/scripts/run-ui-tests.mjs --fixtures test/ui-unavailable-ranges.planned.json`.
+With all six cases planned it executes none and returns exit 2 (BLOCKED: no
+active scenarios), not success. Activate cases as their dependencies are
+implemented and move verified cases to the main fixture. Existing 19 active
+scenarios must continue passing throughout integration.
+
+The Developer Guide's handoff contains the corresponding owner-specific JUnit
+matrix, including injected save failure, whole-batch rollback and ID exhaustion.
+Two active planner tests supply the expected dated records manually through
+the existing one-time API to verify allocation/projection compatibility for
+continuous and daily representations. They do not call or certify the new
+batch skeletons. Exact range-command parsing, creation, confirmation and
+transaction acceptance remain unexecuted until the owners implement them.
+
 ## Fixed-clock acceptance and remaining checks
 
 `CommandDispatcherTest` covers every command, single clock capture, every

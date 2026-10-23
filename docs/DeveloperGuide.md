@@ -60,7 +60,8 @@ conventions and CS2113 code-quality guidelines used by this project.
 
 ### Command transport
 
-The sealed `Command` interface contains fifteen supported command records.
+The sealed `Command` interface contains implemented command transports and
+planned transports, including the two unwired unavailable-range operations.
 Records that only carry values use Java's generated canonical constructors;
 redundant empty compact constructors have been removed. Records with required
 reference fields retain their null checks. Parsing and the services still own
@@ -120,9 +121,162 @@ then verifies persisted deletion releases the interval. Existing domain and
 UI-018 coverage retains invalid-input and overlap checks. UI-019 exercises this
 workflow's save/restart and add/delete plan invalidation through existing console
 commands; exact task allocation uses fixed-time JUnit tests rather than the live
-clock in the packaged application. No additional parsing or printing skeleton is
-needed. This branch is based on the merged commitment work and is independent
-of the unmerged #55 study-policy feature.
+clock in the packaged application. This single-date workflow needs no new
+parser or renderer. Multi-date operations below are separate, unfinished
+extensions; this branch remains independent of the #55 study-policy feature.
+
+#### Multi-date unavailable periods: implementation handoff (planned)
+
+**Status:** transport records, unwired throwing skeletons, exact planned console
+fixtures and tests for the resulting commitment representation are supplied.
+The two range commands themselves are NOT implemented. The following grammar
+and output are the proposed implementation contract for the team.
+
+Continuous mode uses an inclusive start and exclusive end:
+
+```text
+scheduleflow> unavailable continuous n/Trip from/2026-10-26 1500 until/2026-10-28 1100
+Blocked 3 unavailable periods.
+C1 | 2026-10-26 | 15:00 - 24:00 | Trip
+C2 | 2026-10-27 | 00:00 - 24:00 | Trip
+C3 | 2026-10-28 | 00:00 - 11:00 | Trip
+Saved unavailable periods. Run plan to regenerate.
+```
+
+Daily mode uses inclusive dates and an end-exclusive window on each date:
+
+```text
+scheduleflow> unavailable daily n/Appointment from/2026-10-26 until/2026-10-28 start/1500 end/1700
+Blocked 3 unavailable periods.
+C1 | 2026-10-26 | 15:00 - 17:00 | Appointment
+C2 | 2026-10-27 | 15:00 - 17:00 | Appointment
+C3 | 2026-10-28 | 15:00 - 17:00 | Appointment
+Saved unavailable periods. Run plan to regenerate.
+```
+
+Examples start with an empty store independently. IDs come from the existing
+commitment counter and are assigned by date. Singular confirmation is
+`Blocked 1 unavailable period.`; plural is `Blocked N unavailable periods.`.
+Rows use `CNUMBER | YYYY-MM-DD | HH:mm - HH:mm | NAME` and LF separators, with
+no trailing newline from the renderer. Display a midnight endpoint as `24:00`.
+The console adds the final newline and prompt as usual.
+
+Use ordinary one-time commitments, not a new availability DTO or grouping ID.
+Every generated record has equal date bounds and the same normalized name.
+Each ID can be independently edited/deleted with existing commitment commands.
+Deleting one ID does not remove the rest of the request. There is no batch
+undo, recurring rule or automatically linked group in this version.
+
+Both modes require half-hour-aligned values with zero seconds/nanoseconds,
+valid calendar dates in years 0001-9999, and ordinary existing name rules.
+These commitments can be outside the current planning horizon, just like other
+commitments; only generated plan dates are projected. No new numeric defaults
+are introduced. Daily mode requires `firstDate <= lastDate` and `start < end`
+on the same day. It does not support overnight windows or a typed `2400` endpoint;
+use continuous mode with the next date at `0000` for an overnight interval.
+Continuous mode permits a same-day interval and requires `start < end`. Split
+at midnight, retaining only positive segments. An exclusive end at midnight
+does not create a zero-length record on that end date. Include leap days and
+avoid arithmetic past year 9999 when stepping dates.
+
+**Owner implementation order:**
+
+1. **Darren (`Darren50`):** implement `CommitmentService.addContinuousBlock`
+   and `addDailyBlocks`. Validate the request and calculate the required ID
+   count before expansion. The last assignable ID remains `2147483646`; the
+   next counter may be `2147483647`. Build a candidate locally using the existing
+   dated-add logic; return it only if the whole request succeeds. No disk I/O,
+   live publication, clock reads, partial results or mutation of the source.
+   Preserve tasks, their counter, custom hours and other commitments.
+2. **Ernest (`ernestgoh-god`), parsing:** implement the private
+   `CommandParser.parseUnavailable` skeleton and route the new command word
+   through recognition and usage lookup. Return `Command.AddContinuousBlock`
+   or `Command.AddDailyBlocks`; their constructors only require references.
+   Match the entire case-sensitive input in the shown order. Reuse strict
+   existing name/date/time parsing, year checks and outer-whitespace handling.
+   Reject missing/repeated/reordered/extra or mixed-mode fields. Semantic range,
+   alignment and conflict validation stays in the commitment service.
+3. **Ernest, coordinating shared dispatch with Ka How:** replace the two
+   explicit throwing switch cases. Call the selected service, identify added
+   records from the candidate's IDs, save the complete candidate exactly once,
+   then publish/invalidate the old plan and format success. Never save or
+   publish after validation failure. Save failure retains snapshot, counters,
+   current plan and settings; retry starts from the same next ID.
+4. **Ka How (`ka-how`):** implement
+   `TextRenderer.unavailablePeriodsAdded(List<Commitment>)`, using newly added
+   chronological records only. Add the two command formats to help after they
+   work. Existing schedule output continues to show `[BUSY]` and the generated
+   IDs; no new label or allocation logic belongs in Printing.
+5. **Ernest, saving:** round-trip the whole batch through the existing version 3
+   format (or version 4 if other records have skipped dates). No new schema is
+   needed. Verify restart, one-save rollback/retry and preservation after task,
+   commitment and hours changes. Do not persist the original request separately.
+6. **Gabriel (`GabrielYuSP`):** retain planner/projection acceptance coverage
+   for these ordinary dated segments. Current tests manually supply the
+   expected continuous and daily segments through the existing service; they
+   establish representation compatibility, not success of the unfinished APIs.
+   Add service-to-planner tests once the batch methods are implemented.
+
+Conflict policy: reject the complete request if any generated segment overlaps
+an existing commitment on its actual occurrence date. Planned task sessions do
+not cause a conflict. Adjacency is valid and skipped weekly occurrences do not
+block the date. Check generated dates in order; for the first conflicting date,
+reuse the existing conflict list in start-time/numeric-ID order and the message
+`Commitment overlaps CNUMBER: NAME[; ...]`. No earlier segment may be saved or
+published and no IDs may be consumed by a rejected request.
+
+Required domain messages (the renderer adds `Error: `):
+
+| Invalid value | Exact message |
+| --- | --- |
+| Continuous end at/before start | `Unavailable interval end must be after its start.` |
+| Daily first date after last | `Unavailable date range must start on or before its end.` |
+| Daily start at/after end, including overnight | `Daily unavailable start must be before end on the same day.` |
+| Unaligned time, including seconds/nanoseconds supplied through Java | `Unavailable times must be on half-hour boundaries.` |
+| Too few remaining IDs | `Commitment IDs are exhausted.` |
+| Blank/invalid name | Reuse `InputRules.normalizeName` and its existing messages |
+
+Null API references must raise named `NullPointerException` preconditions once
+implemented. Use existing date validation for out-of-range years. Resolve name,
+date validity, alignment, ordering, ID capacity and then overlap in that order;
+the fixtures use one invalid category per command. Malformed syntax uses
+`Invalid unavailable command format` plus the selected mode's exact usage.
+Invalid date/time syntax uses existing `Invalid date or time` with that usage;
+year zero uses existing `Year must be between 0001 and 9999` with usage. Unknown
+modes use a usage listing both alternatives. No success or count output may be
+printed before the save succeeds.
+
+**Acceptance files and activation:**
+[`test/ui-unavailable-ranges.planned.json`](../test/ui-unavailable-ranges.planned.json)
+contains exact per-command expected output for UI-020 through UI-025. All six
+are `planned`; do not treat their unexecuted expectations or a stub exception
+as a pass. The main release fixture remains fully active. Once dependencies are
+implemented, change the relevant case status to `active`, run it with
+`node .agents/skills/test-ui/scripts/run-ui-tests.mjs --fixtures test/ui-unavailable-ranges.planned.json`,
+and move verified cases into the main fixture in the same change. If the file
+contains only planned cases, exit 2 means no active scenarios were executable.
+
+Owners must add these deterministic JUnit cases alongside their implementation:
+
+| Owner / SUT test | Inputs and required assertions |
+| --- | --- |
+| Darren / `CommitmentServiceTest` continuous example | Oct 26 15:00 to Oct 28 11:00 produces durations 540, 1440, 660, IDs in order, equal date bounds and preserved source/settings |
+| Darren / continuous boundaries | Same-day creates one record; Oct 26 23:00 to Oct 27 00:00 creates only Oct 26; a 00:00 start is included; reject equal/reversed/unaligned endpoints |
+| Darren / daily example | Oct 26-28 15:00-17:00 creates three 120-minute dated records; one-date range creates exactly one |
+| Darren / daily boundaries | Include Feb 29 in 2028-02-28 to 2028-03-01; support the date 9999-12-31 without advancing past it; reject reverse dates, zero/overnight windows and unaligned times |
+| Darren / conflicts | First or later segment conflicts with weekly or one-time records; reject the entire request; skipped weekly dates and adjacent times succeed |
+| Darren / ID boundaries | Two records starting at next ID 2147483645 succeed with next counter 2147483647; three records reject without changes; exhausted counter rejects either mode |
+| Ernest / `CommandParserTest` | Both exact commands produce their transport records; check leap dates, year limits, Unicode names, field ordering, duplicates, missing/extra fields, mixed modes and strict four-digit times |
+| Ka How / `TextRendererTest` | Exact singular/plural counts, chronological ID/date rows, Unicode names, `24:00`, LF and no trailing newline; include only new rows; formatter performs no I/O |
+| Ernest + Ka How / `CommandDispatcherTest` | Use fixed time and fake Storage: both modes save once, publish once and invalidate an existing plan; validation saves zero times; injected save failure preserves snapshot/plan/counters and retry IDs; renderer success is not reached on failure |
+| Ernest / `FileStorageTest`, `StateCodecTest` | Save/reload all segments and unrelated skipped commitments/custom hours; deletion of one generated ID persists independently; current version 3/4 round trips preserve all values |
+| Gabriel / `EarliestDeadlinePlannerTest` | Fixed Oct 26 14:00, 180-minute task due Oct 28 12:00: continuous example schedules 60 minutes on Oct 26 and 60 on Oct 28, leaves 60 unallocated; daily mode preserves gaps on every date |
+| Gabriel / `ScheduleServiceTest` | Project first/intermediate/final continuous dates and daily windows; clip to configured hours, omit out-of-range occurrences, retain frozen old plans and permit study at exclusive ends |
+
+Run the affected JUnit tests, Java 25 build/Checkstyle and active console cases
+after each integration. Keep #48 open while either range operation is still a
+skeleton. Partial PRs should use `Refs #48`; close it only after the agreed
+range behaviour and its acceptance cases are implemented and verified.
 
 ### Configurable study hours
 

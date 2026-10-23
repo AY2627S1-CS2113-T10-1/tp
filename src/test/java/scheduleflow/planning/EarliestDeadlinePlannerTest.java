@@ -331,6 +331,60 @@ class EarliestDeadlinePlannerTest {
                 planner.generate(released, EARLY_MORNING).sessions());
         assertEquals(customHours.studyHours(), released.studyHours());
     }
+
+    @Test
+    void generate_continuousRangeSegments_blockIntermediateDaysAndRetainDeadlineRemainder() {
+        LocalDate first = LocalDate.of(2026, 10, 26);
+        Task draft = task(1, "Draft", first.plusDays(2).atTime(12, 0), 180);
+        CommitmentService commitments = new CommitmentService();
+        Snapshot source = commitments.add(snapshot(List.of(draft), List.of()), "Trip", first.getDayOfWeek(),
+                LocalTime.of(15, 0), 540, first, first);
+        source = commitments.add(source, "Trip", first.plusDays(1).getDayOfWeek(), LocalTime.MIDNIGHT,
+                1440, first.plusDays(1), first.plusDays(1));
+        source = commitments.add(source, "Trip", first.plusDays(2).getDayOfWeek(), LocalTime.MIDNIGHT,
+                660, first.plusDays(2), first.plusDays(2));
+
+        Plan result = planner.generate(source, first.atTime(14, 0));
+
+        assertEquals(List.of(new StudySession(1, first.atTime(14, 0), first.atTime(15, 0)),
+                new StudySession(1, first.plusDays(2).atTime(11, 0), first.plusDays(2).atTime(12, 0))),
+                result.sessions());
+        assertEquals(List.of(new UnallocatedWork(1, "Draft", draft.deadline(), 60,
+                UnallocatedReason.INSUFFICIENT_CAPACITY)), result.unallocated());
+        assertEquals(List.of(new ScheduleEntry(first.plusDays(1).atTime(8, 0),
+                first.plusDays(1).atTime(22, 0), SlotKind.BUSY, "C2", "Trip")),
+                new ScheduleService().forDate(result, first.plusDays(1)).entries());
+        assertEquals(180, result.source().tasks().getFirst().remainingMinutes());
+    }
+
+    @Test
+    void generate_dailyRangeSegments_preserveStudyGapsOnEveryIncludedDate() {
+        LocalDate first = LocalDate.of(2026, 10, 26);
+        Snapshot source = snapshot(List.of(task(1, "Draft", first.plusDays(2).atTime(22, 0), 1500)), List.of());
+        CommitmentService commitments = new CommitmentService();
+        for (LocalDate date : List.of(first, first.plusDays(1), first.plusDays(2))) {
+            source = commitments.add(source, "Rest", date.getDayOfWeek(), LocalTime.of(15, 0), 120, date, date);
+        }
+
+        Plan result = planner.generate(source, first.atTime(14, 0));
+
+        assertEquals(List.of(new StudySession(1, first.atTime(14, 0), first.atTime(15, 0)),
+                new StudySession(1, first.atTime(17, 0), first.atTime(22, 0)),
+                new StudySession(1, first.plusDays(1).atTime(8, 0), first.plusDays(1).atTime(15, 0)),
+                new StudySession(1, first.plusDays(1).atTime(17, 0), first.plusDays(1).atTime(22, 0)),
+                new StudySession(1, first.plusDays(2).atTime(8, 0), first.plusDays(2).atTime(15, 0))),
+                result.sessions());
+        assertTrue(result.isComplete());
+        assertEquals(1500, result.sessions().stream().mapToInt(StudySession::minutes).sum());
+        ScheduleService schedules = new ScheduleService();
+        for (LocalDate date : List.of(first, first.plusDays(1), first.plusDays(2))) {
+            List<ScheduleEntry> busy = schedules.forDate(result, date).entries().stream()
+                    .filter(entry -> entry.kind() == SlotKind.BUSY).toList();
+            assertEquals(1, busy.size());
+            assertEquals(date.atTime(15, 0), busy.getFirst().start());
+            assertEquals(date.atTime(17, 0), busy.getFirst().end());
+        }
+    }
     // @@author
 
     private static Task task(int id, String name, LocalDateTime deadline, int minutes) {

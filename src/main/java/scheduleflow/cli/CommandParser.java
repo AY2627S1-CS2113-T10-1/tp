@@ -117,6 +117,22 @@ public final class CommandParser {
     public CommandParser() {
     }
 
+    // @@author GabrielYuSP
+    /**
+     * Reserves parsing of the two explicit unavailable modes; it is not called by {@link #parse(String)} yet.
+     *
+     * @param line complete unavailable command using the grammar in the Developer Guide
+     * @return continuous or daily transport command once implemented
+     * @throws ParseException for malformed input once implemented
+     * @throws UnsupportedOperationException until the Parsing owner implements and connects this method
+     */
+    private Command parseUnavailable(String line) throws ParseException {
+        // TODO(ernestgoh-god): implement CommandParser.parseUnavailable and route it from parse.
+        throw new UnsupportedOperationException("Unavailable range parsing is not implemented yet.");
+    }
+    // @@author
+    // @@author ka-how
+
     /**
      * Parses one nonblank line, translating syntax, number and date errors to ParseException.
      * Leaves domain validation and resolving today's date to command execution.
