@@ -92,10 +92,12 @@ class TextRendererTest {
         String output = renderer.help();
         assertTrue(output.startsWith("=== ScheduleFlow Command Help ===\n"));
         List<String> formats = List.of("help", "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES", "task list",
-                "task delete TNUMBER", "commitment add n/NAME day/DAY start/HHmm d/MINUTES", "commitment list",
+                "task delete TNUMBER", "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
+                        + " [from/YYYY-MM-DD until/YYYY-MM-DD]", "commitment list",
                 "commitment delete CNUMBER", "hours DAY|YYYY-MM-DD /start HH:mm /end HH:mm",
                 "hours DAY|YYYY-MM-DD", "hours reset DAY|YYYY-MM-DD",
-                "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]", "plan",
+                "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]"
+                        + " [from/YYYY-MM-DD until/YYYY-MM-DD]", "plan",
                 "schedule today OR schedule YYYY-MM-DD", "exit");
         List<String> lines = output.lines().skip(1).toList();
         assertEquals(formats.size(), lines.size());
@@ -183,6 +185,22 @@ class TextRendererTest {
         Commitment fullDay = new Commitment(3, "Away", DayOfWeek.SUNDAY, LocalTime.MIDNIGHT, 1440);
         assertOutput("Added C3: Away | Sunday 00:00 - 24:00 (1440 min)", renderer.commitmentAdded(fullDay));
     }
+
+    //@@author Darren50
+    @Test
+    void commitmentMessages_boundedSeries_displaysInclusiveRange() {
+        Commitment bounded = new Commitment(4, "Semester lecture", DayOfWeek.MONDAY, LocalTime.of(10, 0), 120,
+                LocalDate.of(2026, 8, 10), LocalDate.of(2026, 11, 16));
+        String range = " | 2026-08-10 to 2026-11-16";
+        assertOutput("Added C4: Semester lecture | Monday 10:00 - 12:00 (120 min)" + range,
+                renderer.commitmentAdded(bounded));
+        assertOutput("Edited C4: Semester lecture | Monday 10:00 - 12:00 (120 min)" + range,
+                renderer.commitmentEdited(bounded));
+        assertOutput("=== Recurring Weekly Commitments ===\n[Monday]\n"
+                + "C4. 10:00 - 12:00 | Semester lecture" + range
+                + "\n\nTotal: 1 recurring commitments across the week.", renderer.commitments(List.of(bounded)));
+    }
+    //@@author ka-how
 
     @Test
     void commitments_empty_returnsExactMessage() {

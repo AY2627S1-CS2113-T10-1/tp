@@ -208,7 +208,9 @@ The ID must belong to an existing task. A successful deletion saves the change a
 
 ## Recurring commitments
 
-A commitment reserves the same period every week until it is deleted. Add separate entries for commitments on different weekdays.
+A commitment reserves the same period every week. It can continue until deleted,
+or use inclusive start and end dates for a semester or other limited period.
+Add separate entries for commitments on different weekdays.
 
 Commitment addition, editing, deletion and listing run directly at the console. Each
 successful change saves automatically and clears the current plan.
@@ -216,7 +218,7 @@ successful change saves automatically and clears the current plan.
 ### Adding a commitment
 
 ```text
-commitment add n/NAME day/DAY start/HHmm d/MINUTES
+commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD]
 ```
 
 ```text
@@ -226,10 +228,22 @@ Added C1: CS2113 lecture | Monday 10:00 - 12:00 (120 min)
 
 This blocks 10:00–12:00 every Monday.
 
+To limit the series to a semester, provide both dates:
+
+```text
+scheduleflow> commitment add n/CS2113 lecture day/MON start/1000 d/120 from/2026-08-10 until/2026-11-16
+Added C1: CS2113 lecture | Monday 10:00 - 12:00 (120 min) | 2026-08-10 to 2026-11-16
+```
+
+Both endpoints are inclusive. The range must contain at least one occurrence of
+the chosen weekday. Supply both `from/` and `until/`, in that order, or omit both
+for an unbounded weekly series. Study time is blocked only on matching weekdays
+inside the range.
+
 - The start must be on `:00` or `:30`, and the duration must be a positive multiple of 30 minutes.
 - A commitment must end by midnight on its selected day. Ending exactly at midnight is allowed and displayed as `24:00`; entering `2400` as a start time is invalid.
 - Commitments may occur outside study hours. A full-day commitment starting at `0000` with duration `1440` is valid.
-- Commitments on the same weekday must not overlap, even outside study hours. An overlap error identifies every conflicting commitment by ID and name, in start-time order.
+- Commitments on the same weekday must not overlap when their actual occurrences share a date, even outside study hours. Separate semester ranges may reuse the same weekly time. An overlap error identifies every conflicting commitment by ID and name, in start-time order.
 - Adjacent commitments are allowed: Monday 10:00–12:00 and Monday 12:00–13:00 do not overlap. The same time on different weekdays is also allowed.
 
 A successful addition saves the commitment and clears the current plan.
@@ -247,14 +261,15 @@ Normal launches keep the same console output.
 ### Editing a commitment
 
 ```text
-commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]
+commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES] [from/YYYY-MM-DD until/YYYY-MM-DD]
 ```
 
 Supply at least one field, in the order shown; do not type the square brackets.
 Omitted fields retain their stored values. The existing ID is kept, and editing
 does not consume a new ID or change other commitments. This edits the whole weekly
-series, not just one occurrence. Date bounds and skipped occurrences are not part
-of this command yet.
+series, not just one occurrence. Supplying `from/` and `until/` together replaces
+its date range. Omitting them preserves the existing range. Removing an existing
+range and skipping individual occurrences are not supported yet.
 
 ```text
 scheduleflow> commitment edit C1 start/1100 d/60
@@ -280,7 +295,7 @@ Editing a commitment also preserves configured study hours and date overrides.
 commitment list
 ```
 
-Lists commitments by weekday, Monday through Sunday, then by start time and numeric ID. Empty weekday groups are omitted. The displayed IDs remain the original commitment IDs.
+Lists commitments by weekday, Monday through Sunday, then by start time and numeric ID. Empty weekday groups are omitted. The displayed IDs remain the original commitment IDs. Bounded series show their inclusive date range after the name; unbounded series retain the shorter display.
 
 ```text
 scheduleflow> commitment list
@@ -617,13 +632,13 @@ these storage logs do not include your task names or saved file contents.
 | Add a task | `task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES` |
 | List tasks | `task list` |
 | Delete a task | `task delete TNUMBER` |
-| Add a weekly commitment | `commitment add n/NAME day/DAY start/HHmm d/MINUTES` |
+| Add a weekly commitment | `commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD]` |
 | List commitments | `commitment list` |
 | Delete a weekly commitment | `commitment delete CNUMBER` |
 | Set study hours | `hours DAY\|YYYY-MM-DD /start HH:mm /end HH:mm` |
 | View effective study hours | `hours DAY\|YYYY-MM-DD` |
 | Reset study hours | `hours reset DAY\|YYYY-MM-DD` |
-| Edit a weekly commitment | `commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]` |
+| Edit a weekly commitment | `commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES] [from/YYYY-MM-DD until/YYYY-MM-DD]` |
 | Generate or replace the plan | `plan` |
 | View today's schedule | `schedule today` |
 | View a dated schedule | `schedule YYYY-MM-DD` |

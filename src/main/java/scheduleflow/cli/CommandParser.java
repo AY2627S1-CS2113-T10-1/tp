@@ -30,15 +30,22 @@ public final class CommandParser {
     // @@author ernestgoh-god
     private static final String TASK_PROGRESS_USAGE =
             "task progress TNUMBER done/MINUTES OR task progress TNUMBER session/MINUTES percent/PERCENT";
+    //@@author Darren50
+    private static final String DATE_RANGE_USAGE = " [from/YYYY-MM-DD until/YYYY-MM-DD]";
     // @@author ka-how
-    private static final String COMMITMENT_ADD_USAGE = "commitment add n/NAME day/DAY start/HHmm d/MINUTES";
+    private static final String COMMITMENT_ADD_USAGE = "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
+            + DATE_RANGE_USAGE;
     private static final String COMMITMENT_DELETE_USAGE = "commitment delete CNUMBER";
+    //@@author Darren50
     private static final String COMMITMENT_EDIT_USAGE =
-            "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]";
+            "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]" + DATE_RANGE_USAGE;
+    // @@author ka-how
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
     private static final String HOURS_USAGE = "hours DAY|YYYY-MM-DD [/start HH:mm /end HH:mm]"
             + " OR hours reset DAY|YYYY-MM-DD";
     private static final String DATE_TOKEN = "[0-9]{4}-[0-9]{2}-[0-9]{2}";
+    private static final String DATE_RANGE_PATTERN = "(?: +from/(?<from>" + DATE_TOKEN
+            + ") +until/(?<until>" + DATE_TOKEN + "))?";
     private static final String TIME_TOKEN = "[0-9]{4}";
     private static final Pattern HOURS_PATTERN = Pattern.compile("hours +(?<reset>reset +)?(?<target>"
             + "monday|tuesday|wednesday|thursday|friday|saturday|sunday|" + DATE_TOKEN + ")"
@@ -56,7 +63,8 @@ public final class CommandParser {
                     + ") +(?<time>" + TIME_TOKEN + ") +d/(?<minutes>" + POSITIVE_INT_TOKEN + ")");
     private static final Pattern COMMITMENT_ADD_PATTERN = Pattern.compile(
             "commitment +add +n/(?<name>" + NAME_TOKEN + ") +day/(?<day>MON|TUE|WED|THU|FRI|SAT|SUN)"
-                    + " +start/(?<time>" + TIME_TOKEN + ") +d/(?<minutes>" + POSITIVE_INT_TOKEN + ")");
+                    + " +start/(?<time>" + TIME_TOKEN + ") +d/(?<minutes>" + POSITIVE_INT_TOKEN + ")"
+                    + DATE_RANGE_PATTERN);
     private static final Pattern TASK_DELETE_PATTERN = Pattern.compile(
             "task +delete +T(?<id>" + POSITIVE_INT_TOKEN + ")");
     // @@author ernestgoh-god
@@ -78,7 +86,7 @@ public final class CommandParser {
                     + "(?: +n/(?<name>" + NAME_TOKEN + "))?"
                     + "(?: +day/(?<day>MON|TUE|WED|THU|FRI|SAT|SUN))?"
                     + "(?: +start/(?<time>" + TIME_TOKEN + "))?"
-                    + "(?: +d/(?<minutes>" + POSITIVE_INT_TOKEN + "))?");
+                    + "(?: +d/(?<minutes>" + POSITIVE_INT_TOKEN + "))?" + DATE_RANGE_PATTERN);
     //@@author ka-how
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("uuuu-MM-dd", Locale.ROOT)
             .withResolverStyle(ResolverStyle.STRICT);
@@ -228,7 +236,9 @@ public final class CommandParser {
         Matcher fields = match(COMMITMENT_ADD_PATTERN, input, COMMITMENT_ADD_USAGE);
         DayOfWeek day = parseWeekday(fields.group("day"), COMMITMENT_ADD_USAGE);
         return new Command.AddCommitment(fields.group("name").strip(), day,
-                LocalTime.parse(fields.group("time"), TIME_FORMAT), Integer.parseInt(fields.group("minutes")));
+                LocalTime.parse(fields.group("time"), TIME_FORMAT), Integer.parseInt(fields.group("minutes")),
+                parseOptionalDate(fields.group("from"), COMMITMENT_ADD_USAGE),
+                parseOptionalDate(fields.group("until"), COMMITMENT_ADD_USAGE));
     }
 
     /**
@@ -261,7 +271,19 @@ public final class CommandParser {
         return new Command.EditCommitment(Integer.parseInt(fields.group("id")), name == null ? null : name.strip(),
                 day == null ? null : parseWeekday(day, COMMITMENT_EDIT_USAGE),
                 time == null ? null : LocalTime.parse(time, TIME_FORMAT),
-                minutes == null ? null : Integer.valueOf(minutes));
+                minutes == null ? null : Integer.valueOf(minutes),
+                parseOptionalDate(fields.group("from"), COMMITMENT_EDIT_USAGE),
+                parseOptionalDate(fields.group("until"), COMMITMENT_EDIT_USAGE));
+    }
+
+    /** Parses an optional strict calendar date without inventing limits for legacy commands. */
+    private LocalDate parseOptionalDate(String token, String usage) throws ParseException {
+        if (token == null) {
+            return null;
+        }
+        LocalDate date = LocalDate.parse(token, DATE_FORMAT);
+        requireSupportedYear(date, usage);
+        return date;
     }
     //@@author ka-how
 

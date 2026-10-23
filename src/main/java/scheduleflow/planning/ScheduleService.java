@@ -75,7 +75,7 @@ public final class ScheduleService {
     private static ScheduleEntry classifySlot(Plan plan, LocalDateTime start, LocalDateTime cutoff) {
         LocalDateTime end = start.plusMinutes(TimeRules.SLOT_MINUTES);
         for (Commitment commitment : plan.source().commitments()) {
-            if (commitment.day() != start.getDayOfWeek()) {
+            if (!commitment.occursOn(start.toLocalDate())) {
                 continue;
             }
             LocalDateTime busyStart = start.toLocalDate().atTime(commitment.start());

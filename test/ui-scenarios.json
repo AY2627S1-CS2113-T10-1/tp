@@ -2,6 +2,26 @@
   "version": 1,
   "cases": [
     {
+      "id": "UI-016", "aim": "Recurring commitment date bounds validate, persist and control overlap",
+      "status": "active", "setup": "No data file; bounded and unbounded weekly series",
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "commitment add n/Semester one day/MON start/1000 d/60 from/2026-08-10 until/2026-11-16", "output": "Added C1: Semester one | Monday 10:00 - 11:00 (60 min) | 2026-08-10 to 2026-11-16" },
+          { "input": "commitment add n/No Monday day/MON start/1200 d/30 from/2026-08-11 until/2026-08-16", "output": "Error: Commitment date range must contain its weekday." },
+          { "input": "commitment add n/Semester two day/MON start/1000 d/60 from/2027-01-11 until/2027-05-03", "output": "Added C2: Semester two | Monday 10:00 - 11:00 (60 min) | 2027-01-11 to 2027-05-03" },
+          { "input": "commitment add n/Clash day/MON start/1030 d/30 from/2026-10-05 until/2026-10-26", "output": "Error: Commitment overlaps C1: Semester one" },
+          { "input": "commitment edit C2 from/2027-01-18 until/2027-05-10", "output": "Edited C2: Semester two | Monday 10:00 - 11:00 (60 min) | 2027-01-18 to 2027-05-10" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "commitment list", "output": "=== Recurring Weekly Commitments ===\n[Monday]\nC1. 10:00 - 11:00 | Semester one | 2026-08-10 to 2026-11-16\nC2. 10:00 - 11:00 | Semester two | 2027-01-18 to 2027-05-10\n\nTotal: 2 recurring commitments across the week." },
+          { "input": "commitment add n/Forever day/MON start/1000 d/60", "output": "Error: Commitment overlaps C1: Semester one; C2: Semester two" },
+          { "input": "commitment add n/Available ID day/TUE start/1000 d/30", "output": "Added C3: Available ID | Tuesday 10:00 - 10:30 (30 min)" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
       "requiredComponents": [
         "Main.main",
         "CommandParser.parse",
@@ -122,7 +142,7 @@
           { "input": "commitment edit C1", "output": "Error: Provide at least one commitment field to edit." },
           { "input": "commitment edit C99 n/Missing", "output": "Error: Unknown commitment ID: C99" },
           { "input": "commitment edit C1 start/2330", "output": "Error: Commitment must not continue past midnight." },
-          { "input": "commitment edit C1 d/30 n/Reordered", "output": "Error: Invalid command format or missing fields\nExpected: commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]" },
+          { "input": "commitment edit C1 d/30 n/Reordered", "output": "Error: Invalid command format or missing fields\nExpected: commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES] [from/YYYY-MM-DD until/YYYY-MM-DD]" },
           { "input": "commitment edit C1 day/SUN start/2330 d/30", "output": "Edited C1: 新 lecture | Sunday 23:30 - 24:00 (30 min)" },
           { "input": "hours monday", "output": "Study hours for monday: 14:00 - 19:00" },
           { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
@@ -208,7 +228,7 @@
         { "input": "task add n/A n/B due/2026-10-06 0900 d/30", "output": "Error: Invalid command format or missing fields\nExpected: task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES" },
         { "input": "task delete 1", "output": "Error: Invalid command format or missing fields\nExpected: task delete TNUMBER" },
         { "input": "task list extra", "output": "Error: This command accepts no arguments\nExpected: task list" },
-        { "input": "commitment add n/A day/mon start/1000 d/30", "output": "Error: Invalid command format or missing fields\nExpected: commitment add n/NAME day/DAY start/HHmm d/MINUTES" },
+        { "input": "commitment add n/A day/mon start/1000 d/30", "output": "Error: Invalid command format or missing fields\nExpected: commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD]" },
         { "input": "schedule 2026-02-30", "output": "Error: Invalid date or time\nExpected: schedule today OR schedule YYYY-MM-DD" },
         { "input": "exit extra", "output": "Error: This command accepts no arguments\nExpected: exit" },
         { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }

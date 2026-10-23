@@ -104,6 +104,21 @@ class ScheduleServiceTest {
     }
 
     @Test
+    void forDate_boundedCommitment_showsBusyOnlyWithinInclusiveDates() {
+        Commitment semester = new Commitment(1, "Class", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
+                MONDAY.plusWeeks(1), MONDAY.plusWeeks(2));
+        Plan plan = plan(new Snapshot(List.of(), List.of(semester), 1, 2), MORNING, List.of(), List.of());
+        assertTrue(schedules.forDate(plan, MONDAY).entries().stream()
+                .noneMatch(entry -> entry.kind() == SlotKind.BUSY));
+        assertTrue(schedules.forDate(plan, MONDAY.plusWeeks(1)).entries().stream()
+                .anyMatch(entry -> entry.kind() == SlotKind.BUSY));
+        assertTrue(schedules.forDate(plan, MONDAY.plusWeeks(2)).entries().stream()
+                .anyMatch(entry -> entry.kind() == SlotKind.BUSY));
+        assertTrue(schedules.forDate(plan, MONDAY.plusWeeks(3)).entries().stream()
+                .noneMatch(entry -> entry.kind() == SlotKind.BUSY));
+    }
+
+    @Test
     void forDate_rangeBoundaries_rejectsOutsideAndAcceptsLastDay() {
         Plan plan = plan(Snapshot.empty(), MORNING, List.of(), List.of());
         LocalDate last = plan.horizonEnd().toLocalDate().minusDays(1);

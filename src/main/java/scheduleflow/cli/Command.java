@@ -85,7 +85,14 @@ public sealed interface Command {
     /**
      * Carries parsed weekly commitment fields without overlap validation.
      */
-    record AddCommitment(String name, DayOfWeek day, LocalTime start, int minutes) implements Command {
+    record AddCommitment(String name, DayOfWeek day, LocalTime start, int minutes,
+            LocalDate startDate, LocalDate endDate) implements Command {
+        //@@author Darren50
+        /** Preserves callers adding an unbounded weekly series. */
+        public AddCommitment(String name, DayOfWeek day, LocalTime start, int minutes) {
+            this(name, day, start, minutes, null, null);
+        }
+        //@@author ka-how
         /**
          * Requires the nonnumeric fields, leaving interval and overlap rules to the service.
          *
@@ -103,7 +110,12 @@ public sealed interface Command {
      * Carries a partial weekly-series edit; null fields are omitted rather than cleared.
      * The service validates the ID, presence of changes and resulting complete interval.
      */
-    record EditCommitment(int id, String name, DayOfWeek day, LocalTime start, Integer minutes) implements Command {
+    record EditCommitment(int id, String name, DayOfWeek day, LocalTime start, Integer minutes,
+            LocalDate startDate, LocalDate endDate) implements Command {
+        /** Preserves callers editing fields without changing date limits. */
+        public EditCommitment(int id, String name, DayOfWeek day, LocalTime start, Integer minutes) {
+            this(id, name, day, start, minutes, null, null);
+        }
     }
     //@@author ka-how
 

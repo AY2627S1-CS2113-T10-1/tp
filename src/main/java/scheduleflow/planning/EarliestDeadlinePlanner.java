@@ -67,7 +67,7 @@ public final class EarliestDeadlinePlanner implements Planner {
         int slotStartMinute = slotStart.getHour() * 60 + slotStart.getMinute();
         int slotEndMinute = slotStartMinute + TimeRules.SLOT_MINUTES;
         for (Commitment commitment : commitments) {
-            if (commitment.day() == slotStart.getDayOfWeek()) {
+            if (commitment.occursOn(slotStart.toLocalDate())) {
                 int commitmentStart = commitment.start().getHour() * 60 + commitment.start().getMinute();
                 if (slotStartMinute < commitment.endMinuteOfDay() && commitmentStart < slotEndMinute) {
                     return true;

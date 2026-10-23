@@ -2,6 +2,7 @@ package scheduleflow.storage;
 
 import java.time.DateTimeException;
 import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -43,7 +44,7 @@ public final class StateCodec {
 
     // @@author ernestgoh-god
     /**
-     * Encodes a complete snapshot, using version 2 when custom study hours are present.
+     * Encodes a complete snapshot using the oldest format that can represent all stored values.
      * Stores names last so names containing pipes do not need escaping.
      *
      * @param state validated immutable snapshot to encode in its existing list order
@@ -53,8 +54,13 @@ public final class StateCodec {
     public String encode(Snapshot state) {
         Objects.requireNonNull(state, "state");
         LOGGER.log(Level.FINE, "Starting snapshot encoding");
-        StringBuilder text = new StringBuilder(state.studyHours().windows().isEmpty()
-                ? HEADER : "SCHEDULEFLOW|2").append('\n');
+        // @@author Darren50
+        boolean hasDateBoundedCommitments = state.commitments().stream()
+                .anyMatch(commitment -> commitment.startDate() != null);
+        String version = hasDateBoundedCommitments ? "SCHEDULEFLOW|3"
+                : state.studyHours().windows().isEmpty() ? HEADER : "SCHEDULEFLOW|2";
+        // @@author ernestgoh-god
+        StringBuilder text = new StringBuilder(version).append('\n');
         text.append("NEXT|").append(state.nextTaskId()).append('|').append(state.nextCommitmentId()).append('\n');
         for (Task task : state.tasks()) {
             text.append("TASK|").append(task.id()).append('|').append(task.deadline()).append('|')
@@ -62,8 +68,14 @@ public final class StateCodec {
         }
         for (Commitment commitment : state.commitments()) {
             text.append("COMMITMENT|").append(commitment.id()).append('|').append(commitment.day()).append('|')
-                    .append(commitment.start()).append('|').append(commitment.durationMinutes()).append('|')
-                    .append(commitment.name()).append('\n');
+                    .append(commitment.start()).append('|').append(commitment.durationMinutes()).append('|');
+            // @@author Darren50
+            if (hasDateBoundedCommitments) {
+                text.append(commitment.startDate() == null ? "-" : commitment.startDate()).append('|')
+                        .append(commitment.endDate() == null ? "-" : commitment.endDate()).append('|');
+            }
+            // @@author ernestgoh-god
+            text.append(commitment.name()).append('\n');
         }
         new TreeMap<>(state.studyHours().windows()).forEach((target, window) -> text.append("HOURS|")
                 .append(target).append('|').append(window.start()).append('|').append(window.end()).append('\n'));
@@ -102,11 +114,14 @@ public final class StateCodec {
             Map<String, StudyWindow> windows = new HashMap<>();
             for (int i = 2; i < lines.size(); i++) {
                 String line = lines.get(i);
-                if (lines.getFirst().equals("SCHEDULEFLOW|2") && line.startsWith("HOURS|")) {
+                // @@author Darren50
+                boolean supportsExtensions = !lines.getFirst().equals(HEADER);
+                if (supportsExtensions && line.startsWith("HOURS|")) {
                     decodeHours(line, windows);
                 } else {
-                    decodeRecord(line, tasks, commitments);
+                    decodeRecord(line, tasks, commitments, lines.getFirst().equals("SCHEDULEFLOW|3"));
                 }
+                // @@author ernestgoh-god
             }
             assert (long) tasks.size() + commitments.size() + windows.size() == lines.size() - 2L
                     : "Every saved record line must decode to exactly one record";
@@ -133,7 +148,8 @@ public final class StateCodec {
         if (lines.isEmpty() || !lines.getFirst().startsWith("SCHEDULEFLOW|")) {
             throw new StorageException("Invalid saved data header.");
         }
-        if (!lines.getFirst().equals(HEADER) && !lines.getFirst().equals("SCHEDULEFLOW|2")) {
+        if (!lines.getFirst().equals(HEADER) && !lines.getFirst().equals("SCHEDULEFLOW|2")
+                && !lines.getFirst().equals("SCHEDULEFLOW|3")) {
             throw new StorageException("Unsupported file version: "
                     + lines.getFirst().substring("SCHEDULEFLOW|".length()));
         }
@@ -148,19 +164,38 @@ public final class StateCodec {
      *
      * @throws StorageException if the record type is unknown or required fields are missing
      */
-    private void decodeRecord(String line, List<Task> tasks, List<Commitment> commitments) throws StorageException {
+    private void decodeRecord(String line, List<Task> tasks, List<Commitment> commitments,
+            boolean supportsDateRanges) throws StorageException {
         if (line.startsWith("TASK|")) {
             String[] fields = splitFields(line, 5);
             tasks.add(new Task(Integer.parseInt(fields[1]), fields[4],
                     LocalDateTime.parse(fields[2]), Integer.parseInt(fields[3])));
         } else if (line.startsWith("COMMITMENT|")) {
-            String[] fields = splitFields(line, 6);
-            commitments.add(new Commitment(Integer.parseInt(fields[1]), fields[5], DayOfWeek.valueOf(fields[2]),
-                    LocalTime.parse(fields[3]), Integer.parseInt(fields[4])));
+            // @@author Darren50
+            if (supportsDateRanges) {
+                String[] fields = splitFields(line, 8);
+                LocalDate first = parseOptionalDate(fields[5]);
+                LocalDate last = parseOptionalDate(fields[6]);
+                commitments.add(new Commitment(Integer.parseInt(fields[1]), fields[7],
+                        DayOfWeek.valueOf(fields[2]), LocalTime.parse(fields[3]), Integer.parseInt(fields[4]),
+                        first, last));
+            } else {
+                String[] fields = splitFields(line, 6);
+                commitments.add(new Commitment(Integer.parseInt(fields[1]), fields[5], DayOfWeek.valueOf(fields[2]),
+                        LocalTime.parse(fields[3]), Integer.parseInt(fields[4])));
+            }
+            // @@author ernestgoh-god
         } else {
             throw new StorageException("Unknown or empty saved record.");
         }
     }
+
+    // @@author Darren50
+    /** Decodes the version 3 dash sentinel used for an unbounded endpoint. */
+    private LocalDate parseOptionalDate(String token) {
+        return token.equals("-") ? null : LocalDate.parse(token);
+    }
+    // @@author ernestgoh-god
 
     // @@author GabrielYuSP
     /** Rejects duplicate targets and malformed windows rather than silently replacing saved settings. */

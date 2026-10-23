@@ -114,11 +114,14 @@ same-day, positive, aligned intervals; the planner enforces configured hours.
 four-argument constructor for default-window callers. Plans freeze their source
 settings, so later time or unrelated snapshots do not alter projections.
 
-The codec reads versions 1 and 2. It writes version 2 when custom hours are
-present, appending sorted `HOURS|TARGET|HH:mm|HH:mm` rows. Duplicate targets,
+The codec reads versions 1, 2 and 3. It writes version 2 when only custom hours
+are present, appending sorted `HOURS|TARGET|HH:mm|HH:mm` rows. Version 3 is
+written when any commitment has date bounds; every commitment row then includes
+its inclusive start and end date, using `-` for both endpoints of an unbounded
+series in the same file. Duplicate targets,
 invalid dates, unknown weekdays and invalid intervals reject the whole file.
 Snapshots without custom settings retain version 1 encoding. Existing version 1
-files load with defaults; older applications reject files containing version 2.
+files load with defaults; older applications reject files containing newer versions.
 Atomic replacement still saves tasks, commitments, counters and hours together.
 
 JUnit coverage checks precedence/reset, immutable maps, input boundaries,
@@ -463,6 +466,28 @@ UI-014 verifies the packaged command, Unicode edits, rejection recovery and rest
 New significant methods have scoped Darren50 author markers; existing shared CLI
 methods retain their attribution. Changes outside the commitment domain are limited
 to this command's transport, integration, output and acceptance tests.
+
+### Recurring commitment date bounds (issue #64)
+
+`Commitment` optionally stores a paired inclusive `startDate` and `endDate`.
+Both null means an unbounded legacy series. A bounded range must be ordered and
+contain at least one occurrence of the commitment weekday. `occursOn` is the
+single calendar-membership check used by allocation and schedule projection.
+Overlap requires intersecting times, the same weekday and at least one shared
+occurrence; therefore separate semesters may safely reuse a weekly time slot.
+
+Addition and editing accept the ordered optional suffix
+`from/YYYY-MM-DD until/YYYY-MM-DD`. The parser requires both fields and strict
+four-digit dates. Omitted edit bounds preserve the stored range. Success and list
+output show inclusive dates only for bounded series, retaining existing text for
+unbounded records. Version 3 storage writes two endpoint fields on every
+commitment row and uses `-|-` for unbounded rows in the same file. Versions 1 and
+2 remain readable, and stores without bounded commitments retain their old version.
+
+JUnit checks model boundaries, disjoint and intersecting semester overlaps,
+candidate immutability, parser syntax, version 3 round trips, planning and daily
+projection. UI-016 verifies validation, editing, restart persistence, conflict
+reporting and unconsumed retry IDs through the packaged application.
 
 ### Commitment deletion and listing
 

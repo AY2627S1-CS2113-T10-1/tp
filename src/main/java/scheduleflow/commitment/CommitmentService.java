@@ -1,6 +1,7 @@
 package scheduleflow.commitment;
 
 import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -43,10 +44,16 @@ public final class CommitmentService {
      * @throws ValidationException if the commitment is invalid, overlaps an existing series or IDs are exhausted
      */
     public Snapshot add(Snapshot state, String name, DayOfWeek day, LocalTime start, int minutes) {
+        return add(state, name, day, start, minutes, null, null);
+    }
+
+    /** Creates a series with paired inclusive dates, or no date limits when both are null. */
+    public Snapshot add(Snapshot state, String name, DayOfWeek day, LocalTime start, int minutes,
+            LocalDate startDate, LocalDate endDate) {
         Objects.requireNonNull(state, "state");
         LOGGER.fine("Starting commitment addition");
         try {
-            return createAddition(state, name, day, start, minutes);
+            return createAddition(state, name, day, start, minutes, startDate, endDate);
         } catch (ValidationException exception) {
             LOGGER.fine("Commitment addition rejected; source snapshot unchanged");
             throw exception;
@@ -57,11 +64,12 @@ public final class CommitmentService {
      * Validates fields and overlap before constructing an unsaved addition candidate.
      * Keeps the public operation's rejection logging separate from candidate construction.
      */
-    private Snapshot createAddition(Snapshot state, String name, DayOfWeek day, LocalTime start, int minutes) {
+    private Snapshot createAddition(Snapshot state, String name, DayOfWeek day, LocalTime start, int minutes,
+            LocalDate startDate, LocalDate endDate) {
         if (state.nextCommitmentId() == Integer.MAX_VALUE) {
             throw new ValidationException("Commitment IDs are exhausted.");
         }
-        Commitment added = new Commitment(state.nextCommitmentId(), name, day, start, minutes);
+        Commitment added = new Commitment(state.nextCommitmentId(), name, day, start, minutes, startDate, endDate);
         LOGGER.fine("Commitment fields validated; checking weekly overlaps");
         rejectOverlaps(added, state.commitments());
         List<Commitment> commitments = new ArrayList<>(state.commitments());
@@ -116,16 +124,23 @@ public final class CommitmentService {
      */
     public Snapshot edit(Snapshot state, int commitmentId, String name, DayOfWeek day,
             LocalTime start, Integer minutes) {
+        return edit(state, commitmentId, name, day, start, minutes, null, null);
+    }
+
+    /** Replaces paired date limits when supplied; omitted dates retain the original range. */
+    public Snapshot edit(Snapshot state, int commitmentId, String name, DayOfWeek day,
+            LocalTime start, Integer minutes, LocalDate startDate, LocalDate endDate) {
         Objects.requireNonNull(state, "state");
         LOGGER.fine("Starting commitment edit");
         try {
             if (commitmentId <= 0) {
                 throw new ValidationException("Commitment ID must be positive.");
             }
-            if (name == null && day == null && start == null && minutes == null) {
+            if (name == null && day == null && start == null && minutes == null
+                    && startDate == null && endDate == null) {
                 throw new ValidationException("Provide at least one commitment field to edit.");
             }
-            return createEdit(state, commitmentId, name, day, start, minutes);
+            return createEdit(state, commitmentId, name, day, start, minutes, startDate, endDate);
         } catch (ValidationException exception) {
             LOGGER.fine("Commitment edit rejected; source snapshot unchanged");
             throw exception;
@@ -137,12 +152,14 @@ public final class CommitmentService {
      * Excludes only the target ID from overlap checks, including when the time stays unchanged.
      */
     private Snapshot createEdit(Snapshot state, int id, String name, DayOfWeek day,
-            LocalTime start, Integer minutes) {
+            LocalTime start, Integer minutes, LocalDate startDate, LocalDate endDate) {
         Commitment original = state.commitments().stream().filter(commitment -> commitment.id() == id)
                 .findFirst().orElseThrow(() -> new ValidationException("Unknown commitment ID: C" + id));
         Commitment edited = new Commitment(id, name == null ? original.name() : name,
                 day == null ? original.day() : day, start == null ? original.start() : start,
-                minutes == null ? original.durationMinutes() : minutes);
+                minutes == null ? original.durationMinutes() : minutes,
+                startDate == null && endDate == null ? original.startDate() : startDate,
+                startDate == null && endDate == null ? original.endDate() : endDate);
         LOGGER.fine("Replacement fields validated; checking other weekly series");
         rejectOverlaps(edited, state.commitments().stream().filter(commitment -> commitment.id() != id).toList());
         List<Commitment> replacements = new ArrayList<>(state.commitments());

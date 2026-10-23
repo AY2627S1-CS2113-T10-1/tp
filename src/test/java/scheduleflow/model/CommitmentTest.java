@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import org.junit.jupiter.api.Test;
 import scheduleflow.common.ValidationException;
@@ -64,6 +65,39 @@ class CommitmentTest {
     void overlaps_outsideStudyHours_stillRejectsClashes() {
         assertTrue(monday(1, 0, 0, 120).overlaps(monday(2, 1, 0, 30)));
         assertFalse(monday(1, 23, 30, 30).overlaps(monday(2, 0, 0, 30)));
+    }
+
+    @Test
+    void dateRange_occurrencesBoundariesAndDisjointSemesters_areCalendarAware() {
+        LocalDate first = LocalDate.of(2026, 8, 10);
+        LocalDate last = LocalDate.of(2026, 11, 16);
+        Commitment semester = new Commitment(1, "Lecture", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
+                first, last);
+        assertTrue(semester.occursOn(first));
+        assertTrue(semester.occursOn(last));
+        assertFalse(semester.occursOn(first.minusWeeks(1)));
+        assertFalse(semester.occursOn(last.plusWeeks(1)));
+        assertFalse(semester.occursOn(first.plusDays(1)));
+        Commitment nextSemester = new Commitment(2, "Lecture", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
+                LocalDate.of(2027, 1, 11), LocalDate.of(2027, 5, 3));
+        assertFalse(semester.overlaps(nextSemester));
+        assertTrue(semester.overlaps(new Commitment(3, "Clash", DayOfWeek.MONDAY, LocalTime.of(10, 30), 30,
+                first, first)));
+    }
+
+    @Test
+    void dateRange_missingReversedOrWithoutWeekday_rejects() {
+        LocalDate monday = LocalDate.of(2026, 8, 10);
+        assertThrows(ValidationException.class, () -> new Commitment(1, "A", DayOfWeek.MONDAY,
+                LocalTime.NOON, 30, monday, null));
+        assertThrows(ValidationException.class, () -> new Commitment(1, "A", DayOfWeek.MONDAY,
+                LocalTime.NOON, 30, null, monday));
+        assertThrows(ValidationException.class, () -> new Commitment(1, "A", DayOfWeek.MONDAY,
+                LocalTime.NOON, 30, monday.plusDays(1), monday));
+        assertThrows(ValidationException.class, () -> new Commitment(1, "A", DayOfWeek.MONDAY,
+                LocalTime.NOON, 30, monday.plusDays(1), monday.plusDays(6)));
+        assertEquals("date", assertThrows(NullPointerException.class,
+                () -> monday(1, 10, 0, 30).occursOn(null)).getMessage());
     }
 
     //@@author Darren50

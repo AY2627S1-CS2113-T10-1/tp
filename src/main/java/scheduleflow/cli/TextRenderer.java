@@ -74,13 +74,15 @@ public final class TextRenderer {
                 "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES - Add a task.",
                 "task list - List stored tasks.",
                 "task delete TNUMBER - Delete a task.",
-                "commitment add n/NAME day/DAY start/HHmm d/MINUTES - Add a weekly commitment.",
+                "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
+                        + " [from/YYYY-MM-DD until/YYYY-MM-DD] - Add a weekly commitment.",
                 "commitment list - List weekly commitments.",
                 "commitment delete CNUMBER - Delete a weekly commitment.",
                 "hours DAY|YYYY-MM-DD /start HH:mm /end HH:mm - Set study hours.",
                 "hours DAY|YYYY-MM-DD - View effective study hours (full lowercase weekday).",
                 "hours reset DAY|YYYY-MM-DD - Restore inherited study hours.",
                 "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]"
+                        + " [from/YYYY-MM-DD until/YYYY-MM-DD]"
                         + " - Edit at least one field; saves and clears the plan. Run plan again.",
                 "plan - Generate or replace the study plan.",
                 "schedule today OR schedule YYYY-MM-DD - View a date in the current plan.",
@@ -186,7 +188,7 @@ public final class TextRenderer {
         return finish("Added " + commitment.displayId() + ": " + commitment.name()
                 + " | " + formatWeekday(commitment.day())
                 + " " + TIME.format(commitment.start()) + " - " + formatCommitmentEnd(commitment)
-                + " (" + commitment.durationMinutes() + " min)");
+                + " (" + commitment.durationMinutes() + " min)" + formatCommitmentRange(commitment));
     }
 
     //@@author Darren50
@@ -203,7 +205,7 @@ public final class TextRenderer {
         return finish("Edited " + commitment.displayId() + ": " + commitment.name()
                 + " | " + formatWeekday(commitment.day())
                 + " " + TIME.format(commitment.start()) + " - " + formatCommitmentEnd(commitment)
-                + " (" + commitment.durationMinutes() + " min)");
+                + " (" + commitment.durationMinutes() + " min)" + formatCommitmentRange(commitment));
     }
     //@@author ka-how
 
@@ -243,12 +245,23 @@ public final class TextRenderer {
             lines.add("[" + formatWeekday(day) + "]");
             for (Commitment commitment : group) {
                 lines.add(commitment.displayId() + ". " + TIME.format(commitment.start()) + " - "
-                        + formatCommitmentEnd(commitment) + " | " + commitment.name());
+                        + formatCommitmentEnd(commitment) + " | " + commitment.name()
+                        + formatCommitmentRange(commitment));
             }
             lines.add("");
         }
         return finish(lines.add("Total: " + commitments.size() + " recurring commitments across the week.").toString());
     }
+
+    //@@author Darren50
+    /** Appends inclusive date limits while preserving legacy output for unbounded series. */
+    private String formatCommitmentRange(Commitment commitment) {
+        if (commitment.startDate() == null) {
+            return "";
+        }
+        return " | " + DATE.format(commitment.startDate()) + " to " + DATE.format(commitment.endDate());
+    }
+    //@@author ka-how
 
     /**
      * Formats complete or partial allocation results with whole-plan totals.
