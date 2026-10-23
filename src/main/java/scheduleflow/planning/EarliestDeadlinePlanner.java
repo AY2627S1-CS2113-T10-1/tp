@@ -26,8 +26,14 @@ public final class EarliestDeadlinePlanner implements Planner {
 
         LocalDateTime horizonEnd = TimeRules.horizonEnd(now);
         List<Slot> slots = createSlots(state, now, horizonEnd);
-        List<Task> tasks = new ArrayList<>(state.tasks());
-        tasks.sort(Comparator.comparing(Task::deadline).thenComparingInt(Task::id));
+        // @@author nickpatt
+        List<Task> tasks = new ArrayList<>(state.tasks().stream()
+                .filter(task -> task.remainingMinutes() > 0).toList());
+        tasks.sort(Comparator.comparing((Task task) -> task.deadline().isEmpty())
+                .thenComparing((left, right) -> left.deadline().isPresent() && right.deadline().isPresent()
+                        ? left.deadline().get().compareTo(right.deadline().get()) : 0)
+                .thenComparing(Task::priority).thenComparingInt(Task::id));
+        // @@author
 
         List<UnallocatedWork> unallocated = new ArrayList<>();
         for (Task task : tasks) {
@@ -82,11 +88,12 @@ public final class EarliestDeadlinePlanner implements Planner {
      */
     private static void addUnallocatedOrAllocate(Task task, LocalDateTime now, LocalDateTime horizonEnd,
             List<Slot> slots, List<UnallocatedWork> unallocated) {
-        if (!task.deadline().isAfter(now)) {
+        // @@author nickpatt
+        if (task.deadline().isPresent() && !task.deadline().get().isAfter(now)) {
             addUnallocated(task, task.remainingMinutes(), UnallocatedReason.DEADLINE_PASSED, unallocated);
             return;
         }
-        if (task.deadline().isAfter(horizonEnd)) {
+        if (task.deadline().isPresent() && task.deadline().get().isAfter(horizonEnd)) {
             addUnallocated(task, task.remainingMinutes(), UnallocatedReason.OUTSIDE_HORIZON, unallocated);
             return;
         }
@@ -97,15 +104,17 @@ public final class EarliestDeadlinePlanner implements Planner {
                 break;
             }
             LocalDateTime slotEnd = slot.start.plusMinutes(TimeRules.SLOT_MINUTES);
-            if (slot.available && !slotEnd.isAfter(task.deadline())) {
+            if (slot.available && (task.deadline().isEmpty() || !slotEnd.isAfter(task.deadline().get()))) {
                 slot.available = false;
                 slot.taskId = task.id();
-                remainingMinutes -= TimeRules.SLOT_MINUTES;
+                slot.workMinutes = Math.min(remainingMinutes, TimeRules.SLOT_MINUTES);
+                remainingMinutes -= slot.workMinutes;
             }
         }
         if (remainingMinutes > 0) {
             addUnallocated(task, remainingMinutes, UnallocatedReason.INSUFFICIENT_CAPACITY, unallocated);
         }
+        // @@author
     }
 
     /**
@@ -113,7 +122,11 @@ public final class EarliestDeadlinePlanner implements Planner {
      */
     private static void addUnallocated(Task task, int minutes, UnallocatedReason reason,
             List<UnallocatedWork> unallocated) {
-        unallocated.add(new UnallocatedWork(task.id(), task.name(), task.deadline(), minutes, reason));
+        // @@author nickpatt
+        long capacity = ((long) minutes + TimeRules.SLOT_MINUTES - 1)
+                / TimeRules.SLOT_MINUTES * TimeRules.SLOT_MINUTES;
+        unallocated.add(new UnallocatedWork(task.id(), task.name(), task.deadline(), minutes, capacity, reason));
+        // @@author
     }
 
     /**
@@ -132,6 +145,9 @@ public final class EarliestDeadlinePlanner implements Planner {
             LocalDateTime sessionStart = first.start;
             LocalDateTime sessionEnd = sessionStart.plusMinutes(TimeRules.SLOT_MINUTES);
             int taskId = first.taskId;
+            // @@author nickpatt
+            int workMinutes = first.workMinutes;
+            // @@author
             index++;
             while (index < slots.size()) {
                 Slot next = slots.get(index);
@@ -140,9 +156,14 @@ public final class EarliestDeadlinePlanner implements Planner {
                     break;
                 }
                 sessionEnd = sessionEnd.plusMinutes(TimeRules.SLOT_MINUTES);
+                // @@author nickpatt
+                workMinutes += next.workMinutes;
+                // @@author
                 index++;
             }
-            sessions.add(new StudySession(taskId, sessionStart, sessionEnd));
+            // @@author nickpatt
+            sessions.add(new StudySession(taskId, sessionStart, sessionEnd, workMinutes));
+            // @@author
         }
         return sessions;
     }
@@ -154,6 +175,10 @@ public final class EarliestDeadlinePlanner implements Planner {
         private final LocalDateTime start;
         private boolean available = true;
         private int taskId;
+        // @@author nickpatt
+        /** Exact work credited to this reserved slot, excluding padding. */
+        private int workMinutes;
+        // @@author
 
         private Slot(LocalDateTime start) {
             this.start = start;
