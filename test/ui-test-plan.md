@@ -5,7 +5,7 @@ acceptance remains planned until task-service integration, dispatcher
 transactions and Printing's confirmation are implemented. Existing active
 scenarios continue to exercise the unchanged console commands.
 
-All eighteen maintained process scenarios are active. They exercise the packaged
+All nineteen maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -86,6 +86,7 @@ active fixture expectations remain unchanged.
 
 | ID | Coverage | Status |
 | --- | --- | --- |
+| UI-019 | Unavailable study period: custom hours, add/delete plan invalidation, restart and released interval | Active |
 | UI-018 | One-time commitments: exact-date overlap, validation, restart, edit by date and deletion | Active |
 | UI-017 | One-date recurrence skips, validation, version 4 restart and released overlap | Active |
 | UI-001 | Missing file, empty lists and absent plan | Active |
@@ -104,6 +105,18 @@ active fixture expectations remain unchanged.
 | UI-014 | Partial commitment edits, unchanged IDs, rejection, plan invalidation and Unicode restart | Active |
 | UI-015 | Study hours precedence, validation, resets, plan invalidation and saved restarts | Active |
 | UI-016 | Inclusive recurring-commitment bounds, actual-occurrence overlap and version 3 restart | Active |
+
+UI-019 verifies issue #48 through the existing one-time commitment commands.
+It configures a date's study window, generates an empty plan, adds an unavailable
+period and checks plan invalidation. Restart confirms the period and hours are
+saved; deletion clears another plan, and a further restart confirms release and
+that IDs are not reused. These process checks do not claim to verify task
+relocation: fixed-time `EarliestDeadlinePlannerTest` acceptance tests cover
+reallocation around a newly blocked study session, deletion restoring time,
+partial and fully blocked deadline capacity, and a real saved/reloaded block
+with date-specific hours. `ScheduleServiceTest` checks BUSY projection, frozen
+old plans and the absence of the one-time block the following week.
+Existing UI-018 covers malformed inputs, conflicts and rejected-addition IDs.
 
 UI-015 asserts reset confirmations name the restored source and its endpoints.
 UI-016 adds nonoverlapping semester series at the same weekly time, rejects a

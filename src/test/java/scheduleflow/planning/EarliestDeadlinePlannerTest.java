@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Path;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -12,10 +13,14 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import scheduleflow.commitment.CommitmentService;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
+import scheduleflow.storage.FileStorage;
+import scheduleflow.storage.StateCodec;
 
 /**
  * Checks deterministic slot allocation, deadline handling and minute conservation.
@@ -240,6 +245,93 @@ class EarliestDeadlinePlannerTest {
                 UnallocatedReason.INSUFFICIENT_CAPACITY)), result.unallocated());
         assertEquals(availableMinutes + 30, source.tasks().getFirst().remainingMinutes());
     }
+
+    // @@author GabrielYuSP
+    @Test
+    void generate_unavailableStudyPeriod_replansAroundBlockAndDeletionRestoresTime() {
+        Snapshot original = snapshot(List.of(task(1, "Draft", MONDAY.atTime(12, 0), 90)), List.of());
+        Plan before = planner.generate(original, EARLY_MORNING);
+        CommitmentService commitments = new CommitmentService();
+        Snapshot blocked = commitments.add(original, "Unavailable", DayOfWeek.MONDAY,
+                LocalTime.of(8, 30), 60, MONDAY, MONDAY);
+
+        Plan after = planner.generate(blocked, EARLY_MORNING);
+
+        assertEquals(List.of(new StudySession(1, MONDAY.atTime(8, 0), MONDAY.atTime(8, 30)),
+                new StudySession(1, MONDAY.atTime(9, 30), MONDAY.atTime(10, 30))), after.sessions());
+        assertTrue(after.isComplete());
+        assertEquals(original.tasks(), blocked.tasks());
+        assertEquals(List.of(new StudySession(1, MONDAY.atTime(8, 0), MONDAY.atTime(9, 30))), before.sessions());
+        assertTrue(before.source().commitments().isEmpty());
+
+        Snapshot released = commitments.delete(blocked, 1);
+        Plan restored = planner.generate(released, EARLY_MORNING);
+        assertEquals(before.sessions(), restored.sessions());
+        assertTrue(restored.isComplete());
+        assertEquals(90, released.tasks().getFirst().remainingMinutes());
+        assertEquals(blocked.nextCommitmentId(), released.nextCommitmentId());
+    }
+
+    @Test
+    void generate_unavailablePeriodBeforeDeadline_preservesPartialWorkAndReportsRemainder() {
+        Task draft = task(1, "Draft", MONDAY.atTime(10, 0), 90);
+        Snapshot original = snapshot(List.of(draft), List.of());
+        Snapshot blocked = new CommitmentService().add(original, "Unavailable", DayOfWeek.MONDAY,
+                LocalTime.of(8, 30), 60, MONDAY, MONDAY);
+
+        Plan result = planner.generate(blocked, EARLY_MORNING);
+
+        assertEquals(List.of(new StudySession(1, MONDAY.atTime(8, 0), MONDAY.atTime(8, 30)),
+                new StudySession(1, MONDAY.atTime(9, 30), MONDAY.atTime(10, 0))), result.sessions());
+        assertEquals(List.of(new UnallocatedWork(1, "Draft", draft.deadline(), 30,
+                UnallocatedReason.INSUFFICIENT_CAPACITY)), result.unallocated());
+        assertEquals(draft.remainingMinutes(), result.sessions().stream().mapToInt(StudySession::minutes).sum()
+                + result.unallocated().getFirst().minutes());
+        assertEquals(90, blocked.tasks().getFirst().remainingMinutes());
+    }
+
+    @Test
+    void generate_wholeDayUnavailable_reportsAllWorkWithoutMovingItPastDeadline() {
+        Task draft = task(1, "Draft", MONDAY.atTime(22, 0), 60);
+        Snapshot blocked = new CommitmentService().add(snapshot(List.of(draft), List.of()), "Unavailable",
+                DayOfWeek.MONDAY, LocalTime.MIDNIGHT, 1440, MONDAY, MONDAY);
+
+        Plan result = planner.generate(blocked, EARLY_MORNING);
+
+        assertTrue(result.sessions().isEmpty());
+        assertEquals(List.of(new UnallocatedWork(1, "Draft", draft.deadline(), 60,
+                UnallocatedReason.INSUFFICIENT_CAPACITY)), result.unallocated());
+        assertEquals(60, blocked.tasks().getFirst().remainingMinutes());
+    }
+
+    @Test
+    void generate_savedUnavailablePeriod_respectsRestoredDateOverrideAndReleasesAfterDeletion(
+            @TempDir Path directory) throws Exception {
+        Snapshot original = snapshot(List.of(task(1, "Draft", MONDAY.atTime(11, 0), 90)), List.of());
+        Snapshot customHours = original.withStudyHours(original.studyHours()
+                .withWindow("monday", new StudyWindow(LocalTime.of(14, 0), LocalTime.of(16, 0)))
+                .withWindow(MONDAY.toString(), new StudyWindow(LocalTime.of(9, 0), LocalTime.of(11, 0))));
+        CommitmentService commitments = new CommitmentService();
+        Snapshot blocked = commitments.add(customHours, "Unavailable", DayOfWeek.MONDAY,
+                LocalTime.of(9, 30), 30, MONDAY, MONDAY);
+        Path file = directory.resolve("scheduleflow.txt");
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        storage.save(blocked);
+        Snapshot loaded = new FileStorage(file, new StateCodec()).load();
+
+        Plan result = planner.generate(loaded, EARLY_MORNING);
+
+        assertEquals(blocked, loaded);
+        assertEquals(List.of(new StudySession(1, MONDAY.atTime(9, 0), MONDAY.atTime(9, 30)),
+                new StudySession(1, MONDAY.atTime(10, 0), MONDAY.atTime(11, 0))), result.sessions());
+        assertTrue(result.isComplete());
+        storage.save(commitments.delete(loaded, 1));
+        Snapshot released = new FileStorage(file, new StateCodec()).load();
+        assertEquals(List.of(new StudySession(1, MONDAY.atTime(9, 0), MONDAY.atTime(10, 30))),
+                planner.generate(released, EARLY_MORNING).sessions());
+        assertEquals(customHours.studyHours(), released.studyHours());
+    }
+    // @@author
 
     private static Task task(int id, String name, LocalDateTime deadline, int minutes) {
         return new Task(id, name, deadline, minutes);

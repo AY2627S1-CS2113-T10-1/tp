@@ -87,6 +87,43 @@ allocation relationships remain the planner's responsibility. Fixed-date
 planner and projection tests verify deadline order, conservation of minutes,
 cutoff rounding, clipping, midnight commitments and allowed schedule dates.
 
+### Unavailable study periods (issue #48)
+
+A student marks an unavailable period using the existing one-time commitment
+command: `commitment add n/Unavailable on/YYYY-MM-DD start/HHmm d/MINUTES`.
+The name is an ordinary user description, not a reserved keyword. Equal
+inclusive date bounds represent the single unavailable occurrence, and
+`Commitment.occursOn(date)` supplies the same date membership check to the
+allocator and schedule projection. There is no separate availability model,
+new command or storage format for this workflow.
+
+A period may overlap previously allocated task sessions: commitment overlap
+validation checks fixed commitments, not temporary task allocations. The
+existing save-before-publication dispatcher invalidates the old plan after a
+successful addition. Regenerating allocates tasks around the blocked interval,
+preserves task estimates and reports any work that no longer fits before its
+deadline. The schedule displays the period as `[BUSY]` with its ordinary
+commitment ID. Deleting that ID saves and invalidates again; replanning can use
+the released interval. Previously returned immutable plan objects stay frozen.
+
+The existing half-hour alignment, positive duration, same-day interval and
+fixed-commitment overlap rules apply. Adjacent task sessions can end at the
+block's start or begin at its end. Blocking every available slot produces an
+unallocated-work result rather than scheduling after the task's deadline.
+Hours overrides continue to control the enclosing study window.
+
+Optimizer-owned JUnit acceptance tests exercise adding a block over a planned
+session, regenerating, deletion and restoration, partial and complete loss of
+deadline capacity, frozen schedule projection and no recurrence the next week.
+A temporary-file test reloads the block and date-specific hours before planning,
+then verifies persisted deletion releases the interval. Existing domain and
+UI-018 coverage retains invalid-input and overlap checks. UI-019 exercises this
+workflow's save/restart and add/delete plan invalidation through existing console
+commands; exact task allocation uses fixed-time JUnit tests rather than the live
+clock in the packaged application. No additional parsing or printing skeleton is
+needed. This branch is based on the merged commitment work and is independent
+of the unmerged #55 study-policy feature.
+
 ### Configurable study hours
 
 `StudyWindow` validates positive same-day intervals on half-hour boundaries.

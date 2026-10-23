@@ -2,6 +2,35 @@
   "version": 1,
   "cases": [
     {
+      "id": "UI-019",
+      "aim": "Unavailable study periods reuse one-time commitments with plan invalidation, restart and release",
+      "status": "active",
+      "setup": "No data file; a date-specific study window and one unavailable period",
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "hours 2026-10-26 /start 09:00 /end 12:00", "output": "Study hours for 2026-10-26: 09:00 - 12:00\nSaved study hours. Run plan to regenerate." },
+          { "input": "plan", "output": "No tasks to schedule." },
+          { "input": "commitment add n/Unavailable on/2026-10-26 start/1000 d/60", "output": "Added C1: Unavailable | One-time on 2026-10-26 (Monday) 10:00 - 11:00 (60 min)" },
+          { "input": "schedule today", "output": "No current plan. Run plan to generate one." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "hours 2026-10-26", "output": "Study hours for 2026-10-26: 09:00 - 12:00" },
+          { "input": "commitment list", "output": "=== One-time Commitments ===\nC1. 2026-10-26 (Monday) 10:00 - 11:00 | Unavailable\nTotal: 1 one-time commitments." },
+          { "input": "plan", "output": "No tasks to schedule." },
+          { "input": "commitment delete C1", "output": "Deleted commitment C1: Unavailable" },
+          { "input": "schedule today", "output": "No current plan. Run plan to generate one." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "commitment list", "output": "No commitments found." },
+          { "input": "hours 2026-10-26", "output": "Study hours for 2026-10-26: 09:00 - 12:00" },
+          { "input": "commitment add n/Unavailable again on/2026-10-26 start/1000 d/60", "output": "Added C2: Unavailable again | One-time on 2026-10-26 (Monday) 10:00 - 11:00 (60 min)" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
       "id": "UI-018", "aim": "One-time commitments block one date, validate input, persist and support edit/delete",
       "status": "active", "setup": "No data file; one weekly series and dated one-time commitments",
       "sessions": [
