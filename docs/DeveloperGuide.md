@@ -520,6 +520,48 @@ parser, dispatcher, renderer, codec and planning regressions cover valid,
 invalid and rollback paths. UI-017 verifies exact output, restart persistence,
 released overlap and unconsumed IDs through the packaged JAR.
 
+### One-time commitments (issue #53)
+
+A one-time commitment is a `Commitment` whose inclusive `startDate` equals its
+`endDate`; its `day` is that date's weekday. `Commitment.isOneTime()` exposes the
+distinction. No record component, service operation, command type or storage
+version was added: the design reuses the issue #64 date-range model, so
+`occursOn` already blocks only that date in `EarliestDeadlinePlanner` and
+`ScheduleService`, and `overlaps` already compares the actual occurrence with
+recurring series (including skipped dates) and other one-time commitments.
+Version 3 rows such as `COMMITMENT|1|FRIDAY|14:00|60|2026-10-30|2026-10-30|NAME`
+store it, and version 4 is used only when some series also has skipped dates.
+Older stores remain readable unchanged.
+
+The alternative of an explicit kind flag would need a new record component,
+constructor overloads and a version 5 format while behaving identically. The
+trade-off is that a weekly series entered with the same `from/` and `until/`
+date is shown as one-time, which matches its single occurrence. The packaged
+UI-017 expectation for that input was updated accordingly.
+
+`CommandParser` accepts `on/YYYY-MM-DD` in the `day/` position of
+`commitment add` and `commitment edit`, and maps it to an ordinary
+`AddCommitment` or `EditCommitment` with the derived weekday and equal dates.
+Combining `on/` with `from/`/`until/` is a parse error; `day/` and `on/` are
+mutually exclusive in the grammar. Existing save-before-publish dispatch and
+ID allocation therefore apply unchanged: rejected input consumes no ID.
+
+`CommitmentService` adds the domain rules that differ from weekly series.
+`skip` rejects one-time commitments, and the constructor rejects a one-time
+record whose only date is skipped, so corrupt saved data cannot hold a
+commitment that never occurs. `edit` rejects `day/` alone on a one-time
+commitment because its weekday follows its date, and discards skipped dates
+when an edit produces a one-time result. `TextRenderer` shows
+`One-time on DATE (Weekday) HH:mm - HH:mm (N min)` in add/edit confirmations,
+and `commitments` lists one-time records in a separate section ordered by date
+after the weekly groups, preserving the service's start/ID order within a date.
+
+Model, service, parser, renderer, dispatcher (failed-save rollback and retry),
+codec, planner and schedule tests cover exact-date blocking, overlap with both
+kinds, adjacency, invalid input and restart persistence. UI-018 verifies the
+packaged command flow, validation messages, restart, edit, delete and ID reuse
+rules.
+
 ### Commitment deletion and listing
 
 `CommitmentService.delete` removes an entire weekly series by its stable numeric
@@ -735,6 +777,7 @@ estimates or commitments before the deadline.
 |Current|new user|see command help|refer to the supported syntax when I need it|
 |Current|student|add and list tasks with deadlines and estimates|keep track of unfinished coursework|
 |Current|student|add and remove recurring commitments|reserve my weekly busy periods|
+|Current|student with project meetings and other fixed events|add one-time commitments|keep those periods unavailable for studying|
 |Current|student|generate a plan and view a date's schedule|find available time before my deadlines|
 |Current|student|see unallocated work|recognize when my available time is insufficient|
 |Current|returning user|restore saved tasks and commitments|continue without reentering my data|
@@ -754,7 +797,8 @@ estimates or commitments before the deadline.
 ## Glossary
 
 * *Task* - An unfinished item with a deadline and a remaining-work estimate.
-* *Commitment* - A busy interval repeated on one weekday until deleted.
+* *Commitment* - A busy interval repeated on one weekday, optionally within
+  inclusive dates, or a one-time busy interval on a single date.
 * *Snapshot* - Immutable tasks, commitments, study hours and independent next-ID counters.
 * *Plan* - Temporary allocations and unallocated work derived from a snapshot.
 * *Planning horizon* - The calendar range ending at midnight on the same date

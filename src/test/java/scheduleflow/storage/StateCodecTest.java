@@ -64,6 +64,35 @@ class StateCodecTest {
         }
     }
 
+    @Test
+    void encodeAndDecode_oneTimeCommitments_reuseDateRangeFormatsAndRejectNeverOccurringRows()
+            throws StorageException {
+        LocalDate friday = LocalDate.of(2026, 10, 30);
+        Commitment meeting = new Commitment(1, "Project | meeting", DayOfWeek.FRIDAY, LocalTime.of(14, 0), 60,
+                friday, friday);
+        Commitment weekly = new Commitment(2, "Weekly", DayOfWeek.TUESDAY, LocalTime.NOON, 30);
+        Snapshot oneTimeOnly = new Snapshot(List.of(), List.of(meeting, weekly), 1, 3);
+        String versionThree = "SCHEDULEFLOW|3\nNEXT|1|3\n"
+                + "COMMITMENT|1|FRIDAY|14:00|60|2026-10-30|2026-10-30|Project | meeting\n"
+                + "COMMITMENT|2|TUESDAY|12:00|30|-|-|Weekly\n";
+        assertEquals(versionThree, codec.encode(oneTimeOnly));
+        assertEquals(oneTimeOnly, codec.decode(versionThree));
+
+        Commitment skipped = new Commitment(3, "Lecture", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
+                LocalDate.of(2026, 10, 19), LocalDate.of(2026, 10, 26), Set.of(LocalDate.of(2026, 10, 19)));
+        Snapshot withSkips = new Snapshot(List.of(), List.of(meeting, skipped), 1, 4);
+        String versionFour = codec.encode(withSkips);
+        assertEquals("SCHEDULEFLOW|4\nNEXT|1|4\n"
+                + "COMMITMENT|1|FRIDAY|14:00|60|2026-10-30|2026-10-30|-|Project | meeting\n"
+                + "COMMITMENT|3|MONDAY|10:00|60|2026-10-19|2026-10-26|2026-10-19|Lecture\n", versionFour);
+        assertEquals(withSkips, codec.decode(versionFour));
+
+        for (String row : List.of("COMMITMENT|1|FRIDAY|14:00|60|2026-10-30|2026-10-30|2026-10-30|Meeting",
+                "COMMITMENT|1|MONDAY|14:00|60|2026-10-30|2026-10-30|-|Meeting")) {
+            assertThrows(StorageException.class, () -> codec.decode("SCHEDULEFLOW|4\nNEXT|1|2\n" + row + "\n"));
+        }
+    }
+
     // @@author GabrielYuSP
     @Test
     void encodeAndDecode_hours_preservesSettingsAndLoadsLegacyData() throws StorageException {

@@ -22,7 +22,9 @@ class CommandParserTest {
     private static final String TASK_DELETE_USAGE = "task delete TNUMBER";
     private static final String DATE_RANGE_USAGE = " [from/YYYY-MM-DD until/YYYY-MM-DD]";
     private static final String COMMITMENT_ADD_USAGE = "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
-            + DATE_RANGE_USAGE;
+            + DATE_RANGE_USAGE + " OR commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES";
+    private static final String COMMITMENT_EDIT_USAGE =
+            "commitment edit CNUMBER [n/NAME] [day/DAY|on/YYYY-MM-DD] [start/HHmm] [d/MINUTES]" + DATE_RANGE_USAGE;
     private static final String COMMITMENT_DELETE_USAGE = "commitment delete CNUMBER";
     private static final String COMMITMENT_SKIP_USAGE = "commitment skip CNUMBER on/YYYY-MM-DD";
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
@@ -89,11 +91,10 @@ class CommandParserTest {
 
     @Test
     void parse_commitmentEdit_rejectsMalformedAndDuplicateFieldsWithUsage() {
-        String usage = "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]"
-                + DATE_RANGE_USAGE;
+        String usage = COMMITMENT_EDIT_USAGE;
         for (String suffix : List.of("", "1 n/A", "T1 n/A", "C01 n/A", "C0 n/A", "C2147483648 n/A",
                 "C1 n/A n/B", "C1 day/MON day/TUE", "C1 start/1000 start/1100", "C1 d/30 d/60",
-                "C1 d/30 n/A", "C1 day/MONDAY", "C1 day/mon", "C1 on/2026-10-26", "C1 start/2400",
+                "C1 d/30 n/A", "C1 day/MONDAY", "C1 day/mon", "C1 on/2026-02-30", "C1 start/2400",
                 "C1 start/1260", "C1 start/930", "C1 d/0", "C1 d/-30", "C1 d/030", "C1 d/2147483648",
                 "C1 d/30 extra", "C1 n/A/foo", "C1 day/", "C1 start/", "C1 d/", "C1 n/A\tB")) {
             assertEquals(usage, assertThrows(ParseException.class,
@@ -116,6 +117,48 @@ class CommandParserTest {
                 "commitment add n/A day/MON start/1000 d/30 until/2026-11-16 from/2026-08-10",
                 "commitment add n/A day/MON start/1000 d/30 from/2026-02-30 until/2026-11-16")) {
             assertRejected(input, COMMITMENT_ADD_USAGE);
+        }
+    }
+
+    @Test
+    void parse_oneTimeCommitment_mapsDateToItsWeekdayAndSingleDateRange() throws ParseException {
+        LocalDate friday = LocalDate.of(2026, 10, 30);
+        assertEquals(new Command.AddCommitment("Project meeting", DayOfWeek.FRIDAY, LocalTime.of(14, 0), 60,
+                friday, friday), parser.parse("commitment add n/Project meeting on/2026-10-30 start/1400 d/60"));
+        assertEquals(new Command.AddCommitment("A  B", DayOfWeek.FRIDAY, LocalTime.of(23, 30), 30, friday, friday),
+                parser.parse("  commitment  add  n/ A  B  on/2026-10-30  start/2330  d/30 "));
+        LocalDate leapDay = LocalDate.of(2028, 2, 29);
+        assertEquals(new Command.AddCommitment("Leap", DayOfWeek.TUESDAY, LocalTime.MIDNIGHT, 1440,
+                leapDay, leapDay), parser.parse("commitment add n/Leap on/2028-02-29 start/0000 d/1440"));
+        LocalDate monday = LocalDate.of(2026, 11, 2);
+        assertEquals(new Command.EditCommitment(3, null, DayOfWeek.MONDAY, null, null, monday, monday),
+                parser.parse("commitment edit C3 on/2026-11-02"));
+        assertEquals(new Command.EditCommitment(3, "Moved", DayOfWeek.MONDAY, LocalTime.of(9, 0), 30,
+                monday, monday), parser.parse("commitment edit C3 n/Moved on/2026-11-02 start/0900 d/30"));
+    }
+
+    @Test
+    void parse_oneTimeCommitment_rejectsInvalidDatesAndMixedRecurrenceFields() {
+        for (String input : List.of("commitment add n/A on/2026-02-30 start/1400 d/60",
+                "commitment add n/A on/2026-10-30 start/1415x d/60",
+                "commitment add n/A on/2026-10-30 start/2400 d/60",
+                "commitment add n/A on/2026-10-30 start/1400 d/0",
+                "commitment add n/A on/26-10-30 start/1400 d/60",
+                "commitment add n/A on/ start/1400 d/60",
+                "commitment add n/A day/FRI on/2026-10-30 start/1400 d/60",
+                "commitment add n/A on/2026-10-30 on/2026-10-31 start/1400 d/60",
+                "commitment add n/A start/1400 on/2026-10-30 d/60",
+                "commitment add n/A on/2026-10-30 start/1400 d/60 from/2026-10-30 until/2026-10-30")) {
+            assertRejected(input, COMMITMENT_ADD_USAGE);
+        }
+        assertEquals("Year must be between 0001 and 9999", assertThrows(ParseException.class,
+                () -> parser.parse("commitment add n/A on/0000-01-01 start/1400 d/60")).getMessage());
+        assertEquals("Use on/ for one date or from/ and until/ for a weekly range, not both",
+                assertThrows(ParseException.class, () -> parser.parse("commitment edit C1 on/2026-10-30"
+                        + " from/2026-10-30 until/2026-11-06")).getMessage());
+        for (String suffix : List.of("C1 day/FRI on/2026-10-30", "C1 on/2026-10-30 day/FRI",
+                "C1 start/1400 on/2026-10-30", "C1 on/0000-01-01")) {
+            assertRejected("commitment edit " + suffix, COMMITMENT_EDIT_USAGE);
         }
     }
 

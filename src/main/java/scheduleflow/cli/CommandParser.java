@@ -32,13 +32,17 @@ public final class CommandParser {
             "task progress TNUMBER done/MINUTES OR task progress TNUMBER session/MINUTES percent/PERCENT";
     //@@author Darren50
     private static final String DATE_RANGE_USAGE = " [from/YYYY-MM-DD until/YYYY-MM-DD]";
+    private static final String ONE_TIME_ADD_USAGE = "commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES";
     // @@author ka-how
     private static final String COMMITMENT_ADD_USAGE = "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
-            + DATE_RANGE_USAGE;
+            + DATE_RANGE_USAGE
+            //@@author
+            + " OR " + ONE_TIME_ADD_USAGE;
+    // @@author ka-how
     private static final String COMMITMENT_DELETE_USAGE = "commitment delete CNUMBER";
     //@@author Darren50
     private static final String COMMITMENT_EDIT_USAGE =
-            "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]" + DATE_RANGE_USAGE;
+            "commitment edit CNUMBER [n/NAME] [day/DAY|on/YYYY-MM-DD] [start/HHmm] [d/MINUTES]" + DATE_RANGE_USAGE;
     private static final String COMMITMENT_SKIP_USAGE = "commitment skip CNUMBER on/YYYY-MM-DD";
     // @@author ka-how
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
@@ -47,6 +51,13 @@ public final class CommandParser {
     private static final String DATE_TOKEN = "[0-9]{4}-[0-9]{2}-[0-9]{2}";
     private static final String DATE_RANGE_PATTERN = "(?: +from/(?<from>" + DATE_TOKEN
             + ") +until/(?<until>" + DATE_TOKEN + "))?";
+    //@@author Darren50
+    /**
+     * Selects a repeating weekday or, for a one-time commitment, one calendar date in the same position.
+     */
+    private static final String DAY_OR_DATE_PATTERN = "(?:day/(?<day>MON|TUE|WED|THU|FRI|SAT|SUN)"
+            + "|on/(?<on>" + DATE_TOKEN + "))";
+    // @@author ka-how
     private static final String TIME_TOKEN = "[0-9]{4}";
     private static final Pattern HOURS_PATTERN = Pattern.compile("hours +(?<reset>reset +)?(?<target>"
             + "monday|tuesday|wednesday|thursday|friday|saturday|sunday|" + DATE_TOKEN + ")"
@@ -63,7 +74,7 @@ public final class CommandParser {
             "task +add +n/(?<name>" + NAME_TOKEN + ") +due/(?<date>" + DATE_TOKEN
                     + ") +(?<time>" + TIME_TOKEN + ") +d/(?<minutes>" + POSITIVE_INT_TOKEN + ")");
     private static final Pattern COMMITMENT_ADD_PATTERN = Pattern.compile(
-            "commitment +add +n/(?<name>" + NAME_TOKEN + ") +day/(?<day>MON|TUE|WED|THU|FRI|SAT|SUN)"
+            "commitment +add +n/(?<name>" + NAME_TOKEN + ") +" + DAY_OR_DATE_PATTERN
                     + " +start/(?<time>" + TIME_TOKEN + ") +d/(?<minutes>" + POSITIVE_INT_TOKEN + ")"
                     + DATE_RANGE_PATTERN);
     private static final Pattern TASK_DELETE_PATTERN = Pattern.compile(
@@ -89,7 +100,7 @@ public final class CommandParser {
     private static final Pattern COMMITMENT_EDIT_PATTERN = Pattern.compile(
             "commitment +edit +C(?<id>" + POSITIVE_INT_TOKEN + ")"
                     + "(?: +n/(?<name>" + NAME_TOKEN + "))?"
-                    + "(?: +day/(?<day>MON|TUE|WED|THU|FRI|SAT|SUN))?"
+                    + "(?: +" + DAY_OR_DATE_PATTERN + ")?"
                     + "(?: +start/(?<time>" + TIME_TOKEN + "))?"
                     + "(?: +d/(?<minutes>" + POSITIVE_INT_TOKEN + "))?" + DATE_RANGE_PATTERN);
     //@@author ka-how
@@ -245,6 +256,14 @@ public final class CommandParser {
      */
     private Command.AddCommitment parseAddCommitment(String input) throws ParseException {
         Matcher fields = match(COMMITMENT_ADD_PATTERN, input, COMMITMENT_ADD_USAGE);
+        //@@author Darren50
+        LocalDate date = parseOneTimeDate(fields, COMMITMENT_ADD_USAGE);
+        if (date != null) {
+            return new Command.AddCommitment(fields.group("name").strip(), date.getDayOfWeek(),
+                    LocalTime.parse(fields.group("time"), TIME_FORMAT), Integer.parseInt(fields.group("minutes")),
+                    date, date);
+        }
+        // @@author ka-how
         DayOfWeek day = parseWeekday(fields.group("day"), COMMITMENT_ADD_USAGE);
         return new Command.AddCommitment(fields.group("name").strip(), day,
                 LocalTime.parse(fields.group("time"), TIME_FORMAT), Integer.parseInt(fields.group("minutes")),
@@ -275,16 +294,35 @@ public final class CommandParser {
      */
     private Command.EditCommitment parseEditCommitment(String input) throws ParseException {
         Matcher fields = match(COMMITMENT_EDIT_PATTERN, input, COMMITMENT_EDIT_USAGE);
-        String name = fields.group("name");
+        int id = Integer.parseInt(fields.group("id"));
+        String name = fields.group("name") == null ? null : fields.group("name").strip();
         String day = fields.group("day");
-        String time = fields.group("time");
-        String minutes = fields.group("minutes");
-        return new Command.EditCommitment(Integer.parseInt(fields.group("id")), name == null ? null : name.strip(),
-                day == null ? null : parseWeekday(day, COMMITMENT_EDIT_USAGE),
-                time == null ? null : LocalTime.parse(time, TIME_FORMAT),
-                minutes == null ? null : Integer.valueOf(minutes),
-                parseOptionalDate(fields.group("from"), COMMITMENT_EDIT_USAGE),
+        LocalTime time = fields.group("time") == null ? null : LocalTime.parse(fields.group("time"), TIME_FORMAT);
+        Integer minutes = fields.group("minutes") == null ? null : Integer.valueOf(fields.group("minutes"));
+        LocalDate date = parseOneTimeDate(fields, COMMITMENT_EDIT_USAGE);
+        if (date != null) {
+            return new Command.EditCommitment(id, name, date.getDayOfWeek(), time, minutes, date, date);
+        }
+        return new Command.EditCommitment(id, name, day == null ? null : parseWeekday(day, COMMITMENT_EDIT_USAGE),
+                time, minutes, parseOptionalDate(fields.group("from"), COMMITMENT_EDIT_USAGE),
                 parseOptionalDate(fields.group("until"), COMMITMENT_EDIT_USAGE));
+    }
+
+    /**
+     * Parses the optional one-time {@code on/} date, which already fixes both weekday and date range.
+     *
+     * @param fields complete match containing optional {@code on}, {@code from} and {@code until} groups
+     * @param usage syntax hint for the command being parsed
+     * @return the one-time date, or null when the command uses {@code day/} or omits both
+     * @throws ParseException if the date is outside the supported years or combined with a date range
+     */
+    private LocalDate parseOneTimeDate(Matcher fields, String usage) throws ParseException {
+        LocalDate date = parseOptionalDate(fields.group("on"), usage);
+        if (date != null && fields.group("from") != null) {
+            throw new ParseException("Use on/ for one date or from/ and until/ for a weekly range, not both",
+                    usage);
+        }
+        return date;
     }
 
     /** Parses an optional strict calendar date without inventing limits for legacy commands. */

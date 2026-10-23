@@ -141,6 +141,55 @@ class CommitmentTest {
                 () -> monday(1, 10, 0, 30).overlaps(null));
         assertEquals("other", exception.getMessage());
     }
+
+    @Test
+    void isOneTime_equalDates_occursOnlyOnThatDate() {
+        LocalDate friday = LocalDate.of(2026, 10, 30);
+        Commitment meeting = oneTime(1, friday, 14, 60);
+        assertTrue(meeting.isOneTime());
+        assertTrue(meeting.occursOn(friday));
+        assertFalse(meeting.occursOn(friday.minusWeeks(1)));
+        assertFalse(meeting.occursOn(friday.plusWeeks(1)));
+        assertFalse(meeting.occursOn(friday.plusDays(1)));
+        assertFalse(new Commitment(2, "Weekly", DayOfWeek.FRIDAY, LocalTime.of(14, 0), 60).isOneTime());
+        assertFalse(new Commitment(3, "Two Fridays", DayOfWeek.FRIDAY, LocalTime.of(14, 0), 60,
+                friday, friday.plusWeeks(1)).isOneTime());
+    }
+
+    @Test
+    void overlaps_oneTime_comparesActualDateWithRecurringAndOneTimeCommitments() {
+        LocalDate friday = LocalDate.of(2026, 10, 30);
+        Commitment meeting = oneTime(1, friday, 14, 60);
+        Commitment weekly = new Commitment(2, "Weekly", DayOfWeek.FRIDAY, LocalTime.of(14, 30), 30);
+        assertTrue(meeting.overlaps(weekly));
+        assertTrue(weekly.overlaps(meeting));
+        assertTrue(meeting.overlaps(oneTime(3, friday, 13, 90)));
+        assertFalse(meeting.overlaps(oneTime(4, friday.plusWeeks(1), 14, 60)));
+        assertFalse(meeting.overlaps(oneTime(5, friday, 15, 30)));
+        assertFalse(meeting.overlaps(oneTime(6, friday, 13, 60)));
+        Commitment skippedThatDay = new Commitment(7, "Skipped", DayOfWeek.FRIDAY, LocalTime.of(14, 0), 60,
+                friday.minusWeeks(1), friday.plusWeeks(1), Set.of(friday));
+        assertFalse(meeting.overlaps(skippedThatDay));
+        assertFalse(skippedThatDay.overlaps(meeting));
+    }
+
+    @Test
+    void constructor_oneTimeWithSkippedDate_rejectsRecordThatNeverOccurs() {
+        LocalDate friday = LocalDate.of(2026, 10, 30);
+        assertEquals("A one-time commitment cannot skip its only occurrence.",
+                assertThrows(ValidationException.class, () -> new Commitment(1, "Meeting", DayOfWeek.FRIDAY,
+                        LocalTime.of(14, 0), 60, friday, friday, Set.of(friday))).getMessage());
+        assertEquals("Commitment date range must contain its weekday.",
+                assertThrows(ValidationException.class, () -> new Commitment(1, "Meeting", DayOfWeek.MONDAY,
+                        LocalTime.of(14, 0), 60, friday, friday)).getMessage());
+    }
+
+    /**
+     * Creates a one-time commitment whose weekday is derived from its only date.
+     */
+    private Commitment oneTime(int id, LocalDate date, int hour, int duration) {
+        return new Commitment(id, "Meeting", date.getDayOfWeek(), LocalTime.of(hour, 0), duration, date, date);
+    }
     //@@author
 
     /**
