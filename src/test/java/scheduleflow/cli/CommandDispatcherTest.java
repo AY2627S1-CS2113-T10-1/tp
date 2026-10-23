@@ -131,7 +131,8 @@ class CommandDispatcherTest {
         AppState state = new AppState(storage.saved);
         CommandDispatcher dispatcher = dispatcher(storage, clock);
         List<Command> commands = List.of(new Command.Help(), addTask(), new Command.ListTasks(),
-                new Command.DeleteTask(1), addCommitment(), new Command.ListCommitments(),
+                new Command.DeleteTask(1), addCommitment(),
+                new Command.SkipCommitment(1, NOW.toLocalDate()), new Command.ListCommitments(),
                 new Command.DeleteCommitment(1), new Command.GeneratePlan(), new Command.ScheduleToday(),
                 new Command.ScheduleDate(NOW.toLocalDate()), new Command.Exit());
         for (Command command : commands) {
@@ -140,10 +141,31 @@ class CommandDispatcherTest {
             assertEquals(command instanceof Command.Exit, response.shouldExit());
         }
         assertEquals(commands.size(), clock.reads);
-        assertEquals(4, storage.saveCalls);
-        assertEquals(NOW.plusSeconds(7), state.currentPlan().orElseThrow().generatedAt());
+        assertEquals(5, storage.saveCalls);
+        assertEquals(NOW.plusSeconds(8), state.currentPlan().orElseThrow().generatedAt());
         assertEquals(Snapshot.empty().tasks(), state.snapshot().tasks());
     }
+
+    //@@author Darren50
+    @Test
+    void execute_skipCommitment_savesExceptionAndInvalidatesPlan() throws Exception {
+        Snapshot original = populatedSnapshot();
+        AppState state = new AppState(original);
+        state.replacePlan(new EarliestDeadlinePlanner().generate(original, NOW));
+        FakeStorage storage = new FakeStorage(original);
+
+        CommandResponse response = dispatcher(storage, CLOCK).execute(
+                new Command.SkipCommitment(2, NOW.toLocalDate()), state);
+
+        assertEquals("Skipped C2 on 2026-09-21: Class", response.output());
+        assertEquals(1, storage.saveCalls);
+        assertSame(storage.saved, state.snapshot());
+        assertEquals(List.of(NOW.toLocalDate()), state.snapshot().commitments().getFirst()
+                .skippedDates().stream().toList());
+        assertTrue(state.currentPlan().isEmpty());
+        assertTrue(original.commitments().getFirst().skippedDates().isEmpty());
+    }
+    //@@author ka-how
 
     @Test
     void execute_eachMutation_savesBeforePublishingAndClearsPlan() throws Exception {
@@ -208,6 +230,8 @@ class CommandDispatcherTest {
                 new Command.AddCommitment("Overlap", DayOfWeek.MONDAY, LocalTime.of(10, 30), 30),
                 new Command.AddCommitment("Too long", DayOfWeek.MONDAY, LocalTime.of(23, 30), 60),
                 new Command.DeleteTask(99), new Command.DeleteCommitment(99),
+                new Command.SkipCommitment(99, NOW.toLocalDate()),
+                new Command.SkipCommitment(2, NOW.toLocalDate().plusDays(1)),
                 new Command.EditCommitment(99, "Missing", null, null, null),
                 new Command.EditCommitment(2, null, null, null, null),
                 new Command.EditCommitment(2, null, null, LocalTime.of(23, 30), 60));
@@ -450,7 +474,8 @@ class CommandDispatcherTest {
     private List<Command> mutations() {
         return List.of(addTask(), new Command.DeleteTask(2), addCommitment(), new Command.DeleteCommitment(2),
                 new Command.EditCommitment(2, "Edited", null, LocalTime.NOON, 30),
-                new Command.EditCommitment(2, "Class", null, null, null));
+                new Command.EditCommitment(2, "Class", null, null, null),
+                new Command.SkipCommitment(2, NOW.toLocalDate()));
     }
 
     /**
@@ -483,6 +508,9 @@ class CommandDispatcherTest {
         if (command instanceof Command.EditCommitment edit) {
             return edit.name().equals("Class") ? "Edited C2: Class | Monday 10:00 - 11:00 (60 min)"
                     : "Edited C2: Edited | Monday 12:00 - 12:30 (30 min)";
+        }
+        if (command instanceof Command.SkipCommitment) {
+            return "Skipped C2 on 2026-09-21: Class";
         }
         return "Deleted commitment C2: Class";
     }

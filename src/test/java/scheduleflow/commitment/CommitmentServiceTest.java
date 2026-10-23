@@ -67,6 +67,32 @@ class CommitmentServiceTest {
     }
 
     @Test
+    void skip_validOccurrence_preservesSeriesAndRejectsInvalidOrDuplicateDates() {
+        LocalDate monday = LocalDate.of(2026, 10, 19);
+        Snapshot source = service.add(Snapshot.empty(), "Lecture", DayOfWeek.MONDAY,
+                LocalTime.of(10, 0), 60, monday, monday.plusWeeks(2));
+        Snapshot skipped = service.skip(source, 1, monday.plusWeeks(1));
+        Commitment updated = skipped.commitments().getFirst();
+        assertTrue(source.commitments().getFirst().occursOn(monday.plusWeeks(1)));
+        assertFalse(updated.occursOn(monday.plusWeeks(1)));
+        assertTrue(updated.occursOn(monday));
+        assertEquals(source.nextCommitmentId(), skipped.nextCommitmentId());
+        assertEquals(source.tasks(), skipped.tasks());
+        assertEquals(updated.skippedDates(), service.edit(skipped, 1, "Renamed", null, null, null)
+                .commitments().getFirst().skippedDates());
+
+        assertThrows(ValidationException.class, () -> service.skip(skipped, 1, monday.plusWeeks(1)));
+        assertThrows(ValidationException.class, () -> service.skip(source, 1, monday.plusDays(1)));
+        assertThrows(ValidationException.class, () -> service.skip(source, 2, monday));
+        assertThrows(ValidationException.class,
+                () -> service.edit(skipped, 1, null, DayOfWeek.TUESDAY, null, null));
+        assertEquals("state", assertThrows(NullPointerException.class,
+                () -> service.skip(null, 1, monday)).getMessage());
+        assertEquals("date", assertThrows(NullPointerException.class,
+                () -> service.skip(source, 1, null)).getMessage());
+    }
+
+    @Test
     void edit_customHours_preservesWeekdayAndDateOverridesThroughRestart(@TempDir Path directory) throws Exception {
         StudyHours hours = new StudyHours(Map.of(
                 "monday", new StudyWindow(LocalTime.of(9, 0), LocalTime.of(18, 0)),

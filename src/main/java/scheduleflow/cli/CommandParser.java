@@ -39,6 +39,7 @@ public final class CommandParser {
     //@@author Darren50
     private static final String COMMITMENT_EDIT_USAGE =
             "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]" + DATE_RANGE_USAGE;
+    private static final String COMMITMENT_SKIP_USAGE = "commitment skip CNUMBER on/YYYY-MM-DD";
     // @@author ka-how
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
     private static final String HOURS_USAGE = "hours DAY|YYYY-MM-DD [/start HH:mm /end HH:mm]"
@@ -76,6 +77,10 @@ public final class CommandParser {
     // @@author ka-how
     private static final Pattern COMMITMENT_DELETE_PATTERN = Pattern.compile(
             "commitment +delete +C(?<id>" + POSITIVE_INT_TOKEN + ")");
+    //@@author Darren50
+    private static final Pattern COMMITMENT_SKIP_PATTERN = Pattern.compile(
+            "commitment +skip +C(?<id>" + POSITIVE_INT_TOKEN + ") +on/(?<date>" + DATE_TOKEN + ")");
+    // @@author ka-how
     private static final Pattern SCHEDULE_PATTERN = Pattern.compile("schedule +(?<date>today|" + DATE_TOKEN + ")");
     //@@author Darren50
     /**
@@ -133,6 +138,9 @@ public final class CommandParser {
                 // @@author ka-how
                 case "commitment add" -> parseAddCommitment(input);
                 case "commitment edit" -> parseEditCommitment(input);
+                // @@author
+                case "commitment skip" -> parseSkipCommitment(input);
+                // @@author ka-how
                 case "commitment list" -> parseNoArguments(input, command, new Command.ListCommitments());
                 case "commitment delete" -> new Command.DeleteCommitment(Integer.parseInt(
                         match(COMMITMENT_DELETE_PATTERN, input, usage).group("id")));
@@ -179,6 +187,9 @@ public final class CommandParser {
             // @@author ka-how
             case "commitment add" -> COMMITMENT_ADD_USAGE;
             case "commitment edit" -> COMMITMENT_EDIT_USAGE;
+            // @@author
+            case "commitment skip" -> COMMITMENT_SKIP_USAGE;
+            // @@author ka-how
             case "commitment delete" -> COMMITMENT_DELETE_USAGE;
             case "schedule" -> SCHEDULE_USAGE;
             case "hours" -> HOURS_USAGE;
@@ -284,6 +295,14 @@ public final class CommandParser {
         LocalDate date = LocalDate.parse(token, DATE_FORMAT);
         requireSupportedYear(date, usage);
         return date;
+    }
+
+    /** Parses one strict calendar date without applying recurrence membership rules. */
+    private Command.SkipCommitment parseSkipCommitment(String input) throws ParseException {
+        Matcher fields = match(COMMITMENT_SKIP_PATTERN, input, COMMITMENT_SKIP_USAGE);
+        LocalDate date = LocalDate.parse(fields.group("date"), DATE_FORMAT);
+        requireSupportedYear(date, COMMITMENT_SKIP_USAGE);
+        return new Command.SkipCommitment(Integer.parseInt(fields.group("id")), date);
     }
     //@@author ka-how
 

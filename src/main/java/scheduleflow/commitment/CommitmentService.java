@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.logging.Logger;
@@ -159,7 +160,7 @@ public final class CommitmentService {
                 day == null ? original.day() : day, start == null ? original.start() : start,
                 minutes == null ? original.durationMinutes() : minutes,
                 startDate == null && endDate == null ? original.startDate() : startDate,
-                startDate == null && endDate == null ? original.endDate() : endDate);
+                startDate == null && endDate == null ? original.endDate() : endDate, original.skippedDates());
         LOGGER.fine("Replacement fields validated; checking other weekly series");
         rejectOverlaps(edited, state.commitments().stream().filter(commitment -> commitment.id() != id).toList());
         List<Commitment> replacements = new ArrayList<>(state.commitments());
@@ -171,6 +172,57 @@ public final class CommitmentService {
                 && candidate.nextTaskId() == state.nextTaskId() && candidate.tasks().equals(state.tasks())
                 : "Edit must preserve record counts, tasks and both counters";
         LOGGER.fine("Commitment edit candidate created; not yet saved or published");
+        return candidate;
+    }
+
+    /**
+     * Removes one calendar occurrence while preserving the recurring series and its stable ID.
+     *
+     * @param state immutable source snapshot
+     * @param commitmentId identifier of the recurring series
+     * @param date occurrence date to make available
+     * @return candidate with the date added to the series' immutable skip set
+     * @throws NullPointerException if state or date is null
+     * @throws ValidationException if the ID or date does not identify an unskipped occurrence
+     */
+    public Snapshot skip(Snapshot state, int commitmentId, LocalDate date) {
+        Objects.requireNonNull(state, "state");
+        Objects.requireNonNull(date, "date");
+        LOGGER.fine("Starting commitment occurrence skip");
+        try {
+            return createSkip(state, commitmentId, date);
+        } catch (ValidationException exception) {
+            LOGGER.fine("Commitment occurrence skip rejected; source snapshot unchanged");
+            throw exception;
+        }
+    }
+
+    /** Resolves and replaces one series without changing its stored position or shared counters. */
+    private Snapshot createSkip(Snapshot state, int commitmentId, LocalDate date) {
+        if (commitmentId <= 0) {
+            throw new ValidationException("Commitment ID must be positive.");
+        }
+        Commitment original = state.commitments().stream()
+                .filter(commitment -> commitment.id() == commitmentId).findFirst()
+                .orElseThrow(() -> new ValidationException("Unknown commitment ID: C" + commitmentId));
+        if (!original.recursOn(date)) {
+            throw new ValidationException(original.displayId() + " has no occurrence on " + date + ".");
+        }
+        if (original.skippedDates().contains(date)) {
+            throw new ValidationException(original.displayId() + " is already skipped on " + date + ".");
+        }
+        HashSet<LocalDate> skippedDates = new HashSet<>(original.skippedDates());
+        skippedDates.add(date);
+        Commitment replacement = new Commitment(original.id(), original.name(), original.day(), original.start(),
+                original.durationMinutes(), original.startDate(), original.endDate(), skippedDates);
+        List<Commitment> replacements = new ArrayList<>(state.commitments());
+        replacements.set(replacements.indexOf(original), replacement);
+        Snapshot candidate = new Snapshot(state.tasks(), replacements, state.nextTaskId(), state.nextCommitmentId(),
+                state.studyHours());
+        assert candidate.tasks().equals(state.tasks()) && candidate.nextTaskId() == state.nextTaskId()
+                && candidate.nextCommitmentId() == state.nextCommitmentId()
+                : "Skipping one occurrence must preserve tasks and both counters";
+        LOGGER.fine("Commitment occurrence skip candidate created; not yet saved or published");
         return candidate;
     }
 

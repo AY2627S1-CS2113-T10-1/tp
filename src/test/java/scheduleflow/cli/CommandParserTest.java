@@ -24,6 +24,7 @@ class CommandParserTest {
     private static final String COMMITMENT_ADD_USAGE = "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
             + DATE_RANGE_USAGE;
     private static final String COMMITMENT_DELETE_USAGE = "commitment delete CNUMBER";
+    private static final String COMMITMENT_SKIP_USAGE = "commitment skip CNUMBER on/YYYY-MM-DD";
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
     private final CommandParser parser = new CommandParser();
 
@@ -117,6 +118,18 @@ class CommandParserTest {
             assertRejected(input, COMMITMENT_ADD_USAGE);
         }
     }
+
+    @Test
+    void parse_commitmentSkip_acceptsStrictDateAndRejectsMalformedFields() throws ParseException {
+        assertEquals(new Command.SkipCommitment(12, LocalDate.of(2026, 10, 19)),
+                parser.parse(" commitment  skip  C12  on/2026-10-19 "));
+        for (String input : List.of("commitment skip", "commitment skip 12 on/2026-10-19",
+                "commitment skip C0 on/2026-10-19", "commitment skip C01 on/2026-10-19",
+                "commitment skip C1 2026-10-19", "commitment skip C1 on/2026-02-30",
+                "commitment skip C1 on/2026-10-19 extra")) {
+            assertRejected(input, COMMITMENT_SKIP_USAGE);
+        }
+    }
     //@@author ka-how
     @Test
     void parse_nullLine_rejectsWithArgumentName() {
@@ -134,6 +147,8 @@ class CommandParserTest {
                 parser.parse("commitment add n/CS2113 lecture day/MON start/1000 d/120"));
         assertEquals(new Command.ListCommitments(), parser.parse("commitment list"));
         assertEquals(new Command.DeleteCommitment(12), parser.parse("commitment delete C12"));
+        assertEquals(new Command.SkipCommitment(12, LocalDate.of(2026, 10, 19)),
+                parser.parse("commitment skip C12 on/2026-10-19"));
         assertEquals(new Command.GeneratePlan(), parser.parse("plan"));
         assertEquals(new Command.ScheduleToday(), parser.parse("schedule today"));
         assertEquals(new Command.ScheduleDate(LocalDate.of(2026, 10, 6)), parser.parse("schedule 2026-10-06"));

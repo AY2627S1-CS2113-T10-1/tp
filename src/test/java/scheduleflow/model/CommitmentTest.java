@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import scheduleflow.common.ValidationException;
 
@@ -98,6 +99,29 @@ class CommitmentTest {
                 LocalTime.NOON, 30, monday.plusDays(1), monday.plusDays(6)));
         assertEquals("date", assertThrows(NullPointerException.class,
                 () -> monday(1, 10, 0, 30).occursOn(null)).getMessage());
+    }
+
+    @Test
+    void skippedDates_removeOnlySelectedOccurrencesAndControlOverlap() {
+        LocalDate first = LocalDate.of(2026, 8, 10);
+        LocalDate second = first.plusWeeks(1);
+        Commitment skipped = new Commitment(1, "Lecture", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
+                first, second, Set.of(first));
+        assertTrue(skipped.recursOn(first));
+        assertFalse(skipped.occursOn(first));
+        assertTrue(skipped.occursOn(second));
+        assertFalse(skipped.overlaps(new Commitment(2, "Single", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
+                first, first)));
+        assertTrue(skipped.overlaps(new Commitment(3, "Both", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
+                first, second)));
+
+        assertThrows(ValidationException.class, () -> new Commitment(4, "Wrong day", DayOfWeek.MONDAY,
+                LocalTime.of(10, 0), 60, first, second, Set.of(first.plusDays(1))));
+        assertThrows(ValidationException.class, () -> new Commitment(4, "Outside", DayOfWeek.MONDAY,
+                LocalTime.of(10, 0), 60, first, second, Set.of(first.minusWeeks(1))));
+        assertEquals("skippedDates", assertThrows(NullPointerException.class,
+                () -> new Commitment(4, "Missing", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
+                        first, second, null)).getMessage());
     }
 
     //@@author Darren50

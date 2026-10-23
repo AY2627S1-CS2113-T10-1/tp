@@ -269,7 +269,7 @@ Omitted fields retain their stored values. The existing ID is kept, and editing
 does not consume a new ID or change other commitments. This edits the whole weekly
 series, not just one occurrence. Supplying `from/` and `until/` together replaces
 its date range. Omitting them preserves the existing range. Removing an existing
-range and skipping individual occurrences are not supported yet.
+range is not supported yet.
 
 ```text
 scheduleflow> commitment edit C1 start/1100 d/60
@@ -289,6 +289,32 @@ saves leave the saved data, IDs, current records and plan unchanged. Correct the
 input or save problem and retry. Edited values survive restarting the application.
 Editing a commitment also preserves configured study hours and date overrides.
 
+### Skipping one occurrence
+
+```text
+commitment skip CNUMBER on/YYYY-MM-DD
+```
+
+Use this when one class or meeting is cancelled but the rest of its recurring
+series remains unchanged:
+
+```text
+scheduleflow> commitment skip C1 on/2026-10-26
+Skipped C1 on 2026-10-26: CS2113 lecture
+```
+
+The date must be an unskipped occurrence of that commitment: it must use the
+same weekday and, for a bounded series, fall within its inclusive range. An
+unknown ID, a date on another weekday, a date outside the range or an already
+skipped date is rejected without changing saved data or the current plan.
+
+A successful skip saves automatically and clears the current plan. Run `plan`
+again; the released period is then available for study. Other commitments may
+use the same time on that skipped date, while conflict checks still apply on
+every remaining occurrence. Skips survive restarting the application and are
+shown by `commitment list`. Delete the series if every occurrence should be
+removed instead.
+
 ### Listing commitments
 
 ```text
@@ -296,6 +322,8 @@ commitment list
 ```
 
 Lists commitments by weekday, Monday through Sunday, then by start time and numeric ID. Empty weekday groups are omitted. The displayed IDs remain the original commitment IDs. Bounded series show their inclusive date range after the name; unbounded series retain the shorter display.
+Series with cancelled occurrences append those dates in chronological order,
+for example `| skipped: 2026-10-26, 2026-11-02`.
 
 ```text
 scheduleflow> commitment list
@@ -599,7 +627,9 @@ completed work, replace the task with your revised remaining-work estimate.
 
 ### Why did my schedule disappear?
 
-A successful task or commitment addition, deletion or commitment edit, or a study-hours set or reset, clears the current plan. Plans also disappear when the application restarts. Run `plan` to generate another one.
+A successful task or commitment addition, deletion, commitment edit or
+occurrence skip, or a study-hours set or reset, clears the current plan. Plans
+also disappear when the application restarts. Run `plan` to generate another one.
 
 ### Can I change the study hours or slot size?
 
@@ -635,6 +665,7 @@ these storage logs do not include your task names or saved file contents.
 | Add a weekly commitment | `commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD]` |
 | List commitments | `commitment list` |
 | Delete a weekly commitment | `commitment delete CNUMBER` |
+| Skip one commitment occurrence | `commitment skip CNUMBER on/YYYY-MM-DD` |
 | Set study hours | `hours DAY\|YYYY-MM-DD /start HH:mm /end HH:mm` |
 | View effective study hours | `hours DAY\|YYYY-MM-DD` |
 | Reset study hours | `hours reset DAY\|YYYY-MM-DD` |

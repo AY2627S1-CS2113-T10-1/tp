@@ -13,6 +13,7 @@ import java.util.Objects;
 import java.util.StringJoiner;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.StudyHours;
 import scheduleflow.model.StudyWindow;
@@ -78,6 +79,9 @@ public final class TextRenderer {
                         + " [from/YYYY-MM-DD until/YYYY-MM-DD] - Add a weekly commitment.",
                 "commitment list - List weekly commitments.",
                 "commitment delete CNUMBER - Delete a weekly commitment.",
+                // @@author
+                "commitment skip CNUMBER on/YYYY-MM-DD - Skip one occurrence.",
+                // @@author ka-how
                 "hours DAY|YYYY-MM-DD /start HH:mm /end HH:mm - Set study hours.",
                 "hours DAY|YYYY-MM-DD - View effective study hours (full lowercase weekday).",
                 "hours reset DAY|YYYY-MM-DD - Restore inherited study hours.",
@@ -222,6 +226,15 @@ public final class TextRenderer {
         return finish("Deleted commitment " + commitment.displayId() + ": " + commitment.name());
     }
 
+    //@@author Darren50
+    /** Formats confirmation after one recurring occurrence is successfully skipped and saved. */
+    public String commitmentSkipped(Commitment commitment, LocalDate date) {
+        Objects.requireNonNull(commitment, "commitment");
+        Objects.requireNonNull(date, "date");
+        return finish("Skipped " + commitment.displayId() + " on " + DATE.format(date) + ": " + commitment.name());
+    }
+    //@@author ka-how
+
     /**
      * Formats the already sorted weekly commitments.
      *
@@ -246,7 +259,9 @@ public final class TextRenderer {
             for (Commitment commitment : group) {
                 lines.add(commitment.displayId() + ". " + TIME.format(commitment.start()) + " - "
                         + formatCommitmentEnd(commitment) + " | " + commitment.name()
-                        + formatCommitmentRange(commitment));
+                        // @@author
+                        + formatCommitmentRange(commitment) + formatCommitmentSkips(commitment));
+                // @@author ka-how
             }
             lines.add("");
         }
@@ -260,6 +275,16 @@ public final class TextRenderer {
             return "";
         }
         return " | " + DATE.format(commitment.startDate()) + " to " + DATE.format(commitment.endDate());
+    }
+
+    /** Appends skipped occurrences in chronological order while preserving legacy rows when none exist. */
+    private String formatCommitmentSkips(Commitment commitment) {
+        if (commitment.skippedDates().isEmpty()) {
+            return "";
+        }
+        String dates = commitment.skippedDates().stream().sorted().map(DATE::format)
+                .collect(Collectors.joining(", "));
+        return " | skipped: " + dates;
     }
     //@@author ka-how
 
