@@ -84,6 +84,7 @@ public sealed interface Command {
 
     /**
      * Carries parsed weekly commitment fields without overlap validation.
+     * Equal start and end dates describe a one-time commitment on that date.
      */
     record AddCommitment(String name, DayOfWeek day, LocalTime start, int minutes,
             LocalDate startDate, LocalDate endDate) implements Command {
@@ -128,7 +129,7 @@ public sealed interface Command {
     //@@author ka-how
 
     /**
-     * Requests all recurring weekly commitments.
+     * Requests all recurring weekly and one-time commitments.
      */
     record ListCommitments() implements Command {
     }

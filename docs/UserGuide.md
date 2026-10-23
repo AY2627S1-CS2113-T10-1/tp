@@ -1,6 +1,6 @@
 ---
 title: ScheduleFlow User Guide
-description: Manage tasks, recurring commitments, and study plans with the ScheduleFlow command line application.
+description: Manage tasks, recurring and one-time commitments, and study plans with the ScheduleFlow command line application.
 ---
 
 # ScheduleFlow User Guide
@@ -19,9 +19,11 @@ Study hours default to **08:00–22:00 every day**, including weekends. You can 
   - [Adding a task](#adding-a-task)
   - [Listing tasks](#listing-tasks)
   - [Deleting a task](#deleting-a-task)
-- [Recurring commitments](#recurring-commitments)
+- [Commitments](#commitments)
   - [Adding a commitment](#adding-a-commitment)
+  - [Adding a one-time commitment](#adding-a-one-time-commitment)
   - [Editing a commitment](#editing-a-commitment)
+  - [Skipping one occurrence](#skipping-one-occurrence)
   - [Listing commitments](#listing-commitments)
   - [Deleting a commitment](#deleting-a-commitment)
 - [Study hours](#study-hours)
@@ -206,11 +208,12 @@ Deleted task T1: CS2113 draft
 
 The ID must belong to an existing task. A successful deletion saves the change and clears the current plan. A rejected deletion leaves both unchanged.
 
-## Recurring commitments
+## Commitments
 
-A commitment reserves the same period every week. It can continue until deleted,
-or use inclusive start and end dates for a semester or other limited period.
-Add separate entries for commitments on different weekdays.
+A recurring commitment reserves the same period every week. It can continue until
+deleted, or use inclusive start and end dates for a semester or other limited period.
+Add separate entries for commitments on different weekdays. A one-time commitment,
+such as a project meeting, reserves a period on a single calendar date.
 
 Commitment addition, editing, deletion and listing run directly at the console. Each
 successful change saves automatically and clears the current plan.
@@ -258,10 +261,41 @@ Rejected additions leave existing commitments and IDs unchanged. Optional
 record processing stages separately without commitment names or schedules.
 Normal launches keep the same console output.
 
+### Adding a one-time commitment
+
+```text
+commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES
+```
+
+Use `on/` instead of `day/` for an event that happens once:
+
+```text
+scheduleflow> commitment add n/Project meeting on/2026-10-30 start/1400 d/60
+Added C2: Project meeting | One-time on 2026-10-30 (Friday) 14:00 - 15:00 (60 min)
+```
+
+This blocks 14:00–15:00 on 30 October 2026 only; other Fridays stay available.
+The weekday is taken from the date, so do not also type `day/`, `from/` or `until/`.
+
+- The date must be a real calendar date from `0001-01-01` to `9999-12-31`.
+- The time and duration rules are the same as for recurring commitments.
+- A one-time commitment must not overlap a recurring commitment that occurs on
+  that date, or another one-time commitment on the same date. Adjacent times are
+  allowed. A recurring occurrence that you skipped does not cause a conflict.
+- Adding a recurring commitment is likewise rejected if it would overlap an
+  existing one-time commitment.
+
+One-time commitments receive ordinary IDs (`C1`, `C2`, ...) from the same sequence
+as recurring commitments, and are listed, edited and deleted with the same commands.
+Rejected additions do not consume an ID. A successful addition saves automatically
+and clears the current plan. A recurring commitment entered with the same `from/`
+and `until/` date has exactly one occurrence, so it is treated and displayed as a
+one-time commitment.
+
 ### Editing a commitment
 
 ```text
-commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES] [from/YYYY-MM-DD until/YYYY-MM-DD]
+commitment edit CNUMBER [n/NAME] [day/DAY|on/YYYY-MM-DD] [start/HHmm] [d/MINUTES] [from/YYYY-MM-DD until/YYYY-MM-DD]
 ```
 
 Supply at least one field, in the order shown; do not type the square brackets.
@@ -282,6 +316,20 @@ rules as addition. Conflict checks exclude the edited series itself, but still
 check every other series. Blank names, unknown IDs and empty edits are rejected.
 When changing a late start and duration, supply both together so the complete
 replacement ends by midnight.
+
+For a one-time commitment, `n/`, `start/` and `d/` work as above. Move it to another
+date with `on/`, which also sets the weekday:
+
+```text
+scheduleflow> commitment edit C2 on/2026-11-06
+Edited C2: Project meeting | One-time on 2026-11-06 (Friday) 14:00 - 15:00 (60 min)
+```
+
+`day/` alone is rejected for a one-time commitment because its weekday comes from
+its date. `on/` cannot be combined with `day/`, `from/` or `until/`. Using `on/` on a
+recurring commitment turns it into a one-time commitment on that date, and its
+skipped dates are discarded because it no longer repeats. Supplying `from/` and
+`until/` for a one-time commitment turns it into a bounded weekly series.
 
 Successful edits save automatically and clear the plan; run `plan` again. This
 also applies when you explicitly supply an existing value. Invalid edits and failed
@@ -313,7 +361,7 @@ again; the released period is then available for study. Other commitments may
 use the same time on that skipped date, while conflict checks still apply on
 every remaining occurrence. Skips survive restarting the application and are
 shown by `commitment list`. Delete the series if every occurrence should be
-removed instead.
+removed instead. One-time commitments cannot be skipped; delete them instead.
 
 ### Listing commitments
 
@@ -338,6 +386,23 @@ C3. 23:30 - 24:00 | Weekly review
 Total: 3 recurring commitments across the week.
 ```
 
+One-time commitments appear in a separate section after the weekly series, ordered
+by date, then start time and ID. The weekly section is omitted when there are only
+one-time commitments.
+
+```text
+scheduleflow> commitment list
+=== Recurring Weekly Commitments ===
+[Friday]
+C1. 10:00 - 11:00 | Lecture
+
+Total: 1 recurring commitments across the week.
+
+=== One-time Commitments ===
+C2. 2026-10-30 (Friday) 14:00 - 15:00 | Project meeting
+Total: 1 one-time commitments.
+```
+
 An empty list displays:
 
 ```text
@@ -350,7 +415,8 @@ No commitments found.
 commitment delete CNUMBER
 ```
 
-Removes the entire weekly series, not just one occurrence.
+Removes the entire weekly series, not just one occurrence, or removes a one-time
+commitment.
 
 Use the original `CNUMBER` shown by `commitment list`, not its position in the
 display. An unknown ID is rejected without changing commitments or ID counters.
@@ -663,13 +729,14 @@ these storage logs do not include your task names or saved file contents.
 | List tasks | `task list` |
 | Delete a task | `task delete TNUMBER` |
 | Add a weekly commitment | `commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD]` |
+| Add a one-time commitment | `commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES` |
 | List commitments | `commitment list` |
-| Delete a weekly commitment | `commitment delete CNUMBER` |
+| Delete a commitment | `commitment delete CNUMBER` |
 | Skip one commitment occurrence | `commitment skip CNUMBER on/YYYY-MM-DD` |
 | Set study hours | `hours DAY\|YYYY-MM-DD /start HH:mm /end HH:mm` |
 | View effective study hours | `hours DAY\|YYYY-MM-DD` |
 | Reset study hours | `hours reset DAY\|YYYY-MM-DD` |
-| Edit a weekly commitment | `commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES] [from/YYYY-MM-DD until/YYYY-MM-DD]` |
+| Edit a commitment | `commitment edit CNUMBER [n/NAME] [day/DAY\|on/YYYY-MM-DD] [start/HHmm] [d/MINUTES] [from/YYYY-MM-DD until/YYYY-MM-DD]` |
 | Generate or replace the plan | `plan` |
 | View today's schedule | `schedule today` |
 | View a dated schedule | `schedule YYYY-MM-DD` |

@@ -165,6 +165,51 @@ class CommandDispatcherTest {
         assertTrue(state.currentPlan().isEmpty());
         assertTrue(original.commitments().getFirst().skippedDates().isEmpty());
     }
+
+    @Test
+    void execute_oneTimeCommitment_savesBeforePublishingAndBlocksOnlyThatDate() throws Exception {
+        Snapshot original = populatedSnapshot();
+        AppState state = new AppState(original);
+        Plan plan = new EarliestDeadlinePlanner().generate(original, NOW);
+        state.replacePlan(plan);
+        FakeStorage storage = new FakeStorage(original);
+        CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
+        CommandParser parser = new CommandParser();
+        Command add = parser.parse("commitment add n/Meeting on/2026-09-21 start/1100 d/60");
+
+        storage.failSave = true;
+        assertThrows(StorageException.class, () -> dispatcher.execute(add, state));
+        assertSame(original, state.snapshot());
+        assertSame(plan, state.currentPlan().orElseThrow());
+        storage.failSave = false;
+        assertEquals("Added C3: Meeting | One-time on 2026-09-21 (Monday) 11:00 - 12:00 (60 min)",
+                dispatcher.execute(add, state).output());
+        assertSame(storage.saved, state.snapshot());
+        assertTrue(state.currentPlan().isEmpty());
+        assertEquals(4, state.snapshot().nextCommitmentId());
+
+        int saves = storage.saveCalls;
+        Snapshot added = state.snapshot();
+        for (String input : List.of("commitment add n/Clash on/2026-09-21 start/1030 d/60",
+                "commitment add n/Weekly day/MON start/1130 d/30", "commitment skip C3 on/2026-09-21")) {
+            assertThrows(ValidationException.class, () -> dispatcher.execute(parser.parse(input), state));
+        }
+        assertSame(added, state.snapshot());
+        assertEquals(saves, storage.saveCalls);
+
+        dispatcher.execute(new Command.GeneratePlan(), state);
+        String today = dispatcher.execute(new Command.ScheduleToday(), state).output();
+        assertTrue(today.contains("10:00 - 11:00 | [BUSY] C2: Class\n11:00 - 12:00 | [BUSY] C3: Meeting"));
+        String nextWeek = dispatcher.execute(new Command.ScheduleDate(NOW.toLocalDate().plusWeeks(1)), state)
+                .output();
+        assertTrue(nextWeek.contains("10:00 - 11:00 | [BUSY] C2: Class\n11:00 - 22:00 | [FREE]"));
+        assertTrue(dispatcher.execute(new Command.ListCommitments(), state).output()
+                .endsWith("=== One-time Commitments ===\nC3. 2026-09-21 (Monday) 11:00 - 12:00 | Meeting"
+                        + "\nTotal: 1 one-time commitments."));
+        assertEquals("Deleted commitment C3: Meeting",
+                dispatcher.execute(new Command.DeleteCommitment(3), state).output());
+        assertEquals(List.of(2), state.snapshot().commitments().stream().map(Commitment::id).toList());
+    }
     //@@author ka-how
 
     @Test

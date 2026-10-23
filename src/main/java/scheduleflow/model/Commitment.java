@@ -12,6 +12,7 @@ import scheduleflow.planning.TimeRules;
 /**
  * Stores a weekly half-open busy interval which may end at, but never cross, midnight.
  * Validates the complete interval, including time outside study hours, without I/O.
+ * A range whose start and end dates are equal represents a one-time commitment on that date.
  *
  * @param id stable positive identifier
  * @param name nonblank description normalized using the shared name rules
@@ -62,6 +63,12 @@ public record Commitment(int id, String name, DayOfWeek day, LocalTime start, in
                 throw new ValidationException("Skipped date must be an occurrence of the commitment.");
             }
         }
+        //@@author Darren50
+        // Skipping the only date of a one-time commitment would leave a record that never blocks time.
+        if (startDate != null && startDate.equals(endDate) && !skippedDates.isEmpty()) {
+            throw new ValidationException("A one-time commitment cannot skip its only occurrence.");
+        }
+        //@@author
         name = InputRules.normalizeName(name);
         InputRules.requireDuration(durationMinutes);
         if (start.getSecond() != 0 || start.getNano() != 0 || start.getMinute() % TimeRules.SLOT_MINUTES != 0) {
@@ -98,6 +105,17 @@ public record Commitment(int id, String name, DayOfWeek day, LocalTime start, in
     private static boolean containsWeekday(LocalDate first, LocalDate last, DayOfWeek day) {
         int offset = Math.floorMod(day.getValue() - first.getDayOfWeek().getValue(), 7);
         return last.toEpochDay() - first.toEpochDay() >= offset;
+    }
+
+    /**
+     * Returns whether this commitment reserves exactly one calendar date instead of repeating weekly.
+     * One-time commitments reuse the inclusive date range with equal endpoints, so planning, overlap
+     * checks and storage treat them exactly like a one-week series.
+     *
+     * @return whether the start and end dates are present and equal
+     */
+    public boolean isOneTime() {
+        return startDate != null && startDate.equals(endDate);
     }
 
     /** Returns whether this weekly series reserves time on the supplied calendar date. */

@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import scheduleflow.common.ValidationException;
@@ -48,7 +49,10 @@ public final class CommitmentService {
         return add(state, name, day, start, minutes, null, null);
     }
 
-    /** Creates a series with paired inclusive dates, or no date limits when both are null. */
+    /**
+     * Creates a series with paired inclusive dates, or no date limits when both are null.
+     * Equal dates create a one-time commitment that blocks only that calendar date.
+     */
     public Snapshot add(Snapshot state, String name, DayOfWeek day, LocalTime start, int minutes,
             LocalDate startDate, LocalDate endDate) {
         Objects.requireNonNull(state, "state");
@@ -128,7 +132,10 @@ public final class CommitmentService {
         return edit(state, commitmentId, name, day, start, minutes, null, null);
     }
 
-    /** Replaces paired date limits when supplied; omitted dates retain the original range. */
+    /**
+     * Replaces paired date limits when supplied; omitted dates retain the original range.
+     * Equal dates make the result one-time, and a one-time commitment's weekday changes only with its date.
+     */
     public Snapshot edit(Snapshot state, int commitmentId, String name, DayOfWeek day,
             LocalTime start, Integer minutes, LocalDate startDate, LocalDate endDate) {
         Objects.requireNonNull(state, "state");
@@ -156,11 +163,18 @@ public final class CommitmentService {
             LocalTime start, Integer minutes, LocalDate startDate, LocalDate endDate) {
         Commitment original = state.commitments().stream().filter(commitment -> commitment.id() == id)
                 .findFirst().orElseThrow(() -> new ValidationException("Unknown commitment ID: C" + id));
+        boolean keepsDates = startDate == null && endDate == null;
+        if (original.isOneTime() && day != null && keepsDates) {
+            throw new ValidationException(original.displayId()
+                    + " is a one-time commitment; use on/YYYY-MM-DD to change its date.");
+        }
+        LocalDate first = keepsDates ? original.startDate() : startDate;
+        LocalDate last = keepsDates ? original.endDate() : endDate;
+        // A one-time result has no other occurrences, so earlier weekly skips no longer apply.
+        Set<LocalDate> skippedDates = first != null && first.equals(last) ? Set.of() : original.skippedDates();
         Commitment edited = new Commitment(id, name == null ? original.name() : name,
                 day == null ? original.day() : day, start == null ? original.start() : start,
-                minutes == null ? original.durationMinutes() : minutes,
-                startDate == null && endDate == null ? original.startDate() : startDate,
-                startDate == null && endDate == null ? original.endDate() : endDate, original.skippedDates());
+                minutes == null ? original.durationMinutes() : minutes, first, last, skippedDates);
         LOGGER.fine("Replacement fields validated; checking other weekly series");
         rejectOverlaps(edited, state.commitments().stream().filter(commitment -> commitment.id() != id).toList());
         List<Commitment> replacements = new ArrayList<>(state.commitments());
@@ -183,7 +197,8 @@ public final class CommitmentService {
      * @param date occurrence date to make available
      * @return candidate with the date added to the series' immutable skip set
      * @throws NullPointerException if state or date is null
-     * @throws ValidationException if the ID or date does not identify an unskipped occurrence
+     * @throws ValidationException if the ID or date does not identify an unskipped occurrence,
+     *     or the commitment is one-time and must be deleted instead
      */
     public Snapshot skip(Snapshot state, int commitmentId, LocalDate date) {
         Objects.requireNonNull(state, "state");
@@ -205,6 +220,10 @@ public final class CommitmentService {
         Commitment original = state.commitments().stream()
                 .filter(commitment -> commitment.id() == commitmentId).findFirst()
                 .orElseThrow(() -> new ValidationException("Unknown commitment ID: C" + commitmentId));
+        if (original.isOneTime()) {
+            throw new ValidationException(original.displayId()
+                    + " is a one-time commitment; use commitment delete instead.");
+        }
         if (!original.recursOn(date)) {
             throw new ValidationException(original.displayId() + " has no occurrence on " + date + ".");
         }

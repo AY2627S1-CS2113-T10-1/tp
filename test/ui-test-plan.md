@@ -5,7 +5,7 @@ acceptance remains planned until task-service integration, dispatcher
 transactions and Printing's confirmation are implemented. Existing active
 scenarios continue to exercise the unchanged console commands.
 
-All seventeen maintained process scenarios are active. They exercise the packaged
+All eighteen maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -86,6 +86,7 @@ active fixture expectations remain unchanged.
 
 | ID | Coverage | Status |
 | --- | --- | --- |
+| UI-018 | One-time commitments: exact-date overlap, validation, restart, edit by date and deletion | Active |
 | UI-017 | One-date recurrence skips, validation, version 4 restart and released overlap | Active |
 | UI-001 | Missing file, empty lists and absent plan | Active |
 | UI-002 | Adjacency, midnight and commitment IDs after deletion/restart | Active |
@@ -111,6 +112,15 @@ inclusive bounds, and confirms version 3 persistence and retry ID stability.
 UI-017 skips one bounded Monday occurrence, rejects duplicate, wrong-date and
 unknown-ID requests, confirms version 4 restart persistence, allows another
 series to use the released occurrence and retains the rejected-addition ID.
+Its single-date replacement now displays as one-time because issue #53 treats
+equal `from/`/`until/` dates as a one-time commitment.
+UI-018 adds a weekly series and dated one-time commitments, rejects overlaps
+with both kinds, malformed date/time/year, invalid duration, mixed `on/` and
+range syntax and skipping a one-time entry, then checks adjacency, the separate
+list section, restart persistence, `on/` edits, deletion and unconsumed IDs.
+Plan and schedule blocking for one-time dates is covered by fixed-clock JUnit
+tests because packaged runs cannot control the current date.
+Usage-hint expectations in UI-005 and UI-014 include the new `on/` syntax.
 
 The original eight scenarios retain their exact expectations. UI-009 through
 UI-012 add release acceptance without a production clock flag. Their saved

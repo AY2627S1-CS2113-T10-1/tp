@@ -62,6 +62,22 @@ class EarliestDeadlinePlannerTest {
         assertTrue(planner.generate(source, MONDAY.atTime(15, 0)).sessions().isEmpty());
     }
 
+    // @@author Darren50
+    @Test
+    void generate_oneTimeCommitment_blocksOnlyItsExactDate() {
+        Commitment meeting = new Commitment(1, "Meeting", DayOfWeek.MONDAY, LocalTime.of(8, 0), 90,
+                MONDAY, MONDAY);
+        Task today = task(1, "Today", MONDAY.atTime(10, 0), 30);
+        Plan todayPlan = planner.generate(snapshot(List.of(today), List.of(meeting)), EARLY_MORNING);
+        assertEquals(List.of(new StudySession(1, MONDAY.atTime(9, 30), MONDAY.atTime(10, 0))), todayPlan.sessions());
+
+        LocalDate nextMonday = MONDAY.plusWeeks(1);
+        Task nextWeek = task(2, "Next week", nextMonday.atTime(10, 0), 30);
+        Plan nextPlan = planner.generate(snapshot(List.of(nextWeek), List.of(meeting)), nextMonday.atTime(7, 0));
+        assertEquals(List.of(new StudySession(2, nextMonday.atTime(8, 0), nextMonday.atTime(8, 30))),
+                nextPlan.sessions());
+    }
+
     // @@author
     @Test
     void generate_emptySnapshot_returnsCompletePlanWithSource() {

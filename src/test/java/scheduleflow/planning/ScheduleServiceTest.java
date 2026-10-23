@@ -41,6 +41,23 @@ class ScheduleServiceTest {
                 .entries().getFirst().start().toLocalTime());
     }
 
+    // @@author Darren50
+    @Test
+    void forDate_oneTimeCommitment_showsBusyOnlyOnItsDate() {
+        LocalDate tuesday = MONDAY.plusDays(1);
+        Snapshot source = new Snapshot(List.of(), List.of(
+                new Commitment(1, "Meeting", DayOfWeek.TUESDAY, LocalTime.of(14, 0), 60, tuesday, tuesday)), 1, 2);
+        Plan generated = new EarliestDeadlinePlanner().generate(source, MORNING);
+        assertEquals(List.of(
+                new ScheduleEntry(tuesday.atTime(8, 0), tuesday.atTime(14, 0), SlotKind.FREE, "", ""),
+                new ScheduleEntry(tuesday.atTime(14, 0), tuesday.atTime(15, 0), SlotKind.BUSY, "C1", "Meeting"),
+                new ScheduleEntry(tuesday.atTime(15, 0), tuesday.atTime(22, 0), SlotKind.FREE, "", "")),
+                schedules.forDate(generated, tuesday).entries());
+        LocalDate nextTuesday = tuesday.plusWeeks(1);
+        assertEquals(List.of(new ScheduleEntry(nextTuesday.atTime(8, 0), nextTuesday.atTime(22, 0),
+                SlotKind.FREE, "", "")), schedules.forDate(generated, nextTuesday).entries());
+    }
+
     // @@author
     @Test
     void forDate_correctedContractExample_preservesAdjacentCommitmentIds() {
