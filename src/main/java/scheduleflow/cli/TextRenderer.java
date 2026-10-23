@@ -4,6 +4,7 @@ package scheduleflow.cli;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.TextStyle;
@@ -23,6 +24,7 @@ import scheduleflow.planning.ScheduleView;
 import scheduleflow.planning.SlotKind;
 import scheduleflow.planning.StudySession;
 import scheduleflow.planning.UnallocatedWork;
+import scheduleflow.task.TaskScope;
 
 /**
  * Formats output without a trailing newline, clock reads, direct console I/O or state mutation.
@@ -162,6 +164,51 @@ public final class TextRenderer {
     public String taskRemainingUpdated(Task task) {
         // TODO(Tasks): implement TextRenderer.taskRemainingUpdated
         throw new UnsupportedOperationException("Task remaining-work rendering is not implemented yet.");
+    }
+
+    /**
+     * Reserves an unwired confirmation for a saved priority change; performs no rendering yet.
+     * @throws UnsupportedOperationException always, pending Task rendering
+     */
+    public String taskPriorityUpdated(Task task) {
+        // TODO(Tasks): implement TextRenderer.taskPriorityUpdated
+        throw new UnsupportedOperationException("Task priority rendering is not implemented yet.");
+    }
+
+    /**
+     * Reserves an unwired scoped list in service-supplied order; performs no rendering yet.
+     * @throws UnsupportedOperationException always, pending Task rendering
+     */
+    public String tasksByScope(List<Task> tasks, TaskScope scope) {
+        // TODO(Tasks): implement TextRenderer.tasksByScope
+        throw new UnsupportedOperationException("Scoped task rendering is not implemented yet.");
+    }
+
+    /**
+     * Reserves an unwired priority list in service-supplied order; performs no rendering yet.
+     * @throws UnsupportedOperationException always, pending Task rendering
+     */
+    public String tasksByPriority(List<Task> tasks) {
+        // TODO(Tasks): implement TextRenderer.tasksByPriority
+        throw new UnsupportedOperationException("Task priority list rendering is not implemented yet.");
+    }
+
+    /**
+     * Reserves unwired search results for the supplied query; performs no rendering yet.
+     * @throws UnsupportedOperationException always, pending Task rendering
+     */
+    public String taskSearchResults(List<Task> tasks, String query) {
+        // TODO(Tasks): implement TextRenderer.taskSearchResults
+        throw new UnsupportedOperationException("Task search rendering is not implemented yet.");
+    }
+
+    /**
+     * Reserves an unwired overdue list using caller-captured time; reads no clock and renders nothing yet.
+     * @throws UnsupportedOperationException always, pending Task rendering
+     */
+    public String overdueTasks(List<Task> tasks, LocalDateTime capturedNow) {
+        // TODO(Tasks): implement TextRenderer.overdueTasks
+        throw new UnsupportedOperationException("Overdue task rendering is not implemented yet.");
     }
     // @@author
     // @@author ka-how
