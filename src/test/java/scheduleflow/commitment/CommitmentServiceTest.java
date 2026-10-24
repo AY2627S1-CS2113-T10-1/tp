@@ -44,6 +44,145 @@ class CommitmentServiceTest {
     private final CommitmentService service = new CommitmentService();
 
     @Test
+    void addAndEdit_dateBounds_validateActualOccurrencesAndPreserveOmissions() {
+        LocalDate semesterStart = LocalDate.of(2026, 8, 10);
+        LocalDate semesterEnd = LocalDate.of(2026, 11, 16);
+        Snapshot first = service.add(Snapshot.empty(), "Semester one", DayOfWeek.MONDAY,
+                LocalTime.of(10, 0), 60, semesterStart, semesterEnd);
+        Snapshot both = service.add(first, "Semester two", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
+                LocalDate.of(2027, 1, 11), LocalDate.of(2027, 5, 3));
+        assertEquals(2, both.commitments().size());
+        assertEquals(semesterStart, both.commitments().getFirst().startDate());
+        assertThrows(ValidationException.class, () -> service.add(first, "Clash", DayOfWeek.MONDAY,
+                LocalTime.of(10, 30), 30, semesterStart, semesterEnd));
+
+        Snapshot renamed = service.edit(first, 1, "Renamed", null, null, null);
+        assertEquals(semesterStart, renamed.commitments().getFirst().startDate());
+        assertEquals(semesterEnd, renamed.commitments().getFirst().endDate());
+        Snapshot moved = service.edit(first, 1, null, null, null, null,
+                LocalDate.of(2027, 1, 11), LocalDate.of(2027, 5, 3));
+        assertEquals(LocalDate.of(2027, 1, 11), moved.commitments().getFirst().startDate());
+        assertEquals(first.nextCommitmentId(), moved.nextCommitmentId());
+        assertEquals(semesterStart, first.commitments().getFirst().startDate());
+    }
+
+    @Test
+    void skip_validOccurrence_preservesSeriesAndRejectsInvalidOrDuplicateDates() {
+        LocalDate monday = LocalDate.of(2026, 10, 19);
+        Snapshot source = service.add(Snapshot.empty(), "Lecture", DayOfWeek.MONDAY,
+                LocalTime.of(10, 0), 60, monday, monday.plusWeeks(2));
+        Snapshot skipped = service.skip(source, 1, monday.plusWeeks(1));
+        Commitment updated = skipped.commitments().getFirst();
+        assertTrue(source.commitments().getFirst().occursOn(monday.plusWeeks(1)));
+        assertFalse(updated.occursOn(monday.plusWeeks(1)));
+        assertTrue(updated.occursOn(monday));
+        assertEquals(source.nextCommitmentId(), skipped.nextCommitmentId());
+        assertEquals(source.tasks(), skipped.tasks());
+        assertEquals(updated.skippedDates(), service.edit(skipped, 1, "Renamed", null, null, null)
+                .commitments().getFirst().skippedDates());
+
+        assertThrows(ValidationException.class, () -> service.skip(skipped, 1, monday.plusWeeks(1)));
+        assertThrows(ValidationException.class, () -> service.skip(source, 1, monday.plusDays(1)));
+        assertThrows(ValidationException.class, () -> service.skip(source, 2, monday));
+        assertThrows(ValidationException.class,
+                () -> service.edit(skipped, 1, null, DayOfWeek.TUESDAY, null, null));
+        assertEquals("state", assertThrows(NullPointerException.class,
+                () -> service.skip(null, 1, monday)).getMessage());
+        assertEquals("date", assertThrows(NullPointerException.class,
+                () -> service.skip(source, 1, null)).getMessage());
+    }
+
+    @Test
+    void add_oneTime_assignsNextIdAndRejectsOverlapsWithoutConsumingIt() {
+        LocalDate friday = LocalDate.of(2026, 10, 30);
+        Snapshot weekly = service.add(Snapshot.empty(), "Lecture", DayOfWeek.FRIDAY, LocalTime.of(10, 0), 60);
+        Snapshot added = service.add(weekly, "Project meeting", DayOfWeek.FRIDAY, LocalTime.of(14, 0), 60,
+                friday, friday);
+        Commitment meeting = added.commitments().getLast();
+        assertEquals(new Commitment(2, "Project meeting", DayOfWeek.FRIDAY, LocalTime.of(14, 0), 60,
+                friday, friday), meeting);
+        assertTrue(meeting.isOneTime());
+        assertEquals(3, added.nextCommitmentId());
+
+        ValidationException recurringClash = assertThrows(ValidationException.class, () -> service.add(added,
+                "Clash", DayOfWeek.FRIDAY, LocalTime.of(9, 30), 60, friday, friday));
+        assertEquals("Commitment overlaps C1: Lecture", recurringClash.getMessage());
+        ValidationException oneTimeClash = assertThrows(ValidationException.class, () -> service.add(added,
+                "Clash", DayOfWeek.FRIDAY, LocalTime.of(14, 30), 30, friday, friday));
+        assertEquals("Commitment overlaps C2: Project meeting", oneTimeClash.getMessage());
+        assertThrows(ValidationException.class, () -> service.add(added, "Weekly clash", DayOfWeek.FRIDAY,
+                LocalTime.of(14, 0), 30));
+        assertEquals(3, added.nextCommitmentId());
+        assertEquals(2, added.commitments().size());
+
+        Snapshot adjacent = service.add(added, "Follow-up", DayOfWeek.FRIDAY, LocalTime.of(15, 0), 30,
+                friday, friday);
+        Snapshot nextWeek = service.add(adjacent, "Next meeting", DayOfWeek.FRIDAY, LocalTime.of(14, 0), 60,
+                friday.plusWeeks(1), friday.plusWeeks(1));
+        assertEquals(List.of(1, 2, 3, 4), nextWeek.commitments().stream().map(Commitment::id).toList());
+    }
+
+    @Test
+    void skipAndEdit_oneTime_rejectsWeeklyOperationsAndMovesWithItsDate() {
+        LocalDate friday = LocalDate.of(2026, 10, 30);
+        Snapshot source = service.add(Snapshot.empty(), "Meeting", DayOfWeek.FRIDAY, LocalTime.of(14, 0), 60,
+                friday, friday);
+        assertEquals("C1 is a one-time commitment; use commitment delete instead.",
+                assertThrows(ValidationException.class, () -> service.skip(source, 1, friday)).getMessage());
+        assertEquals("C1 is a one-time commitment; use on/YYYY-MM-DD to change its date.",
+                assertThrows(ValidationException.class,
+                        () -> service.edit(source, 1, null, DayOfWeek.MONDAY, null, null)).getMessage());
+
+        Snapshot renamed = service.edit(source, 1, "Renamed", null, LocalTime.of(9, 0), 30);
+        assertEquals(new Commitment(1, "Renamed", DayOfWeek.FRIDAY, LocalTime.of(9, 0), 30, friday, friday),
+                renamed.commitments().getFirst());
+        LocalDate monday = LocalDate.of(2026, 11, 2);
+        Snapshot moved = service.edit(source, 1, null, DayOfWeek.MONDAY, null, null, monday, monday);
+        assertEquals(new Commitment(1, "Meeting", DayOfWeek.MONDAY, LocalTime.of(14, 0), 60, monday, monday),
+                moved.commitments().getFirst());
+        assertEquals(source.nextCommitmentId(), moved.nextCommitmentId());
+        Snapshot deleted = service.delete(moved, 1);
+        assertTrue(deleted.commitments().isEmpty());
+        assertEquals(2, deleted.nextCommitmentId());
+    }
+
+    @Test
+    void edit_recurringToOneTime_dropsWeeklySkipsAndChecksOverlapOnNewDate() {
+        LocalDate monday = LocalDate.of(2026, 10, 19);
+        Snapshot weekly = service.add(Snapshot.empty(), "Lecture", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
+                monday, monday.plusWeeks(2));
+        Snapshot skipped = service.skip(weekly, 1, monday.plusWeeks(1));
+        Snapshot oneTime = service.edit(skipped, 1, null, null, null, null, monday, monday);
+        assertTrue(oneTime.commitments().getFirst().isOneTime());
+        assertTrue(oneTime.commitments().getFirst().skippedDates().isEmpty());
+
+        Snapshot withOther = service.add(oneTime, "Other", DayOfWeek.TUESDAY, LocalTime.of(10, 0), 60);
+        LocalDate tuesday = monday.plusDays(1);
+        assertThrows(ValidationException.class,
+                () -> service.edit(withOther, 1, null, DayOfWeek.TUESDAY, null, null, tuesday, tuesday));
+        assertEquals(monday, withOther.commitments().getFirst().startDate());
+    }
+
+    @Test
+    void add_oneTimeSavedAndReloaded_blocksOnlyItsDateInPlans(@TempDir Path directory) throws StorageException {
+        LocalDate friday = LocalDate.of(2026, 10, 30);
+        Snapshot candidate = service.add(Snapshot.empty(), "Project meeting", DayOfWeek.FRIDAY,
+                LocalTime.of(8, 0), 60, friday, friday);
+        Path file = directory.resolve("scheduleflow.txt");
+        new FileStorage(file, new StateCodec()).save(candidate);
+        Snapshot reloaded = new FileStorage(file, new StateCodec()).load();
+        assertEquals(candidate, reloaded);
+        assertTrue(reloaded.commitments().getFirst().isOneTime());
+        for (LocalDate date : List.of(friday, friday.plusWeeks(1))) {
+            Snapshot withTask = new TaskService().add(reloaded, "Draft", date.atTime(10, 0),
+                    30, date.atTime(7, 0));
+            Plan plan = new EarliestDeadlinePlanner().generate(withTask, date.atTime(7, 0));
+            LocalTime expectedStart = date.equals(friday) ? LocalTime.of(9, 0) : LocalTime.of(8, 0);
+            assertEquals(date.atTime(expectedStart), plan.sessions().getFirst().start());
+        }
+    }
+
+    @Test
     void edit_customHours_preservesWeekdayAndDateOverridesThroughRestart(@TempDir Path directory) throws Exception {
         StudyHours hours = new StudyHours(Map.of(
                 "monday", new StudyWindow(LocalTime.of(9, 0), LocalTime.of(18, 0)),

@@ -2,6 +2,7 @@ package scheduleflow.storage;
 
 import java.time.DateTimeException;
 import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -10,9 +11,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import scheduleflow.common.InputRules;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
@@ -26,6 +30,8 @@ import scheduleflow.model.TaskPriority;
  * Converts snapshots to and from the versioned text format without accessing saved files.
  */
 public final class StateCodec {
+    // TODO(Save): implement issue #55 policy persistence with Snapshot and legacy-file defaults.
+    // Coordinate defaults and preserve policy through all task, commitment and study-hours mutations.
     // @@author ernestgoh-god
     /**
      * Records conversion stages at FINE level without including stored values or exception messages.
@@ -46,7 +52,7 @@ public final class StateCodec {
 
     // @@author ernestgoh-god
     /**
-     * Encodes a complete snapshot as version 2, retaining the existing study-hours rows.
+     * Encodes extended tasks and the newest commitment fields using version 2, 3 or 4.
      * Stores names last so names containing pipes do not need escaping.
      *
      * @param state validated immutable snapshot to encode in its existing list order
@@ -56,9 +62,15 @@ public final class StateCodec {
     public String encode(Snapshot state) {
         Objects.requireNonNull(state, "state");
         LOGGER.log(Level.FINE, "Starting snapshot encoding");
-        // @@author nickpatt
-        StringBuilder text = new StringBuilder("SCHEDULEFLOW|2").append('\n');
+        // @@author Darren50
+        boolean hasDateBoundedCommitments = state.commitments().stream()
+                .anyMatch(commitment -> commitment.startDate() != null);
+        boolean hasSkippedOccurrences = state.commitments().stream()
+                .anyMatch(commitment -> !commitment.skippedDates().isEmpty());
+        String version = hasSkippedOccurrences ? "SCHEDULEFLOW|4"
+                : hasDateBoundedCommitments ? "SCHEDULEFLOW|3" : "SCHEDULEFLOW|2";
         // @@author ernestgoh-god
+        StringBuilder text = new StringBuilder(version).append('\n');
         text.append("NEXT|").append(state.nextTaskId()).append('|').append(state.nextCommitmentId()).append('\n');
         for (Task task : state.tasks()) {
             // @@author nickpatt
@@ -70,8 +82,17 @@ public final class StateCodec {
         }
         for (Commitment commitment : state.commitments()) {
             text.append("COMMITMENT|").append(commitment.id()).append('|').append(commitment.day()).append('|')
-                    .append(commitment.start()).append('|').append(commitment.durationMinutes()).append('|')
-                    .append(commitment.name()).append('\n');
+                    .append(commitment.start()).append('|').append(commitment.durationMinutes()).append('|');
+            // @@author Darren50
+            if (hasDateBoundedCommitments || hasSkippedOccurrences) {
+                text.append(commitment.startDate() == null ? "-" : commitment.startDate()).append('|')
+                        .append(commitment.endDate() == null ? "-" : commitment.endDate()).append('|');
+            }
+            if (hasSkippedOccurrences) {
+                text.append(encodeSkippedDates(commitment.skippedDates())).append('|');
+            }
+            // @@author ernestgoh-god
+            text.append(commitment.name()).append('\n');
         }
         new TreeMap<>(state.studyHours().windows()).forEach((target, window) -> text.append("HOURS|")
                 .append(target).append('|').append(window.start()).append('|').append(window.end()).append('\n'));
@@ -110,9 +131,11 @@ public final class StateCodec {
             Map<String, StudyWindow> windows = new HashMap<>();
             for (int i = 2; i < lines.size(); i++) {
                 String line = lines.get(i);
-                if (lines.getFirst().equals("SCHEDULEFLOW|2") && line.startsWith("HOURS|")) {
+                // @@author Darren50
+                boolean supportsExtensions = !lines.getFirst().equals(HEADER);
+                if (supportsExtensions && line.startsWith("HOURS|")) {
                     decodeHours(line, windows);
-                } else if (lines.getFirst().equals("SCHEDULEFLOW|2") && line.startsWith("TASK2|")) {
+                } else if (supportsExtensions && line.startsWith("TASK2|")) {
                     // @@author nickpatt
                     String[] fields = splitFields(line, 6);
                     tasks.add(new Task(Integer.parseInt(fields[1]), fields[5], fields[2].equals("NONE")
@@ -120,8 +143,12 @@ public final class StateCodec {
                             Integer.parseInt(fields[3]), TaskPriority.valueOf(fields[4])));
                     // @@author ernestgoh-god
                 } else {
-                    decodeRecord(line, tasks, commitments);
+                    boolean supportsDateRanges = lines.getFirst().equals("SCHEDULEFLOW|3")
+                            || lines.getFirst().equals("SCHEDULEFLOW|4");
+                    decodeRecord(line, tasks, commitments, supportsDateRanges,
+                            lines.getFirst().equals("SCHEDULEFLOW|4"));
                 }
+                // @@author ernestgoh-god
             }
             assert (long) tasks.size() + commitments.size() + windows.size() == lines.size() - 2L
                     : "Every saved record line must decode to exactly one record";
@@ -148,7 +175,9 @@ public final class StateCodec {
         if (lines.isEmpty() || !lines.getFirst().startsWith("SCHEDULEFLOW|")) {
             throw new StorageException("Invalid saved data header.");
         }
-        if (!lines.getFirst().equals(HEADER) && !lines.getFirst().equals("SCHEDULEFLOW|2")) {
+        if (!lines.getFirst().equals(HEADER) && !lines.getFirst().equals("SCHEDULEFLOW|2")
+                && !lines.getFirst().equals("SCHEDULEFLOW|3")
+                && !lines.getFirst().equals("SCHEDULEFLOW|4")) {
             throw new StorageException("Unsupported file version: "
                     + lines.getFirst().substring("SCHEDULEFLOW|".length()));
         }
@@ -163,7 +192,8 @@ public final class StateCodec {
      *
      * @throws StorageException if the record type is unknown or required fields are missing
      */
-    private void decodeRecord(String line, List<Task> tasks, List<Commitment> commitments) throws StorageException {
+    private void decodeRecord(String line, List<Task> tasks, List<Commitment> commitments,
+            boolean supportsDateRanges, boolean supportsSkippedDates) throws StorageException {
         if (line.startsWith("TASK|")) {
             String[] fields = splitFields(line, 5);
             // @@author nickpatt
@@ -173,13 +203,59 @@ public final class StateCodec {
             tasks.add(new Task(Integer.parseInt(fields[1]), fields[4],
                     LocalDateTime.parse(fields[2]), Integer.parseInt(fields[3])));
         } else if (line.startsWith("COMMITMENT|")) {
-            String[] fields = splitFields(line, 6);
-            commitments.add(new Commitment(Integer.parseInt(fields[1]), fields[5], DayOfWeek.valueOf(fields[2]),
-                    LocalTime.parse(fields[3]), Integer.parseInt(fields[4])));
+            // @@author Darren50
+            if (supportsSkippedDates) {
+                String[] fields = splitFields(line, 9);
+                commitments.add(new Commitment(Integer.parseInt(fields[1]), fields[8],
+                        DayOfWeek.valueOf(fields[2]), LocalTime.parse(fields[3]), Integer.parseInt(fields[4]),
+                        parseOptionalDate(fields[5]), parseOptionalDate(fields[6]), parseSkippedDates(fields[7])));
+            } else if (supportsDateRanges) {
+                String[] fields = splitFields(line, 8);
+                LocalDate first = parseOptionalDate(fields[5]);
+                LocalDate last = parseOptionalDate(fields[6]);
+                commitments.add(new Commitment(Integer.parseInt(fields[1]), fields[7],
+                        DayOfWeek.valueOf(fields[2]), LocalTime.parse(fields[3]), Integer.parseInt(fields[4]),
+                        first, last));
+            } else {
+                String[] fields = splitFields(line, 6);
+                commitments.add(new Commitment(Integer.parseInt(fields[1]), fields[5], DayOfWeek.valueOf(fields[2]),
+                        LocalTime.parse(fields[3]), Integer.parseInt(fields[4])));
+            }
+            // @@author ernestgoh-god
         } else {
             throw new StorageException("Unknown or empty saved record.");
         }
     }
+
+    // @@author Darren50
+    /** Decodes the version 3 dash sentinel used for an unbounded endpoint. */
+    private LocalDate parseOptionalDate(String token) {
+        return token.equals("-") ? null : LocalDate.parse(token);
+    }
+
+    /** Encodes skipped dates deterministically, using a dash when the series has no exceptions. */
+    private String encodeSkippedDates(Set<LocalDate> skippedDates) {
+        if (skippedDates.isEmpty()) {
+            return "-";
+        }
+        return skippedDates.stream().sorted().map(LocalDate::toString).collect(Collectors.joining(","));
+    }
+
+    /** Decodes unique comma-separated skipped dates from a version 4 commitment record. */
+    private Set<LocalDate> parseSkippedDates(String token) throws StorageException {
+        if (token.equals("-")) {
+            return Set.of();
+        }
+        String[] dateTokens = token.split(",", -1);
+        TreeSet<LocalDate> dates = new TreeSet<>();
+        for (String dateToken : dateTokens) {
+            if (dateToken.isEmpty() || !dates.add(LocalDate.parse(dateToken))) {
+                throw new StorageException("Invalid or duplicate skipped commitment date.");
+            }
+        }
+        return Set.copyOf(dates);
+    }
+    // @@author ernestgoh-god
 
     // @@author GabrielYuSP
     /** Rejects duplicate targets and malformed windows rather than silently replacing saved settings. */

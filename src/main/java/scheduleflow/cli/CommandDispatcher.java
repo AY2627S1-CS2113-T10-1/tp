@@ -26,6 +26,8 @@ import scheduleflow.task.TaskService;
  * Routes parsed commands and owns the candidate, save, commit, response transaction order.
  */
 public final class CommandDispatcher {
+    // TODO(Printing): implement issue #55 settings transactions and construct the planner with StudyPolicy.
+    // Save settings before publication/invalidation; keep the old settings and plan on save failure.
     /**
      * Records command stages and save boundaries without including record names.
      */
@@ -114,6 +116,9 @@ public final class CommandDispatcher {
             // @@author ka-how
             case Command.AddCommitment add -> addCommitment(add, state);
             case Command.EditCommitment edit -> editCommitment(edit, state);
+            // @@author
+            case Command.SkipCommitment skip -> skipCommitment(skip, state);
+            // @@author ka-how
             case Command.ListCommitments ignored -> renderer.commitments(commitments.list(state.snapshot()));
             case Command.DeleteCommitment delete -> deleteCommitment(delete.id(), state);
             case Command.GeneratePlan ignored -> generatePlan(state, now);
@@ -242,7 +247,7 @@ public final class CommandDispatcher {
         LOGGER.log(Level.FINE, "Validating commitment addition");
         Snapshot original = state.snapshot();
         Snapshot candidate = commitments.add(original, command.name(), command.day(), command.start(),
-                command.minutes());
+                command.minutes(), command.startDate(), command.endDate());
         Commitment added = candidate.commitments().stream()
                 .filter(commitment -> commitment.id() == original.nextCommitmentId()).findFirst()
                 .orElseThrow(() -> new IllegalStateException("Commitment candidate is missing the allocated ID."));
@@ -256,12 +261,22 @@ public final class CommandDispatcher {
      */
     private String editCommitment(Command.EditCommitment command, AppState state) throws StorageException {
         Snapshot candidate = commitments.edit(state.snapshot(), command.id(), command.name(), command.day(),
-                command.start(), command.minutes());
+                command.start(), command.minutes(), command.startDate(), command.endDate());
         Commitment edited = candidate.commitments().stream()
                 .filter(commitment -> commitment.id() == command.id()).findFirst()
                 .orElseThrow(() -> new IllegalStateException("Validated commitment edit is missing its target."));
         saveAndCommit(candidate, state);
         return renderer.commitmentEdited(edited);
+    }
+
+    /** Saves a skipped occurrence before clearing the temporary plan and confirming success. */
+    private String skipCommitment(Command.SkipCommitment command, AppState state) throws StorageException {
+        Snapshot candidate = commitments.skip(state.snapshot(), command.id(), command.date());
+        Commitment updated = candidate.commitments().stream()
+                .filter(commitment -> commitment.id() == command.id()).findFirst()
+                .orElseThrow(() -> new IllegalStateException("Validated commitment skip is missing its target."));
+        saveAndCommit(candidate, state);
+        return renderer.commitmentSkipped(updated, command.date());
     }
     //@@author ka-how
 

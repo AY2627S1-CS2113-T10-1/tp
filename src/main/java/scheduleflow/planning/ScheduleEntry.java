@@ -19,9 +19,10 @@ public record ScheduleEntry(LocalDateTime start, LocalDateTime end, SlotKind kin
                 || !isAligned(start) || !isAligned(end)) {
             throw new ValidationException("Schedule entry must use aligned endpoints inside one study window.");
         }
-        if (kind == SlotKind.FREE || kind == SlotKind.UNPLANNED) {
+        if (kind == SlotKind.FREE || kind == SlotKind.UNPLANNED || kind == SlotKind.BREAK) {
             if (!reference.isEmpty() || !name.isEmpty()) {
-                throw new ValidationException("Free and unplanned entries must have empty references and names.");
+                throw new ValidationException(
+                        "Free, unplanned and break entries must have empty references and names.");
             }
         } else {
             requireReference(reference, kind == SlotKind.TASK ? "T" : "C");

@@ -2,6 +2,78 @@
   "version": 1,
   "cases": [
     {
+      "id": "UI-018", "aim": "One-time commitments block one date, validate input, persist and support edit/delete",
+      "status": "active", "setup": "No data file; one weekly series and dated one-time commitments",
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "commitment add n/Lecture day/FRI start/1000 d/60", "output": "Added C1: Lecture | Friday 10:00 - 11:00 (60 min)" },
+          { "input": "commitment add n/Project meeting on/2026-10-30 start/1400 d/60", "output": "Added C2: Project meeting | One-time on 2026-10-30 (Friday) 14:00 - 15:00 (60 min)" },
+          { "input": "commitment add n/Clash on/2026-10-30 start/1030 d/60", "output": "Error: Commitment overlaps C1: Lecture" },
+          { "input": "commitment add n/Overlap on/2026-10-30 start/1430 d/30", "output": "Error: Commitment overlaps C2: Project meeting" },
+          { "input": "commitment add n/Bad date on/2026-02-30 start/1400 d/60", "output": "Error: Invalid date or time\nExpected: commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD] OR commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES" },
+          { "input": "commitment add n/Bad year on/0000-01-01 start/1400 d/60", "output": "Error: Year must be between 0001 and 9999\nExpected: commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD] OR commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES" },
+          { "input": "commitment add n/Bad time on/2026-10-30 start/2400 d/30", "output": "Error: Invalid date or time\nExpected: commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD] OR commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES" },
+          { "input": "commitment add n/Bad length on/2026-10-30 start/1500 d/45", "output": "Error: Duration must be a positive multiple of 30 minutes." },
+          { "input": "commitment add n/Mixed on/2026-10-30 start/1500 d/30 from/2026-10-30 until/2026-11-06", "output": "Error: Use on/ for one date or from/ and until/ for a weekly range, not both\nExpected: commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD] OR commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES" },
+          { "input": "commitment add n/Follow-up on/2026-10-30 start/1500 d/30", "output": "Added C3: Follow-up | One-time on 2026-10-30 (Friday) 15:00 - 15:30 (30 min)" },
+          { "input": "commitment skip C2 on/2026-10-30", "output": "Error: C2 is a one-time commitment; use commitment delete instead." },
+          { "input": "commitment list", "output": "=== Recurring Weekly Commitments ===\n[Friday]\nC1. 10:00 - 11:00 | Lecture\n\nTotal: 1 recurring commitments across the week.\n\n=== One-time Commitments ===\nC2. 2026-10-30 (Friday) 14:00 - 15:00 | Project meeting\nC3. 2026-10-30 (Friday) 15:00 - 15:30 | Follow-up\nTotal: 2 one-time commitments." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "commitment list", "output": "=== Recurring Weekly Commitments ===\n[Friday]\nC1. 10:00 - 11:00 | Lecture\n\nTotal: 1 recurring commitments across the week.\n\n=== One-time Commitments ===\nC2. 2026-10-30 (Friday) 14:00 - 15:00 | Project meeting\nC3. 2026-10-30 (Friday) 15:00 - 15:30 | Follow-up\nTotal: 2 one-time commitments." },
+          { "input": "commitment edit C3 day/MON", "output": "Error: C3 is a one-time commitment; use on/YYYY-MM-DD to change its date." },
+          { "input": "commitment edit C3 on/2026-11-06", "output": "Edited C3: Follow-up | One-time on 2026-11-06 (Friday) 15:00 - 15:30 (30 min)" },
+          { "input": "commitment delete C2", "output": "Deleted commitment C2: Project meeting" },
+          { "input": "commitment add n/Next meeting on/2026-11-06 start/1400 d/60", "output": "Added C4: Next meeting | One-time on 2026-11-06 (Friday) 14:00 - 15:00 (60 min)" },
+          { "input": "commitment list", "output": "=== Recurring Weekly Commitments ===\n[Friday]\nC1. 10:00 - 11:00 | Lecture\n\nTotal: 1 recurring commitments across the week.\n\n=== One-time Commitments ===\nC4. 2026-11-06 (Friday) 14:00 - 15:00 | Next meeting\nC3. 2026-11-06 (Friday) 15:00 - 15:30 | Follow-up\nTotal: 2 one-time commitments." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
+      "id": "UI-017", "aim": "Skipped recurring occurrences validate, free conflicts and survive restart",
+      "status": "active", "setup": "No data file; one bounded recurring commitment",
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "commitment add n/Lecture day/MON start/1000 d/60 from/2026-10-19 until/2026-11-02", "output": "Added C1: Lecture | Monday 10:00 - 11:00 (60 min) | 2026-10-19 to 2026-11-02" },
+          { "input": "commitment skip C1 on/2026-10-26", "output": "Skipped C1 on 2026-10-26: Lecture" },
+          { "input": "commitment skip C1 on/2026-10-26", "output": "Error: C1 is already skipped on 2026-10-26." },
+          { "input": "commitment skip C1 on/2026-10-27", "output": "Error: C1 has no occurrence on 2026-10-27." },
+          { "input": "commitment skip C9 on/2026-10-26", "output": "Error: Unknown commitment ID: C9" },
+          { "input": "commitment list", "output": "=== Recurring Weekly Commitments ===\n[Monday]\nC1. 10:00 - 11:00 | Lecture | 2026-10-19 to 2026-11-02 | skipped: 2026-10-26\n\nTotal: 1 recurring commitments across the week." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "commitment list", "output": "=== Recurring Weekly Commitments ===\n[Monday]\nC1. 10:00 - 11:00 | Lecture | 2026-10-19 to 2026-11-02 | skipped: 2026-10-26\n\nTotal: 1 recurring commitments across the week." },
+          { "input": "commitment add n/Replacement day/MON start/1030 d/30 from/2026-10-26 until/2026-10-26", "output": "Added C2: Replacement | One-time on 2026-10-26 (Monday) 10:30 - 11:00 (30 min)" },
+          { "input": "commitment add n/Clash day/MON start/1030 d/30 from/2026-11-02 until/2026-11-02", "output": "Error: Commitment overlaps C1: Lecture" },
+          { "input": "commitment add n/Available ID day/TUE start/1000 d/30", "output": "Added C3: Available ID | Tuesday 10:00 - 10:30 (30 min)" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
+      "id": "UI-016", "aim": "Recurring commitment date bounds validate, persist and control overlap",
+      "status": "active", "setup": "No data file; bounded and unbounded weekly series",
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "commitment add n/Semester one day/MON start/1000 d/60 from/2026-08-10 until/2026-11-16", "output": "Added C1: Semester one | Monday 10:00 - 11:00 (60 min) | 2026-08-10 to 2026-11-16" },
+          { "input": "commitment add n/No Monday day/MON start/1200 d/30 from/2026-08-11 until/2026-08-16", "output": "Error: Commitment date range must contain its weekday." },
+          { "input": "commitment add n/Semester two day/MON start/1000 d/60 from/2027-01-11 until/2027-05-03", "output": "Added C2: Semester two | Monday 10:00 - 11:00 (60 min) | 2027-01-11 to 2027-05-03" },
+          { "input": "commitment add n/Clash day/MON start/1030 d/30 from/2026-10-05 until/2026-10-26", "output": "Error: Commitment overlaps C1: Semester one" },
+          { "input": "commitment edit C2 from/2027-01-18 until/2027-05-10", "output": "Edited C2: Semester two | Monday 10:00 - 11:00 (60 min) | 2027-01-18 to 2027-05-10" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "commitment list", "output": "=== Recurring Weekly Commitments ===\n[Monday]\nC1. 10:00 - 11:00 | Semester one | 2026-08-10 to 2026-11-16\nC2. 10:00 - 11:00 | Semester two | 2027-01-18 to 2027-05-10\n\nTotal: 2 recurring commitments across the week." },
+          { "input": "commitment add n/Forever day/MON start/1000 d/60", "output": "Error: Commitment overlaps C1: Semester one; C2: Semester two" },
+          { "input": "commitment add n/Available ID day/TUE start/1000 d/30", "output": "Added C3: Available ID | Tuesday 10:00 - 10:30 (30 min)" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
       "requiredComponents": [
         "Main.main",
         "CommandParser.parse",
@@ -122,7 +194,7 @@
           { "input": "commitment edit C1", "output": "Error: Provide at least one commitment field to edit." },
           { "input": "commitment edit C99 n/Missing", "output": "Error: Unknown commitment ID: C99" },
           { "input": "commitment edit C1 start/2330", "output": "Error: Commitment must not continue past midnight." },
-          { "input": "commitment edit C1 d/30 n/Reordered", "output": "Error: Invalid command format or missing fields\nExpected: commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]" },
+          { "input": "commitment edit C1 d/30 n/Reordered", "output": "Error: Invalid command format or missing fields\nExpected: commitment edit CNUMBER [n/NAME] [day/DAY|on/YYYY-MM-DD] [start/HHmm] [d/MINUTES] [from/YYYY-MM-DD until/YYYY-MM-DD]" },
           { "input": "commitment edit C1 day/SUN start/2330 d/30", "output": "Edited C1: 新 lecture | Sunday 23:30 - 24:00 (30 min)" },
           { "input": "hours monday", "output": "Study hours for monday: 14:00 - 19:00" },
           { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
@@ -208,7 +280,7 @@
         { "input": "task add n/A n/B due/2026-10-06 0900 d/30", "output": "Error: Invalid command format or missing fields\nExpected: task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES" },
         { "input": "task delete 1", "output": "Error: Invalid command format or missing fields\nExpected: task delete TNUMBER" },
         { "input": "task list extra", "output": "Error: This command accepts no arguments\nExpected: task list" },
-        { "input": "commitment add n/A day/mon start/1000 d/30", "output": "Error: Invalid command format or missing fields\nExpected: commitment add n/NAME day/DAY start/HHmm d/MINUTES" },
+        { "input": "commitment add n/A day/mon start/1000 d/30", "output": "Error: Invalid command format or missing fields\nExpected: commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD] OR commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES" },
         { "input": "schedule 2026-02-30", "output": "Error: Invalid date or time\nExpected: schedule today OR schedule YYYY-MM-DD" },
         { "input": "exit extra", "output": "Error: This command accepts no arguments\nExpected: exit" },
         { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
@@ -299,7 +371,7 @@
       ] }]
     },
     {
-      "id": "UI-016", "aim": "Extended saved tasks retain absence and completion, exact work and restart",
+      "id": "UI-019", "aim": "Extended saved tasks retain absence and completion, exact work and restart",
       "status": "active", "setup": "Extended version 2 store; existing commands only, no lifecycle CLI",
       "files": { "data/scheduleflow.txt": "SCHEDULEFLOW|2\nNEXT|4|1\nTASK2|1|NONE|45|NORMAL|Undated|draft\nTASK2|2|2000-01-01T09:00|0|NORMAL|Completed\nTASK2|3|2000-01-01T09:00|1|NORMAL|Old\nHOURS|monday|09:00|10:00\n" },
       "sessions": [

@@ -102,6 +102,68 @@ work; 30 capacity leaves 15 exact work and 30 unallocated capacity. Source
 estimates are never decremented. Totals must use long streams. Only the final
 session for a task can contain padding, and zero-work sessions are not created.
 
+### Continuous work and fixed breaks (issue #55, Planning API only)
+
+The Optimizer implementation is available through
+`new EarliestDeadlinePlanner(new StudyPolicy(90, 30))`. `StudyPolicy` validates
+positive multiples of 30 minutes for the continuous-work limit and required
+break. No numeric default is selected yet. The original no-argument planner
+and `Planner.generate(Snapshot, LocalDateTime)` remain usable, with the original
+unrestricted behavior until settings are integrated. No #55 command exists yet.
+
+Allocation now walks slots chronologically, choosing dated unfinished tasks by
+deadline, priority and numeric ID, then undated tasks by priority and ID. This
+retains deadline/ID order for equal-priority dated tasks while allowing one work
+counter to cover different tasks and commitments. Fixed
+commitments count even outside study windows and before the rounded generation
+cutoff. The counter starts at midnight on the generation date; activity before
+that date and past task study are not reconstructed. Across future dates,
+calendar midnight does not itself reset the counter: actual unoccupied time does.
+
+Tasks may immediately follow commitments while the combined work total is below
+the limit. At the limit, another task slot must wait for the configured consecutive
+rest. Short idle gaps retain accumulated work; any new work interrupts partial
+rest. Fixed commitments are never moved or shortened, even when they push the
+combined work total above the limit. The allocator does not reserve rest in
+anticipation of a future commitment. After an overrun of any size, one configured
+break suffices; proportional break scaling is deferred. Natural idle time,
+including time outside study hours, can satisfy all or part of the required rest.
+
+`Plan.breaks()` contains chronological immutable `ScheduleEntry` rows with
+`SlotKind.BREAK` and empty reference/name fields. Its original five-argument
+constructor remains available and supplies an empty break list. Relationships
+between sessions, breaks and commitments remain the planner's responsibility.
+Only eligible slots withheld from pending, deadline-eligible tasks are marked
+as breaks; natural rest and trailing idle time remain ordinary free/unplanned
+time. An interrupted break can therefore appear as separate partial rows, and
+a break may end at a deadline even if the task ultimately remains unallocated.
+`ScheduleService` projects frozen break rows without recomputing the policy.
+
+Integration handoff (ownership-marked comments are present at the relevant code):
+
+- **Printing/parsing:** agree on set/show/reset command grammar and defaults;
+  transport integer minutes and use `StudyPolicy` for domain validation. Update
+  `Command`, `CommandParser`, help, settings responses and dispatcher tests.
+- **Printing/dispatch:** obtain the current policy for each generation and use
+  the configured planner constructor. Settings changes must save before publication
+  and plan invalidation, preserving both settings and plan on failure. The existing
+  injected planner remains unchanged until this integration is implemented.
+- **Printing/rendering:** implement the explicit throwing `BREAK` switch branch
+  in `TextRenderer.formatScheduleRow` (proposed row: `09:30 - 10:00 | [BREAK]`).
+  Keep output based on supplied intervals; the renderer must not allocate breaks.
+- **Save:** coordinate adding settings to `Snapshot`, codec versioning and legacy
+  defaults. Ensure task, commitment and hours mutations preserve them. This change
+  does not modify the snapshot or saved format; #68 plan persistence is separate.
+
+Fixed-time JUnit tests cover cross-task limits, exact and 2x/3x commitment
+overruns, adjacent commitments, interrupted and partially elapsed breaks,
+pre-window commitments, cutoff rounding, overnight rest, deadline capacity,
+minute conservation, deterministic generation and frozen schedule projection.
+Record tests cover duration validation, anonymous break rows, immutable lists,
+ordering and the original plan constructor. #55 console acceptance remains
+planned until commands, persistence and rendering are integrated; existing
+active process scenarios exercise the no-argument planner.
+
 ### Configurable study hours
 
 `StudyWindow` validates positive same-day intervals on half-hour boundaries.
@@ -129,12 +191,14 @@ same-day, positive, aligned intervals; the planner enforces configured hours.
 four-argument constructor for default-window callers. Plans freeze their source
 settings, so later time or unrelated snapshots do not alter projections.
 
-The codec reads versions 1 and 2. It now always writes version 2, appending sorted
-`HOURS|TARGET|HH:mm|HH:mm` rows. Duplicate targets,
-invalid dates, unknown weekdays and invalid intervals reject the whole file.
-Existing version 1 files load with default hours. Previously written version 2
-files with legacy TASK rows and custom hours remain readable. Older applications
-cannot read the extended TASK2 records described below.
+The codec reads versions 1 through 4. New saves use at least version 2 for
+extended `TASK2` rows, version 3 when a commitment has date bounds and version 4
+when it has skipped occurrences. Version 3 stores inclusive start and end dates
+on every commitment row, using `-` for unbounded series; version 4 adds skipped
+dates. Sorted `HOURS|TARGET|HH:mm|HH:mm` rows retain custom study hours.
+Duplicate targets, invalid dates, unknown weekdays and invalid intervals reject
+the whole file. Legacy version 1 and earlier version 2 files with `TASK` rows
+remain readable. Older applications cannot read `TASK2` records.
 Atomic replacement still saves tasks, commitments, counters and hours together.
 
 JUnit coverage checks precedence/reset, immutable maps, input boundaries,
@@ -310,7 +374,7 @@ validate the complete snapshot, including overlaps and counters. Past deadlines
 remain valid; plans are never stored. Invalid data raises `StorageException`
 without returning a partial snapshot or modifying the file.
 
-All new writes use this actual version 2 layout:
+New writes without bounded or skipped commitments use this version 2 layout:
 
 ```text
 SCHEDULEFLOW|2
@@ -329,12 +393,17 @@ HIGH/NORMAL/LOW priority. Names stay last and may contain pipes. The distinct
 TASK2 discriminator avoids confusing legacy v2 names containing pipes with new
 fields. Version 2 also accepts the previous TASK rows unchanged, including their
 positive-half-hour validation; version 1 does not accept TASK2 or HOURS. Mixed
-legacy/extended rows still share normal duplicate-ID/counter validation. Tasks
-and commitments retain stored order; HOURS rows sort by target. No templates or
-plans are persisted. Loading either legacy version is read-only; the next save
-writes extended v2. FileStorage constructors and atomic save behavior are unchanged.
+legacy/extended rows still share normal duplicate-ID/counter validation. `TASK2`
+rows are also valid in versions 3 and 4, which add commitment bounds and skips.
+Tasks and commitments retain stored order; HOURS rows sort by target. No templates
+or plans are persisted. Loading legacy data is read-only; the next save writes
+extended version 2, 3 or 4. FileStorage constructors and atomic save behavior
+are unchanged.
 
-`StateCodecTest` covers the format and validation. `FileStorageTest` demonstrates
+`StateCodecTest` covers the format and validation, including `TASK2` records
+alongside bounded version 3 and skipped version 4 commitments. Planner tests
+cover exact credited minutes and retained completion under the optional break
+policy. `FileStorageTest` demonstrates
 a save followed by a fresh reader, replacement, missing/corrupt files, and
 deterministic filesystem failures with JUnit `@TempDir`. Run these tests with
 `.\gradlew.bat test --tests "scheduleflow.storage.*"` from the repository root.
@@ -565,6 +634,102 @@ New significant methods have scoped Darren50 author markers; existing shared CLI
 methods retain their attribution. Changes outside the commitment domain are limited
 to this command's transport, integration, output and acceptance tests.
 
+### Recurring commitment date bounds (issue #64)
+
+`Commitment` optionally stores a paired inclusive `startDate` and `endDate`.
+Both null means an unbounded legacy series. A bounded range must be ordered and
+contain at least one occurrence of the commitment weekday. `occursOn` is the
+single calendar-membership check used by allocation and schedule projection.
+Overlap requires intersecting times, the same weekday and at least one shared
+occurrence; therefore separate semesters may safely reuse a weekly time slot.
+
+Addition and editing accept the ordered optional suffix
+`from/YYYY-MM-DD until/YYYY-MM-DD`. The parser requires both fields and strict
+four-digit dates. Omitted edit bounds preserve the stored range. Success and list
+output show inclusive dates only for bounded series, retaining existing text for
+unbounded records. Version 3 storage writes two endpoint fields on every
+commitment row and uses `-|-` for unbounded rows in the same file. Versions 1 and
+2 remain readable, and stores without bounded commitments use version 2 on new saves.
+
+JUnit checks model boundaries, disjoint and intersecting semester overlaps,
+candidate immutability, parser syntax, version 3 round trips, planning and daily
+projection. UI-016 verifies validation, editing, restart persistence, conflict
+reporting and unconsumed retry IDs through the packaged application.
+
+### Skipping one recurring occurrence (issue #66)
+
+`Commitment` stores an immutable set of skipped calendar dates. `recursOn`
+checks the weekday and optional inclusive bounds without exceptions, while
+`occursOn` additionally excludes skipped dates. The constructor rejects a
+skipped date outside the series or on another weekday. Editing retains the set,
+so an edit that would move an existing exception outside the resulting series
+is rejected instead of silently losing it.
+
+`CommitmentService.skip` resolves the stable ID, rejects non-occurrence and
+duplicate dates, and replaces the record at its original stored position. The
+candidate preserves tasks, study hours and both ID counters. Printing saves the
+candidate before publishing it or returning `Skipped CNUMBER on DATE: NAME`;
+therefore save failure leaves the live snapshot, current plan and saved data
+unchanged. The command grammar is `commitment skip CNUMBER on/YYYY-MM-DD`.
+
+Overlap checks search the finite range whenever either series is bounded and
+require an unskipped shared occurrence. Two unbounded series always share a
+future occurrence because each stores only finitely many skipped dates. This
+allows another bounded commitment to use a cancelled date without weakening
+conflict checks on the remaining dates. The planner and schedule projection
+already use `occursOn`, so they require no separate exception logic.
+
+Version 4 storage adds one comma-separated skipped-date field to every
+commitment row, using `-` when a series has no exceptions. Dates are encoded in
+chronological order. Versions 1 through 3 remain readable, and the encoder
+selects version 2, 3 or 4 based on commitment fields while retaining `TASK2`
+rows in every new save. Model, service,
+parser, dispatcher, renderer, codec and planning regressions cover valid,
+invalid and rollback paths. UI-017 verifies exact output, restart persistence,
+released overlap and unconsumed IDs through the packaged JAR.
+
+### One-time commitments (issue #53)
+
+A one-time commitment is a `Commitment` whose inclusive `startDate` equals its
+`endDate`; its `day` is that date's weekday. `Commitment.isOneTime()` exposes the
+distinction. No record component, service operation, command type or storage
+version was added: the design reuses the issue #64 date-range model, so
+`occursOn` already blocks only that date in `EarliestDeadlinePlanner` and
+`ScheduleService`, and `overlaps` already compares the actual occurrence with
+recurring series (including skipped dates) and other one-time commitments.
+Version 3 rows such as `COMMITMENT|1|FRIDAY|14:00|60|2026-10-30|2026-10-30|NAME`
+store it, and version 4 is used only when some series also has skipped dates.
+Older stores remain readable unchanged.
+
+The alternative of an explicit kind flag would need a new record component,
+constructor overloads and a version 5 format while behaving identically. The
+trade-off is that a weekly series entered with the same `from/` and `until/`
+date is shown as one-time, which matches its single occurrence. The packaged
+UI-017 expectation for that input was updated accordingly.
+
+`CommandParser` accepts `on/YYYY-MM-DD` in the `day/` position of
+`commitment add` and `commitment edit`, and maps it to an ordinary
+`AddCommitment` or `EditCommitment` with the derived weekday and equal dates.
+Combining `on/` with `from/`/`until/` is a parse error; `day/` and `on/` are
+mutually exclusive in the grammar. Existing save-before-publish dispatch and
+ID allocation therefore apply unchanged: rejected input consumes no ID.
+
+`CommitmentService` adds the domain rules that differ from weekly series.
+`skip` rejects one-time commitments, and the constructor rejects a one-time
+record whose only date is skipped, so corrupt saved data cannot hold a
+commitment that never occurs. `edit` rejects `day/` alone on a one-time
+commitment because its weekday follows its date, and discards skipped dates
+when an edit produces a one-time result. `TextRenderer` shows
+`One-time on DATE (Weekday) HH:mm - HH:mm (N min)` in add/edit confirmations,
+and `commitments` lists one-time records in a separate section ordered by date
+after the weekly groups, preserving the service's start/ID order within a date.
+
+Model, service, parser, renderer, dispatcher (failed-save rollback and retry),
+codec, planner and schedule tests cover exact-date blocking, overlap with both
+kinds, adjacency, invalid input and restart persistence. UI-018 verifies the
+packaged command flow, validation messages, restart, edit, delete and ID reuse
+rules.
+
 ### Commitment deletion and listing
 
 `CommitmentService.delete` removes an entire weekly series by its stable numeric
@@ -780,6 +945,7 @@ estimates or commitments before the deadline.
 |Current|new user|see command help|refer to the supported syntax when I need it|
 |Current|student|add and list tasks with deadlines and estimates|keep track of unfinished coursework|
 |Current|student|add and remove recurring commitments|reserve my weekly busy periods|
+|Current|student with project meetings and other fixed events|add one-time commitments|keep those periods unavailable for studying|
 |Current|student|generate a plan and view a date's schedule|find available time before my deadlines|
 |Current|student|see unallocated work|recognize when my available time is insufficient|
 |Current|returning user|restore saved tasks and commitments|continue without reentering my data|
@@ -799,7 +965,8 @@ estimates or commitments before the deadline.
 ## Glossary
 
 * *Task* - A retained item with an optional deadline and exact remaining work; zero means complete.
-* *Commitment* - A busy interval repeated on one weekday until deleted.
+* *Commitment* - A busy interval repeated on one weekday, optionally within
+  inclusive dates, or a one-time busy interval on a single date.
 * *Snapshot* - Immutable tasks, commitments, study hours and independent next-ID counters.
 * *Plan* - Temporary allocations and unallocated work derived from a snapshot.
 * *Planning horizon* - The calendar range ending at midnight on the same date

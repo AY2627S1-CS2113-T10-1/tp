@@ -7,12 +7,14 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.TextStyle;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.StringJoiner;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.StudyHours;
 import scheduleflow.model.StudyWindow;
@@ -74,13 +76,21 @@ public final class TextRenderer {
                 "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES - Add a task.",
                 "task list - List stored tasks.",
                 "task delete TNUMBER - Delete a task.",
-                "commitment add n/NAME day/DAY start/HHmm d/MINUTES - Add a weekly commitment.",
-                "commitment list - List weekly commitments.",
-                "commitment delete CNUMBER - Delete a weekly commitment.",
+                "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
+                        + " [from/YYYY-MM-DD until/YYYY-MM-DD] - Add a weekly commitment.",
+                // @@author
+                "commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES - Add a one-time commitment.",
+                "commitment list - List weekly and one-time commitments.",
+                "commitment delete CNUMBER - Delete a weekly or one-time commitment.",
+                "commitment skip CNUMBER on/YYYY-MM-DD - Skip one occurrence.",
+                // @@author ka-how
                 "hours DAY|YYYY-MM-DD /start HH:mm /end HH:mm - Set study hours.",
                 "hours DAY|YYYY-MM-DD - View effective study hours (full lowercase weekday).",
                 "hours reset DAY|YYYY-MM-DD - Restore inherited study hours.",
-                "commitment edit CNUMBER [n/NAME] [day/DAY] [start/HHmm] [d/MINUTES]"
+                // @@author
+                "commitment edit CNUMBER [n/NAME] [day/DAY|on/YYYY-MM-DD] [start/HHmm] [d/MINUTES]"
+                        // @@author ka-how
+                        + " [from/YYYY-MM-DD until/YYYY-MM-DD]"
                         + " - Edit at least one field; saves and clears the plan. Run plan again.",
                 "plan - Generate or replace the study plan.",
                 "schedule today OR schedule YYYY-MM-DD - View a date in the current plan.",
@@ -216,9 +226,9 @@ public final class TextRenderer {
         Objects.requireNonNull(commitment, "commitment");
         LOGGER.log(Level.FINE, "Formatting commitment addition response");
         return finish("Added " + commitment.displayId() + ": " + commitment.name()
-                + " | " + formatWeekday(commitment.day())
-                + " " + TIME.format(commitment.start()) + " - " + formatCommitmentEnd(commitment)
-                + " (" + commitment.durationMinutes() + " min)");
+                // @@author
+                + " | " + formatCommitmentTiming(commitment));
+        // @@author ka-how
     }
 
     //@@author Darren50
@@ -233,9 +243,7 @@ public final class TextRenderer {
         Objects.requireNonNull(commitment, "commitment");
         LOGGER.fine("Formatting commitment edit response");
         return finish("Edited " + commitment.displayId() + ": " + commitment.name()
-                + " | " + formatWeekday(commitment.day())
-                + " " + TIME.format(commitment.start()) + " - " + formatCommitmentEnd(commitment)
-                + " (" + commitment.durationMinutes() + " min)");
+                + " | " + formatCommitmentTiming(commitment));
     }
     //@@author ka-how
 
@@ -252,11 +260,20 @@ public final class TextRenderer {
         return finish("Deleted commitment " + commitment.displayId() + ": " + commitment.name());
     }
 
+    //@@author Darren50
+    /** Formats confirmation after one recurring occurrence is successfully skipped and saved. */
+    public String commitmentSkipped(Commitment commitment, LocalDate date) {
+        Objects.requireNonNull(commitment, "commitment");
+        Objects.requireNonNull(date, "date");
+        return finish("Skipped " + commitment.displayId() + " on " + DATE.format(date) + ": " + commitment.name());
+    }
+    //@@author ka-how
+
     /**
-     * Formats the already sorted weekly commitments.
+     * Formats the already sorted commitments, listing weekly series before dated one-time commitments.
      *
      * @param commitments weekly series in service-supplied order, possibly empty
-     * @return weekday groups preserving supplied order within each group
+     * @return weekday groups preserving supplied order within each group, then one-time commitments by date
      * @throws NullPointerException if the list or an element is null
      */
     public String commitments(List<Commitment> commitments) {
@@ -266,6 +283,34 @@ public final class TextRenderer {
             return finish("No commitments found.");
         }
         StringJoiner lines = new StringJoiner("\n");
+        //@@author Darren50
+        List<Commitment> recurring = commitments.stream().filter(commitment -> !commitment.isOneTime()).toList();
+        if (!recurring.isEmpty()) {
+            appendRecurringCommitments(lines, recurring);
+        }
+        // A stable sort keeps the supplied start/ID order for one-time commitments on the same date.
+        List<Commitment> oneTime = commitments.stream().filter(Commitment::isOneTime)
+                .sorted(Comparator.comparing(Commitment::startDate)).toList();
+        if (!oneTime.isEmpty()) {
+            if (!recurring.isEmpty()) {
+                lines.add("");
+            }
+            lines.add("=== One-time Commitments ===");
+            for (Commitment commitment : oneTime) {
+                lines.add(commitment.displayId() + ". " + DATE.format(commitment.startDate())
+                        + " (" + formatWeekday(commitment.day()) + ") " + formatCommitmentTimes(commitment)
+                        + " | " + commitment.name());
+            }
+            lines.add("Total: " + oneTime.size() + " one-time commitments.");
+        }
+        return finish(lines.toString());
+    }
+
+    // @@author ka-how
+    /**
+     * Appends weekly series grouped by English weekday, preserving supplied order within each group.
+     */
+    private void appendRecurringCommitments(StringJoiner lines, List<Commitment> commitments) {
         lines.add("=== Recurring Weekly Commitments ===");
         for (DayOfWeek day : DayOfWeek.values()) {
             List<Commitment> group = commitments.stream().filter(commitment -> commitment.day() == day).toList();
@@ -275,12 +320,53 @@ public final class TextRenderer {
             lines.add("[" + formatWeekday(day) + "]");
             for (Commitment commitment : group) {
                 lines.add(commitment.displayId() + ". " + TIME.format(commitment.start()) + " - "
-                        + formatCommitmentEnd(commitment) + " | " + commitment.name());
+                        + formatCommitmentEnd(commitment) + " | " + commitment.name()
+                        // @@author
+                        + formatCommitmentRange(commitment) + formatCommitmentSkips(commitment));
+                // @@author ka-how
             }
             lines.add("");
         }
-        return finish(lines.add("Total: " + commitments.size() + " recurring commitments across the week.").toString());
+        lines.add("Total: " + commitments.size() + " recurring commitments across the week.");
     }
+
+    //@@author Darren50
+    /**
+     * Describes when a commitment occurs for addition and edit confirmations.
+     * Weekly series keep their legacy weekday text, while one-time commitments name their exact date.
+     */
+    private String formatCommitmentTiming(Commitment commitment) {
+        String interval = formatCommitmentTimes(commitment) + " (" + commitment.durationMinutes() + " min)";
+        if (commitment.isOneTime()) {
+            return "One-time on " + DATE.format(commitment.startDate()) + " ("
+                    + formatWeekday(commitment.day()) + ") " + interval;
+        }
+        return formatWeekday(commitment.day()) + " " + interval + formatCommitmentRange(commitment);
+    }
+
+    /** Formats the same-day start and end times shared by every commitment display. */
+    private String formatCommitmentTimes(Commitment commitment) {
+        return TIME.format(commitment.start()) + " - " + formatCommitmentEnd(commitment);
+    }
+
+    /** Appends inclusive date limits while preserving legacy output for unbounded series. */
+    private String formatCommitmentRange(Commitment commitment) {
+        if (commitment.startDate() == null) {
+            return "";
+        }
+        return " | " + DATE.format(commitment.startDate()) + " to " + DATE.format(commitment.endDate());
+    }
+
+    /** Appends skipped occurrences in chronological order while preserving legacy rows when none exist. */
+    private String formatCommitmentSkips(Commitment commitment) {
+        if (commitment.skippedDates().isEmpty()) {
+            return "";
+        }
+        String dates = commitment.skippedDates().stream().sorted().map(DATE::format)
+                .collect(Collectors.joining(", "));
+        return " | skipped: " + dates;
+    }
+    //@@author ka-how
 
     /**
      * Formats complete or partial allocation results with whole-plan totals.
@@ -419,6 +505,8 @@ public final class TextRenderer {
             case TASK -> range + " " + entry.reference() + ": " + entry.name()
                     + " (" + Duration.between(entry.start(), entry.end()).toMinutes() + " min)";
             case FREE, UNPLANNED -> range;
+            // TODO(Printing): implement TextRenderer.formatScheduleRow BREAK output for issue #55.
+            case BREAK -> throw new UnsupportedOperationException("Break rendering awaits Printing integration.");
         };
     }
 

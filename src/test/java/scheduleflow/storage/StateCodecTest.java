@@ -2,12 +2,15 @@ package scheduleflow.storage;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
@@ -21,6 +24,77 @@ import scheduleflow.model.TaskPriority;
  */
 class StateCodecTest {
     private final StateCodec codec = new StateCodec();
+
+    // @@author Darren50
+    @Test
+    void encodeAndDecode_boundedCommitments_usesVersionThreeAndRetainsLegacyRows() throws StorageException {
+        Commitment bounded = new Commitment(1, "Semester | lecture", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
+                LocalDate.of(2026, 8, 10), LocalDate.of(2026, 11, 16));
+        Commitment unbounded = new Commitment(2, "Weekly", DayOfWeek.TUESDAY, LocalTime.of(12, 0), 30);
+        Snapshot initial = new Snapshot(List.of(), List.of(bounded, unbounded), 1, 3);
+        Snapshot state = initial.withStudyHours(initial.studyHours()
+                .withWindow("monday", new StudyWindow(LocalTime.of(8, 0), LocalTime.of(20, 0))));
+        String expected = "SCHEDULEFLOW|3\nNEXT|1|3\n"
+                + "COMMITMENT|1|MONDAY|10:00|60|2026-08-10|2026-11-16|Semester | lecture\n"
+                + "COMMITMENT|2|TUESDAY|12:00|30|-|-|Weekly\n"
+                + "HOURS|monday|08:00|20:00\n";
+        assertEquals(expected, codec.encode(state));
+        assertEquals(state, codec.decode(expected));
+        assertThrows(StorageException.class, () -> codec.decode("SCHEDULEFLOW|3\nNEXT|1|2\n"
+                + "COMMITMENT|1|MONDAY|10:00|60|2026-08-10|-|Lecture\n"));
+        assertThrows(StorageException.class, () -> codec.decode("SCHEDULEFLOW|3\nNEXT|1|2\n"
+                + "COMMITMENT|1|MONDAY|10:00|60|2026-11-16|2026-08-10|Lecture\n"));
+    }
+
+    @Test
+    void encodeAndDecode_skippedOccurrences_usesVersionFourAndValidatesDates() throws StorageException {
+        LocalDate first = LocalDate.of(2026, 8, 10);
+        LocalDate second = first.plusWeeks(1);
+        Commitment skipped = new Commitment(1, "Semester | lecture", DayOfWeek.MONDAY,
+                LocalTime.of(10, 0), 60, first, second, Set.of(second, first));
+        Commitment ordinary = new Commitment(2, "Weekly", DayOfWeek.TUESDAY, LocalTime.NOON, 30);
+        Snapshot state = new Snapshot(List.of(), List.of(skipped, ordinary), 1, 3);
+        String expected = "SCHEDULEFLOW|4\nNEXT|1|3\n"
+                + "COMMITMENT|1|MONDAY|10:00|60|2026-08-10|2026-08-17|2026-08-10,2026-08-17|"
+                + "Semester | lecture\n"
+                + "COMMITMENT|2|TUESDAY|12:00|30|-|-|-|Weekly\n";
+        assertEquals(expected, codec.encode(state));
+        assertEquals(state, codec.decode(expected));
+        for (String skippedToken : List.of("2026-08-10,2026-08-10", "2026-08-11", "")) {
+            assertThrows(StorageException.class, () -> codec.decode("SCHEDULEFLOW|4\nNEXT|1|2\n"
+                    + "COMMITMENT|1|MONDAY|10:00|60|2026-08-10|2026-08-17|" + skippedToken
+                    + "|Lecture\n"));
+        }
+    }
+
+    @Test
+    void encodeAndDecode_oneTimeCommitments_reuseDateRangeFormatsAndRejectNeverOccurringRows()
+            throws StorageException {
+        LocalDate friday = LocalDate.of(2026, 10, 30);
+        Commitment meeting = new Commitment(1, "Project | meeting", DayOfWeek.FRIDAY, LocalTime.of(14, 0), 60,
+                friday, friday);
+        Commitment weekly = new Commitment(2, "Weekly", DayOfWeek.TUESDAY, LocalTime.NOON, 30);
+        Snapshot oneTimeOnly = new Snapshot(List.of(), List.of(meeting, weekly), 1, 3);
+        String versionThree = "SCHEDULEFLOW|3\nNEXT|1|3\n"
+                + "COMMITMENT|1|FRIDAY|14:00|60|2026-10-30|2026-10-30|Project | meeting\n"
+                + "COMMITMENT|2|TUESDAY|12:00|30|-|-|Weekly\n";
+        assertEquals(versionThree, codec.encode(oneTimeOnly));
+        assertEquals(oneTimeOnly, codec.decode(versionThree));
+
+        Commitment skipped = new Commitment(3, "Lecture", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
+                LocalDate.of(2026, 10, 19), LocalDate.of(2026, 10, 26), Set.of(LocalDate.of(2026, 10, 19)));
+        Snapshot withSkips = new Snapshot(List.of(), List.of(meeting, skipped), 1, 4);
+        String versionFour = codec.encode(withSkips);
+        assertEquals("SCHEDULEFLOW|4\nNEXT|1|4\n"
+                + "COMMITMENT|1|FRIDAY|14:00|60|2026-10-30|2026-10-30|-|Project | meeting\n"
+                + "COMMITMENT|3|MONDAY|10:00|60|2026-10-19|2026-10-26|2026-10-19|Lecture\n", versionFour);
+        assertEquals(withSkips, codec.decode(versionFour));
+
+        for (String row : List.of("COMMITMENT|1|FRIDAY|14:00|60|2026-10-30|2026-10-30|2026-10-30|Meeting",
+                "COMMITMENT|1|MONDAY|14:00|60|2026-10-30|2026-10-30|-|Meeting")) {
+            assertThrows(StorageException.class, () -> codec.decode("SCHEDULEFLOW|4\nNEXT|1|2\n" + row + "\n"));
+        }
+    }
 
     // @@author GabrielYuSP
     @Test
@@ -127,6 +201,31 @@ class StateCodecTest {
                 + "TASK2|1|2000-01-02T09:00|1|HIGH|Minute\nTASK2|2|NONE|2147483647|LOW|Large\n"
                 + "HOURS|monday|09:00|10:00\n", codec.encode(state));
         assertEquals(state, codec.decode(codec.encode(state)));
+    }
+
+    @Test
+    void encodeAndDecode_extendedTasksWithBoundedAndSkippedCommitments_preservesBothVersions()
+            throws StorageException {
+        Task completed = Task.withoutDeadline(2, "Finished|draft", 0);
+        Task remaining = new Task(1, "Remaining", Optional.of(LocalDateTime.of(2026, 11, 2, 18, 0)),
+                45, TaskPriority.HIGH);
+        Commitment bounded = new Commitment(1, "Semester", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
+                LocalDate.of(2026, 10, 19), LocalDate.of(2026, 11, 2));
+        Snapshot versionThree = new Snapshot(List.of(completed, remaining), List.of(bounded), 3, 2);
+        String encodedThree = codec.encode(versionThree);
+        assertTrue(encodedThree.startsWith("SCHEDULEFLOW|3\nNEXT|3|2\n"
+                + "TASK2|2|NONE|0|NORMAL|Finished|draft\n"
+                + "TASK2|1|2026-11-02T18:00|45|HIGH|Remaining\n"));
+        assertEquals(versionThree, codec.decode(encodedThree));
+
+        Commitment skipped = new Commitment(1, "Semester", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
+                LocalDate.of(2026, 10, 19), LocalDate.of(2026, 11, 2), Set.of(LocalDate.of(2026, 10, 26)));
+        Snapshot versionFour = new Snapshot(List.of(completed, remaining), List.of(skipped), 3, 2);
+        String encodedFour = codec.encode(versionFour);
+        assertTrue(encodedFour.startsWith("SCHEDULEFLOW|4\nNEXT|3|2\n"
+                + "TASK2|2|NONE|0|NORMAL|Finished|draft\n"
+                + "TASK2|1|2026-11-02T18:00|45|HIGH|Remaining\n"));
+        assertEquals(versionFour, codec.decode(encodedFour));
     }
 
     @Test

@@ -131,7 +131,8 @@ class CommandDispatcherTest {
         AppState state = new AppState(storage.saved);
         CommandDispatcher dispatcher = dispatcher(storage, clock);
         List<Command> commands = List.of(new Command.Help(), addTask(), new Command.ListTasks(),
-                new Command.DeleteTask(1), addCommitment(), new Command.ListCommitments(),
+                new Command.DeleteTask(1), addCommitment(),
+                new Command.SkipCommitment(1, NOW.toLocalDate()), new Command.ListCommitments(),
                 new Command.DeleteCommitment(1), new Command.GeneratePlan(), new Command.ScheduleToday(),
                 new Command.ScheduleDate(NOW.toLocalDate()), new Command.Exit());
         for (Command command : commands) {
@@ -140,10 +141,76 @@ class CommandDispatcherTest {
             assertEquals(command instanceof Command.Exit, response.shouldExit());
         }
         assertEquals(commands.size(), clock.reads);
-        assertEquals(4, storage.saveCalls);
-        assertEquals(NOW.plusSeconds(7), state.currentPlan().orElseThrow().generatedAt());
+        assertEquals(5, storage.saveCalls);
+        assertEquals(NOW.plusSeconds(8), state.currentPlan().orElseThrow().generatedAt());
         assertEquals(Snapshot.empty().tasks(), state.snapshot().tasks());
     }
+
+    //@@author Darren50
+    @Test
+    void execute_skipCommitment_savesExceptionAndInvalidatesPlan() throws Exception {
+        Snapshot original = populatedSnapshot();
+        AppState state = new AppState(original);
+        state.replacePlan(new EarliestDeadlinePlanner().generate(original, NOW));
+        FakeStorage storage = new FakeStorage(original);
+
+        CommandResponse response = dispatcher(storage, CLOCK).execute(
+                new Command.SkipCommitment(2, NOW.toLocalDate()), state);
+
+        assertEquals("Skipped C2 on 2026-09-21: Class", response.output());
+        assertEquals(1, storage.saveCalls);
+        assertSame(storage.saved, state.snapshot());
+        assertEquals(List.of(NOW.toLocalDate()), state.snapshot().commitments().getFirst()
+                .skippedDates().stream().toList());
+        assertTrue(state.currentPlan().isEmpty());
+        assertTrue(original.commitments().getFirst().skippedDates().isEmpty());
+    }
+
+    @Test
+    void execute_oneTimeCommitment_savesBeforePublishingAndBlocksOnlyThatDate() throws Exception {
+        Snapshot original = populatedSnapshot();
+        AppState state = new AppState(original);
+        Plan plan = new EarliestDeadlinePlanner().generate(original, NOW);
+        state.replacePlan(plan);
+        FakeStorage storage = new FakeStorage(original);
+        CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
+        CommandParser parser = new CommandParser();
+        Command add = parser.parse("commitment add n/Meeting on/2026-09-21 start/1100 d/60");
+
+        storage.failSave = true;
+        assertThrows(StorageException.class, () -> dispatcher.execute(add, state));
+        assertSame(original, state.snapshot());
+        assertSame(plan, state.currentPlan().orElseThrow());
+        storage.failSave = false;
+        assertEquals("Added C3: Meeting | One-time on 2026-09-21 (Monday) 11:00 - 12:00 (60 min)",
+                dispatcher.execute(add, state).output());
+        assertSame(storage.saved, state.snapshot());
+        assertTrue(state.currentPlan().isEmpty());
+        assertEquals(4, state.snapshot().nextCommitmentId());
+
+        int saves = storage.saveCalls;
+        Snapshot added = state.snapshot();
+        for (String input : List.of("commitment add n/Clash on/2026-09-21 start/1030 d/60",
+                "commitment add n/Weekly day/MON start/1130 d/30", "commitment skip C3 on/2026-09-21")) {
+            assertThrows(ValidationException.class, () -> dispatcher.execute(parser.parse(input), state));
+        }
+        assertSame(added, state.snapshot());
+        assertEquals(saves, storage.saveCalls);
+
+        dispatcher.execute(new Command.GeneratePlan(), state);
+        String today = dispatcher.execute(new Command.ScheduleToday(), state).output();
+        assertTrue(today.contains("10:00 - 11:00 | [BUSY] C2: Class\n11:00 - 12:00 | [BUSY] C3: Meeting"));
+        String nextWeek = dispatcher.execute(new Command.ScheduleDate(NOW.toLocalDate().plusWeeks(1)), state)
+                .output();
+        assertTrue(nextWeek.contains("10:00 - 11:00 | [BUSY] C2: Class\n11:00 - 22:00 | [FREE]"));
+        assertTrue(dispatcher.execute(new Command.ListCommitments(), state).output()
+                .endsWith("=== One-time Commitments ===\nC3. 2026-09-21 (Monday) 11:00 - 12:00 | Meeting"
+                        + "\nTotal: 1 one-time commitments."));
+        assertEquals("Deleted commitment C3: Meeting",
+                dispatcher.execute(new Command.DeleteCommitment(3), state).output());
+        assertEquals(List.of(2), state.snapshot().commitments().stream().map(Commitment::id).toList());
+    }
+    //@@author ka-how
 
     @Test
     void execute_eachMutation_savesBeforePublishingAndClearsPlan() throws Exception {
@@ -208,6 +275,8 @@ class CommandDispatcherTest {
                 new Command.AddCommitment("Overlap", DayOfWeek.MONDAY, LocalTime.of(10, 30), 30),
                 new Command.AddCommitment("Too long", DayOfWeek.MONDAY, LocalTime.of(23, 30), 60),
                 new Command.DeleteTask(99), new Command.DeleteCommitment(99),
+                new Command.SkipCommitment(99, NOW.toLocalDate()),
+                new Command.SkipCommitment(2, NOW.toLocalDate().plusDays(1)),
                 new Command.EditCommitment(99, "Missing", null, null, null),
                 new Command.EditCommitment(2, null, null, null, null),
                 new Command.EditCommitment(2, null, null, LocalTime.of(23, 30), 60));
@@ -490,7 +559,8 @@ class CommandDispatcherTest {
     private List<Command> mutations() {
         return List.of(addTask(), new Command.DeleteTask(2), addCommitment(), new Command.DeleteCommitment(2),
                 new Command.EditCommitment(2, "Edited", null, LocalTime.NOON, 30),
-                new Command.EditCommitment(2, "Class", null, null, null));
+                new Command.EditCommitment(2, "Class", null, null, null),
+                new Command.SkipCommitment(2, NOW.toLocalDate()));
     }
 
     /**
@@ -523,6 +593,9 @@ class CommandDispatcherTest {
         if (command instanceof Command.EditCommitment edit) {
             return edit.name().equals("Class") ? "Edited C2: Class | Monday 10:00 - 11:00 (60 min)"
                     : "Edited C2: Edited | Monday 12:00 - 12:30 (30 min)";
+        }
+        if (command instanceof Command.SkipCommitment) {
+            return "Skipped C2 on 2026-09-21: Class";
         }
         return "Deleted commitment C2: Class";
     }
