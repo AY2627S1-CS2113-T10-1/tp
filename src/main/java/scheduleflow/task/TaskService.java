@@ -150,6 +150,46 @@ public final class TaskService {
         }
     }
 
+    // @@author ernestgoh-god
+    /**
+     * Replaces one task's estimate without treating the difference as completed work.
+     * The current task model requires positive 30-minute multiples and has no completed state.
+     *
+     * @param state immutable source snapshot
+     * @param taskId numeric suffix of an existing task identifier
+     * @param remaining new remaining-work estimate in positive 30-minute multiples
+     * @return a replacement candidate, or the original instance when the estimate is unchanged
+     * @throws NullPointerException if state is null
+     * @throws ValidationException if the task is unknown or the estimate is invalid
+     */
+    public Snapshot reviseRemaining(Snapshot state, int taskId, int remaining) {
+        Objects.requireNonNull(state, "state");
+        LOGGER.log(Level.FINE, "Starting task remaining-work revision");
+        try {
+            Task original = state.tasks().stream().filter(task -> task.id() == taskId).findFirst()
+                    .orElseThrow(() -> new ValidationException("Unknown task ID: T" + taskId));
+            Task revised = new Task(original.id(), original.name(), original.deadline(), remaining);
+            if (revised.equals(original)) {
+                LOGGER.log(Level.FINE, "Task estimate unchanged; source snapshot returned");
+                return state;
+            }
+            List<Task> revisedTasks = new ArrayList<>(state.tasks());
+            revisedTasks.set(revisedTasks.indexOf(original), revised);
+            Snapshot candidate = new Snapshot(revisedTasks, state.commitments(), state.nextTaskId(),
+                    state.nextCommitmentId(), state.studyHours());
+            assert candidate.tasks().size() == state.tasks().size()
+                    && candidate.tasks().stream().filter(task -> task.id() != taskId).toList()
+                            .equals(state.tasks().stream().filter(task -> task.id() != taskId).toList())
+                    : "Revision must replace only the selected task";
+            LOGGER.log(Level.FINE, "Task revision candidate created; not yet saved or published");
+            return candidate;
+        } catch (ValidationException exception) {
+            LOGGER.log(Level.FINE, "Task remaining-work revision rejected; source snapshot unchanged");
+            throw exception;
+        }
+    }
+    // @@author nickpatt
+
     /**
      * Removes a known task from a candidate while preserving both counters.
      * Preserves every other record and its stored order; deleted IDs are never reused.

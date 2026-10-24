@@ -64,6 +64,18 @@ public final class TextRenderer {
         // TODO(ka-how): implement task progress confirmation and exact-output tests.
         throw new UnsupportedOperationException("Task progress rendering is not implemented yet.");
     }
+
+    /**
+     * Reserves the confirmation for a revised task estimate.
+     *
+     * @param task validated task candidate with its revised remaining minutes
+     * @return confirmation text once Printing implements this method
+     * @throws UnsupportedOperationException until Printing supplies the response
+     */
+    public String taskRemainingUpdated(Task task) {
+        // TODO(ka-how): implement confirmation, add command help, and activate exact-output UI tests.
+        throw new UnsupportedOperationException("Task remaining-work rendering is not implemented yet.");
+    }
     // @@author ka-how
 
     /**

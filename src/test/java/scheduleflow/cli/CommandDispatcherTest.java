@@ -513,6 +513,34 @@ class CommandDispatcherTest {
                 List.of(new Commitment(2, "Class", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60)), 3, 3);
     }
 
+    // @@author ernestgoh-god
+    @Test
+    void execute_reviseTaskRemaining_pendingPrintingPreservesSavedAndLiveState() throws Exception {
+        Snapshot original = populatedSnapshot();
+        AppState state = new AppState(original);
+        Plan plan = new EarliestDeadlinePlanner().generate(original, NOW);
+        state.replacePlan(plan);
+        FakeStorage storage = new FakeStorage(original);
+        CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
+        for (int minutes : List.of(30, 90)) {
+            ValidationException failure = assertThrows(ValidationException.class,
+                    () -> dispatcher.execute(new Command.ReviseTaskRemaining(2, minutes), state));
+            assertEquals("Revising remaining work is awaiting printing.", failure.getMessage());
+            assertSame(original, state.snapshot());
+            assertSame(original, storage.saved);
+            assertSame(plan, state.currentPlan().orElseThrow());
+            assertEquals(0, storage.saveCalls);
+        }
+        for (Command.ReviseTaskRemaining command : List.of(new Command.ReviseTaskRemaining(99, 90),
+                new Command.ReviseTaskRemaining(2, 0), new Command.ReviseTaskRemaining(2, 45))) {
+            assertThrows(ValidationException.class, () -> dispatcher.execute(command, state));
+            assertSame(original, state.snapshot());
+            assertSame(plan, state.currentPlan().orElseThrow());
+            assertEquals(0, storage.saveCalls);
+        }
+    }
+    // @@author ka-how
+
     /**
      * Supplies all mutation paths against the same initial records.
      */

@@ -5,6 +5,13 @@ acceptance remains planned until task-service integration, dispatcher
 transactions and Printing's confirmation are implemented. Existing active
 scenarios continue to exercise the unchanged console commands.
 
+Issue #41 remaining-work parsing, service candidates, saved-candidate reload,
+planning demand and pending dispatcher behaviour have JUnit coverage. The
+renderer confirmation remains a Ka How TODO.
+Packaged successful revision, restart and save-failure acceptance remain planned;
+the current command reports a recoverable pending error without saving or
+clearing the plan. Existing active fixtures do not claim issue #41 completion.
+
 All eighteen maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code

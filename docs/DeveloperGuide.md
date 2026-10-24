@@ -398,6 +398,23 @@ tagged to the commit author until Ka How implements its real output. Progress
 acceptance and rollback tests remain pending integration with the task service
 and renderer.
 
+Issue #41 parses `task remaining TNUMBER remaining/MINUTES` into
+`ReviseTaskRemaining` without reading state. The parser requires positive decimal
+tokens; `TaskService.reviseRemaining` checks the ID and applies the current task
+model's positive 30-minute-multiple rule. It replaces only the estimate at the
+stored position, preserves both counters, commitments and study hours, and
+returns the original snapshot for an unchanged estimate. The dispatcher prepares
+the candidate and its confirmation before saving. After Printing implements
+`TextRenderer.taskRemainingUpdated`, changed candidates will save before live
+publication and plan invalidation; unchanged candidates will not save.
+The Ka How confirmation remains a throwing skeleton. Until it is implemented,
+the command reports a recoverable pending message and changes neither saved nor
+live state. Parser, service and pending-dispatch tests cover the current contract;
+successful save/restart and exact-output acceptance require Printing's response.
+The Task regression also saves a revised candidate to an isolated file, reloads
+it and verifies that planning sees the higher demand. Scoped Ernest tags mark
+this issue's additions without claiming existing Task or Printing code.
+
 `CommandParser.parse` implements all command formats in the User Guide and
 returns the existing nested `Command` records. The parser has no clock, storage
 or application-state dependency. `schedule today` produces `Command.ScheduleToday`;

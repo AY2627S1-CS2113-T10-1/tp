@@ -73,6 +73,10 @@ public sealed interface Command {
     }
 
     // @@author ernestgoh-god
+    /** Carries a replacement remaining-work estimate for a stored task. */
+    record ReviseTaskRemaining(int id, int remainingMinutes) implements Command {
+    }
+
     /** Carries reported whole minutes of completed task work. */
     record RecordTaskWork(int id, int doneMinutes) implements Command {
     }

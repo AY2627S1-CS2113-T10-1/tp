@@ -130,6 +130,14 @@ does not reduce either stored value. Saving and loading preserve both values.
 
 Every stored task represents unfinished work. Its duration is your estimate of the work still required. Generating a plan or letting time pass does not reduce that estimate.
 
+> **Pending issue #41 command:** `task remaining T1 remaining/90` will replace
+> a task's estimate with 90 minutes; it does not record completed work. The
+> parser, validation and save wiring are prepared, but Printing has not supplied
+> the confirmation. Until then, this command reports
+> `Error: Revising remaining work is awaiting printing.` and leaves saved data
+> and the current plan unchanged. The current task model accepts positive
+> multiples of 30 minutes, so `remaining/45` is rejected.
+
 > **Planned issue #40 command:** The parser recognizes `task progress T1 done/30`
 > and `task progress T1 session/60 percent/50`, but the application does not
 > execute them yet. Use the existing task commands until progress dispatch and

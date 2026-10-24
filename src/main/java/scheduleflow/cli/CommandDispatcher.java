@@ -115,6 +115,7 @@ public final class CommandDispatcher {
                     "Task progress is awaiting task-service integration.");
             case Command.RecordTaskSession ignored -> throw new ValidationException(
                     "Task progress is awaiting task-service integration.");
+            case Command.ReviseTaskRemaining revise -> reviseTaskRemaining(revise, state);
             // @@author ka-how
             case Command.AddCommitment add -> addCommitment(add, state);
             case Command.EditCommitment edit -> editCommitment(edit, state);
@@ -174,6 +175,41 @@ public final class CommandDispatcher {
         saveAndCommit(candidate, state);
         return renderer.taskDeleted(removed);
     }
+
+    // @@author ernestgoh-god
+    /**
+     * Validates a revised estimate and prepares its response before any save or publication.
+     *
+     * @param command task ID and replacement remaining minutes
+     * @param state live snapshot and temporary plan
+     * @return confirmation for a successfully saved revision
+     * @throws StorageException if the candidate cannot be saved
+     * @throws ValidationException if the task or estimate is invalid, or printing is still pending
+     */
+    private String reviseTaskRemaining(Command.ReviseTaskRemaining command, AppState state) throws StorageException {
+        LOGGER.log(Level.FINE, "Validating task remaining-work revision");
+        Snapshot original = state.snapshot();
+        Snapshot candidate = tasks.reviseRemaining(original, command.id(), command.remainingMinutes());
+        Task revised = candidate.tasks().stream().filter(task -> task.id() == command.id())
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Validated revision is missing its target."));
+        String confirmation;
+        try {
+            confirmation = Objects.requireNonNull(renderer.taskRemainingUpdated(revised),
+                    "task remaining confirmation");
+        } catch (UnsupportedOperationException exception) {
+            if (!"Task remaining-work rendering is not implemented yet.".equals(exception.getMessage())) {
+                throw exception;
+            }
+            LOGGER.log(Level.FINE, "Task revision confirmation is still pending");
+            throw new ValidationException("Revising remaining work is awaiting printing.");
+        }
+        if (candidate != original) {
+            saveAndCommit(candidate, state);
+        }
+        return confirmation;
+    }
+    // @@author ka-how
 
     /**
      * Saves a validated weekly series before clearing the temporary plan or announcing success.
