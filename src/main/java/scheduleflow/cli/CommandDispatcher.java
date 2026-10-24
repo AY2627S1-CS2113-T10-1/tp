@@ -11,6 +11,7 @@ import java.util.logging.Logger;
 import scheduleflow.common.ValidationException;
 import scheduleflow.commitment.CommitmentService;
 import scheduleflow.model.Commitment;
+import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.StudyHours;
 import scheduleflow.model.StudyWindow;
@@ -20,6 +21,7 @@ import scheduleflow.planning.Planner;
 import scheduleflow.planning.ScheduleService;
 import scheduleflow.storage.Storage;
 import scheduleflow.storage.StorageException;
+import scheduleflow.task.RecurringTaskService;
 import scheduleflow.task.TaskService;
 
 /**
@@ -61,6 +63,11 @@ public final class CommandDispatcher {
      * Supplies the single time capture for each command execution.
      */
     private final Clock clock;
+
+    // @@author nickpatt
+    /** Materializes immutable weekly-task candidates using the same captured command time. */
+    private final RecurringTaskService recurringTasks = new RecurringTaskService();
+    // @@author ka-how
 
     /**
      * Creates the CommandDispatcher dependencies without performing I/O.
@@ -110,6 +117,11 @@ public final class CommandDispatcher {
             case Command.AddTask add -> addTask(add, state, now);
             case Command.ListTasks ignored -> renderer.tasks(tasks.list(state.snapshot()));
             case Command.DeleteTask delete -> deleteTask(delete.id(), state);
+            // @@author nickpatt
+            case Command.EditTask edit -> editTask(edit, state, now);
+            case Command.AddRecurringTask add -> addRecurringTask(add, state, now);
+            case Command.ListRecurringTasks ignored -> renderer.recurringTasks(recurringTasks.list(state.snapshot()));
+            case Command.DeleteRecurringTask delete -> deleteRecurringTask(delete.id(), state);
             // @@author ernestgoh-god
             case Command.RecordTaskWork work -> recordTaskWork(work, state);
             case Command.RecordTaskSession session -> recordTaskSession(session, state);
@@ -173,6 +185,44 @@ public final class CommandDispatcher {
         saveAndCommit(candidate, state);
         return renderer.taskDeleted(removed);
     }
+
+    // @@author nickpatt
+    /** Saves changed details before publication; normalized no-ops preserve both disk and current plan. */
+    private String editTask(Command.EditTask command, AppState state, LocalDateTime now) throws StorageException {
+        Snapshot original = state.snapshot();
+        Snapshot candidate = tasks.edit(original, command.id(), command.edit(), now);
+        Task edited = candidate.tasks().stream().filter(task -> task.id() == command.id()).findFirst().orElseThrow();
+        String confirmation = renderer.taskEdited(edited);
+        if (candidate != original) {
+            saveAndCommit(candidate, state);
+        }
+        return confirmation;
+    }
+
+    /** Saves a template, generated tasks, processing cursors and all counters in one transaction. */
+    private String addRecurringTask(Command.AddRecurringTask command, AppState state, LocalDateTime now)
+            throws StorageException {
+        Snapshot original = state.snapshot();
+        Snapshot candidate = recurringTasks.add(original, command.name(), command.firstDeadline(), command.minutes(),
+                command.until(), now);
+        RecurringTask added = candidate.recurringTasks().stream()
+                .filter(task -> task.id() == original.nextRecurringTaskId()).findFirst().orElseThrow();
+        String confirmation = renderer.recurringTaskAdded(added);
+        saveAndCommit(candidate, state);
+        return confirmation;
+    }
+
+    /** Stops only future generation; saved task occurrences and all ID sequences are retained. */
+    private String deleteRecurringTask(int id, AppState state) throws StorageException {
+        Snapshot original = state.snapshot();
+        Snapshot candidate = recurringTasks.delete(original, id);
+        RecurringTask removed = original.recurringTasks().stream().filter(task -> task.id() == id)
+                .findFirst().orElseThrow();
+        String confirmation = renderer.recurringTaskDeleted(removed);
+        saveAndCommit(candidate, state);
+        return confirmation;
+    }
+    // @@author ka-how
 
     // @@author ernestgoh-god
     /**
@@ -349,12 +399,22 @@ public final class CommandDispatcher {
     /**
      * Replaces the complete temporary plan without changing or saving task estimates.
      */
-    private String generatePlan(AppState state, LocalDateTime now) {
+    private String generatePlan(AppState state, LocalDateTime now) throws StorageException {
         LOGGER.log(Level.FINE, "Generating temporary plan");
-        Plan plan = Objects.requireNonNull(planner.generate(state.snapshot(), now), "generated plan");
+        // @@author nickpatt
+        Snapshot candidate = recurringTasks.materialize(state.snapshot(), now);
+        Plan plan = Objects.requireNonNull(planner.generate(candidate, now), "generated plan");
+        if (!plan.source().equals(candidate)) {
+            throw new IllegalArgumentException("Generated plan must use the validated source snapshot.");
+        }
+        String output = renderer.plan(plan);
+        if (candidate != state.snapshot()) {
+            saveAndCommit(candidate, state);
+        }
+        // @@author ka-how
         state.replacePlan(plan);
         LOGGER.log(Level.FINE, "Temporary plan published; formatting result");
-        return renderer.plan(plan);
+        return output;
     }
 
     /**

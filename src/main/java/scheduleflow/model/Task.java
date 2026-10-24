@@ -18,14 +18,27 @@ import scheduleflow.common.ValidationException;
  * @param deadline optional local deadline with minute precision and a year from 0001 to 9999
  * @param remainingMinutes nonnegative whole remaining-work minutes
  * @param priority stored priority, defaulting to NORMAL for legacy callers
+ * @param occurrence immutable weekly provenance, absent for ordinary tasks
  */
 public record Task(int id, String name, Optional<LocalDateTime> deadline, int remainingMinutes,
-        TaskPriority priority) {
+        TaskPriority priority, Optional<TaskOccurrence> occurrence) {
     /**
      * Records opt-in structural validation stages without task values or exception payloads.
      */
     private static final Logger LOGGER = Logger.getLogger(Task.class.getName());
     // @@author
+
+    /** Creates an ordinary task with an optional deadline and explicit priority. */
+    public Task(int id, String name, Optional<LocalDateTime> deadline, int remainingMinutes,
+            TaskPriority priority) {
+        this(id, name, deadline, remainingMinutes, priority, Optional.empty());
+    }
+
+    /** Creates a dated recurrence occurrence with default priority. */
+    public Task(int id, String name, LocalDateTime deadline, int remainingMinutes,
+            Optional<TaskOccurrence> occurrence) {
+        this(id, name, Optional.of(requireDeadline(deadline)), remainingMinutes, TaskPriority.NORMAL, occurrence);
+    }
 
     /**
      * Creates a structurally valid task and normalizes its name.
@@ -34,6 +47,7 @@ public record Task(int id, String name, Optional<LocalDateTime> deadline, int re
      * @throws ValidationException if the ID, name, deadline or duration violates a structural rule
      */
     public Task {
+        Objects.requireNonNull(occurrence, "occurrence");
         // @@author nickpatt
         LOGGER.log(Level.FINE, "Starting task structural validation");
         try {

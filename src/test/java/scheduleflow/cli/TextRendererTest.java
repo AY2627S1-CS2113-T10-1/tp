@@ -19,6 +19,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
 import scheduleflow.model.Commitment;
+import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
 import scheduleflow.planning.EarliestDeadlinePlanner;
@@ -43,6 +44,35 @@ class TextRendererTest {
     private static final LocalDateTime NOW = DATE.atTime(7, 0);
     private final TextRenderer renderer = new TextRenderer();
 
+    @Test
+    void recurringTasks_exactMessages_preserveDefinitionsAndFraming() {
+        RecurringTask bounded = new RecurringTask(2, LONG_NAME, DEADLINE,
+                Optional.of(DEADLINE.toLocalDate().plusWeeks(1)), 90, Optional.of(DEADLINE));
+        RecurringTask unbounded = new RecurringTask(10, "Review", DEADLINE, Optional.empty(), 30, Optional.empty());
+        String details = "Weekly from: 2027-01-01 09:05 | Duration: 90 min | Until: 2027-01-08";
+        assertOutput("Added R2: " + LONG_NAME + "\n" + details, renderer.recurringTaskAdded(bounded));
+        assertOutput("Deleted recurring task R2: " + LONG_NAME + "\nExisting task occurrences are retained.",
+                renderer.recurringTaskDeleted(bounded));
+        assertOutput("No recurring tasks found.", renderer.recurringTasks(List.of()));
+        assertOutput("=== Weekly Recurring Tasks ===\nR2 | " + LONG_NAME + " | " + details
+                + "\nR10 | Review | Weekly from: 2027-01-01 09:05 | Duration: 30 min | Until: No end date"
+                + "\nTotal: 2 recurring task(s).", renderer.recurringTasks(List.of(bounded, unbounded)));
+        assertOutput("Edited T2: " + LONG_NAME + "\nDue: 2027-01-01 09:05 | Duration: 90 min",
+                renderer.taskEdited(new Task(2, LONG_NAME, DEADLINE, 90)));
+    }
+
+    @Test
+    void newTaskMessages_nullInputs_rejectWithArgumentNames() {
+        assertEquals("task", assertThrows(NullPointerException.class, () -> renderer.taskEdited(null)).getMessage());
+        assertEquals("task", assertThrows(NullPointerException.class,
+                () -> renderer.recurringTaskAdded(null)).getMessage());
+        assertEquals("task", assertThrows(NullPointerException.class,
+                () -> renderer.recurringTaskDeleted(null)).getMessage());
+        assertEquals("tasks", assertThrows(NullPointerException.class,
+                () -> renderer.recurringTasks(null)).getMessage());
+        assertEquals("tasks element", assertThrows(NullPointerException.class,
+                () -> renderer.recurringTasks(Arrays.asList((RecurringTask) null))).getMessage());
+    }
     // @@author nickpatt
     @Test
     void existingTaskOutput_absentDeadlineAndExactMinutes_usesExplicitAbsence() {
@@ -128,6 +158,9 @@ class TextRendererTest {
         assertTrue(output.startsWith("=== ScheduleFlow Command Help ===\n"));
         List<String> formats = List.of("help", "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES", "task list",
                 "task delete TNUMBER",
+                "task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]",
+                "task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES every/WEEKLY [until/YYYY-MM-DD]",
+                "task recur list", "task recur delete RNUMBER",
                 // @@author ernestgoh-god
                 "task remaining TNUMBER remaining/MINUTES",
                 // @@author ka-how

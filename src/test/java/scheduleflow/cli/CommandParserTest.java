@@ -11,7 +11,9 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import scheduleflow.task.TaskEdit;
 
 /**
  * Verifies stage 1 grammar and transport values independently of services, storage and the clock.
@@ -29,6 +31,57 @@ class CommandParserTest {
     private static final String COMMITMENT_SKIP_USAGE = "commitment skip CNUMBER on/YYYY-MM-DD";
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
     private final CommandParser parser = new CommandParser();
+
+    @Test
+    void parse_taskEdit_preservesAllThreeSubsets() throws ParseException {
+        LocalDateTime due = LocalDateTime.of(2028, 2, 29, 23, 59);
+        assertEquals(new Command.EditTask(12, new TaskEdit(Optional.of("New  name"), Optional.empty(), false)),
+                parser.parse(" task  edit T12 n/ New  name "));
+        assertEquals(new Command.EditTask(12, new TaskEdit(Optional.empty(), Optional.of(due), false)),
+                parser.parse("task edit T12 due/2028-02-29 2359"));
+        assertEquals(new Command.EditTask(12, new TaskEdit(Optional.of("New"), Optional.of(due), false)),
+                parser.parse("task edit T12 n/New due/2028-02-29 2359"));
+    }
+
+    @Test
+    void parse_taskEdit_rejectsMalformedFieldsAndIdentifiers() {
+        String usage = "task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]";
+        for (String suffix : List.of("T1", "R1 n/A", "T01 n/A", "T0 n/A", "T2147483648 n/A",
+                "T1 n/A n/B", "T1 due/2026-02-30 0900", "T1 due/0000-01-01 0900",
+                "T1 due/2026-10-06 2400", "T1 due/2026-10-06 0900 n/A", "T1 n/A d/30",
+                "T1 due/none", "T1 due/2026-10-06 0900 extra", "T1 n/A\tB")) {
+            assertRejected("task edit " + suffix, usage);
+        }
+    }
+
+    @Test
+    void parse_recurrence_acceptsBoundedUnboundedAndIndependentIds() throws ParseException {
+        LocalDateTime due = LocalDateTime.of(2028, 2, 29, 9, 5);
+        String input = "task recur add n/Weekly  review due/2028-02-29 0905 d/90 every/WEEKLY";
+        assertEquals(new Command.AddRecurringTask("Weekly  review", due, 90, Optional.empty()), parser.parse(input));
+        assertEquals(new Command.AddRecurringTask("Weekly  review", due, 90,
+                Optional.of(LocalDate.of(2028, 3, 7))), parser.parse(input + " until/2028-03-07"));
+        assertEquals(new Command.ListRecurringTasks(), parser.parse(" task  recur  list "));
+        assertEquals(new Command.DeleteRecurringTask(Integer.MAX_VALUE),
+                parser.parse("task recur delete R2147483647"));
+    }
+
+    @Test
+    void parse_recurrence_rejectsStrictDateOrderExtraFieldsAndOverflow() {
+        String usage = "task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES"
+                + " every/WEEKLY [until/YYYY-MM-DD] OR task recur list OR task recur delete RNUMBER";
+        String add = "task recur add n/A due/2026-10-06 0900 d/30 every/WEEKLY";
+        for (String input : List.of(add.replace("2026-10-06", "2026-02-30"),
+                add.replace("2026-10-06", "0000-01-01"), add + " until/2026-02-29",
+                add.replace("d/30", "d/2147483648"), add.replace("d/30", "d/030"),
+                add.replace("every/WEEKLY", "every/weekly"), add.replace("every/WEEKLY", "every/DAILY"),
+                add.replace("d/30 every/WEEKLY", "every/WEEKLY d/30"), add + " d/60", add + " extra",
+                add + " until/2026-11-01 until/2026-12-01", "task recur list extra",
+                "task recur delete T1", "task recur delete R01", "task recur delete R0",
+                "task recur delete R2147483648", "task recur delete R1 extra")) {
+            assertRejected(input, usage);
+        }
+    }
 
     // @@author ernestgoh-god
     @Test
@@ -383,7 +436,7 @@ class CommandParserTest {
     void parse_wrongCommandCaseAndUnknownCommands_returnsHelpHint() {
         for (String input : List.of("HELP", "Task list", "task LIST", "task ADD", "task addendum",
                 "Commitment list", "commitment DELETE C1", "PLAN", "SCHEDULE today", "EXIT",
-                "task", "commitment", "task edit T1", "commitment remove C1", "save", "helpful", "", "   ")) {
+                "task", "commitment", "commitment remove C1", "save", "helpful", "", "   ")) {
             assertRejected(input, HELP_USAGE);
         }
     }

@@ -18,6 +18,7 @@ import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskOccurrence;
 import scheduleflow.model.TaskPriority;
 import scheduleflow.task.TaskService;
 
@@ -531,6 +532,90 @@ class EarliestDeadlinePlannerTest {
                 result.breaks());
     }
 
+    @Test
+    void generate_weeklyInstances_waitsForEachOriginalReleaseAndLeavesOrdinaryTasksUnrestricted() {
+        Task first = occurrence(1, MONDAY.plusWeeks(1).atTime(8, 15), MONDAY.plusWeeks(1).atTime(8, 15), 30);
+        Task second = occurrence(2, MONDAY.plusWeeks(2).atTime(8, 15), MONDAY.plusWeeks(2).atTime(8, 15), 30);
+        Task ordinary = task(3, "Ordinary", MONDAY.plusWeeks(3).atTime(12, 0), 30);
+        Snapshot source = snapshot(List.of(second, ordinary, first), List.of());
+
+        Plan result = planner.generate(source, EARLY_MORNING);
+
+        assertEquals(List.of(study(3, 8, 0, 8, 30), study(1, 8, 30, 9, 0),
+                new StudySession(2, MONDAY.plusWeeks(1).atTime(8, 30), MONDAY.plusWeeks(1).atTime(9, 0))),
+                result.sessions());
+        assertTrue(result.isComplete());
+        assertEquals(result, planner.generate(source, EARLY_MORNING));
+        assertEquals(List.of(second, ordinary, first), source.tasks());
+    }
+
+    @Test
+    void generate_editedDeadlines_retainsOriginalReleaseAndConservesUnallocatedWork() {
+        LocalDateTime original = MONDAY.plusWeeks(1).atTime(9, 0);
+        Task earlier = new Task(1, "Earlier", MONDAY.atTime(8, 30), 45,
+                Optional.of(new TaskOccurrence(2, original)));
+        Task later = occurrence(2, MONDAY.plusWeeks(2).atTime(12, 0), original, 15);
+        Snapshot source = snapshot(List.of(later, earlier), List.of());
+
+        Plan result = planner.generate(source, EARLY_MORNING);
+
+        assertEquals(List.of(new StudySession(2, MONDAY.atTime(9, 0), MONDAY.atTime(9, 30), 15)), result.sessions());
+        assertEquals(List.of(new UnallocatedWork(1, earlier.name(), earlier.deadline(), 45, 60L,
+                UnallocatedReason.INSUFFICIENT_CAPACITY)), result.unallocated());
+        assertEquals(result, planner.generate(source, EARLY_MORNING));
+        for (Task task : source.tasks()) {
+            int scheduled = result.sessions().stream().filter(session -> session.taskId() == task.id())
+                    .mapToInt(StudySession::workMinutes).sum();
+            int unallocated = result.unallocated().stream().filter(work -> work.taskId() == task.id())
+                    .mapToInt(UnallocatedWork::minutes).sum();
+            assertEquals(task.remainingMinutes(), scheduled + unallocated);
+        }
+    }
+
+    @Test
+    void generate_releaseWithCustomHoursAndDatedCommitments_preservesSharedWorkClockAndSkips() {
+        Task recurring = occurrence(1, MONDAY.plusWeeks(1).atTime(14, 30),
+                MONDAY.plusWeeks(1).atTime(14, 30), 60);
+        Task ordinary = task(2, "Ordinary", MONDAY.plusWeeks(2).atTime(12, 0), 30);
+        Commitment skipped = new Commitment(1, "Cancelled", DayOfWeek.MONDAY, LocalTime.of(14, 0), 30,
+                MONDAY, MONDAY.plusWeeks(1), Set.of(MONDAY));
+        Commitment dated = new Commitment(2, "Meeting", DayOfWeek.MONDAY, LocalTime.of(15, 0), 30,
+                MONDAY, MONDAY);
+        Snapshot initial = snapshot(List.of(recurring, ordinary), List.of(skipped, dated));
+        Snapshot source = initial.withStudyHours(initial.studyHours()
+                .withWindow("monday", new StudyWindow(LocalTime.of(6, 0), LocalTime.of(7, 0)))
+                .withWindow(MONDAY.toString(), new StudyWindow(LocalTime.of(14, 0), LocalTime.of(17, 0))));
+        EarliestDeadlinePlanner limited = new EarliestDeadlinePlanner(new StudyPolicy(60, 30));
+
+        Plan result = limited.generate(source, MONDAY.atTime(14, 0));
+
+        assertEquals(List.of(study(2, 14, 0, 14, 30), study(1, 14, 30, 15, 0),
+                study(1, 16, 0, 16, 30)), result.sessions());
+        assertEquals(List.of(rest(15, 30, 16, 0)), result.breaks());
+        assertTrue(result.isComplete());
+        assertSame(source, result.source());
+        assertEquals(List.of(skipped, dated), result.source().commitments());
+    }
+
+    @Test
+    void generate_unreleasedWork_allowsNaturalRestWithoutReservingPrematureBreaks() {
+        Task recurring = occurrence(1, MONDAY.plusWeeks(1).atTime(10, 0),
+                MONDAY.plusWeeks(1).atTime(10, 0), 30);
+        Snapshot source = snapshot(List.of(recurring), List.of(
+                new Commitment(1, "Lecture", DayOfWeek.MONDAY, LocalTime.of(8, 0), 60)));
+
+        Plan result = new EarliestDeadlinePlanner(new StudyPolicy(60, 30)).generate(source, EARLY_MORNING);
+
+        assertEquals(List.of(study(1, 10, 0, 10, 30)), result.sessions());
+        assertTrue(result.breaks().isEmpty());
+    }
+
+    /** Creates an occurrence whose logical release is independent of its editable deadline. */
+    private static Task occurrence(int id, LocalDateTime deadline, LocalDateTime originalDeadline, int minutes) {
+        return new Task(id, "Weekly " + id, deadline, minutes,
+                Optional.of(new TaskOccurrence(1, originalDeadline)));
+    }
+
     /** Creates an expected study interval on the fixed generation date. */
     private static StudySession study(int id, int startHour, int startMinute, int endHour, int endMinute) {
         return new StudySession(id, MONDAY.atTime(startHour, startMinute), MONDAY.atTime(endHour, endMinute));
@@ -550,6 +635,8 @@ class EarliestDeadlinePlannerTest {
     /** Creates isolated source data with counters above the supplied IDs. */
     private static Snapshot snapshot(List<Task> tasks, List<Commitment> commitments) {
         return new Snapshot(tasks, commitments, tasks.stream().mapToInt(Task::id).max().orElse(0) + 1,
-                commitments.stream().mapToInt(Commitment::id).max().orElse(0) + 1);
+                commitments.stream().mapToInt(Commitment::id).max().orElse(0) + 1,
+                Snapshot.empty().studyHours(), List.of(), tasks.stream().flatMap(task -> task.occurrence().stream())
+                        .mapToInt(TaskOccurrence::templateId).max().orElse(0) + 1);
     }
 }
