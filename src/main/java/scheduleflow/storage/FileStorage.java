@@ -8,9 +8,11 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import scheduleflow.model.Snapshot;
+import scheduleflow.planning.Plan;
 
 /**
  * Owns UTF-8 loading and atomic file replacement at a fixed absolute path.
@@ -80,6 +82,42 @@ public final class FileStorage implements Storage {
         }
     }
 
+    // @@author ernestgoh-god
+    /** Restores only a plan whose embedded source equals the snapshot already loaded at startup. */
+    @Override
+    public Optional<Plan> loadPlan(Snapshot source) throws StorageException {
+        Objects.requireNonNull(source, "source");
+        LOGGER.log(Level.FINE, "Starting frozen plan load");
+        try {
+            String text = Files.readString(file, StandardCharsets.UTF_8);
+            if (!text.startsWith("SCHEDULEFLOW|5\n") && !text.startsWith("SCHEDULEFLOW|5\r")) {
+                if (!codec.decode(text).equals(source)) {
+                    throw new StorageException("Saved data does not match the loaded snapshot.");
+                }
+                LOGGER.log(Level.FINE, "Saved data contains no frozen plan");
+                return Optional.empty();
+            }
+            Plan plan = new PlanCodec(codec).decode(text);
+            if (!plan.source().equals(source)) {
+                throw new StorageException("Saved plan does not match the loaded data.");
+            }
+            LOGGER.log(Level.FINE, "Frozen plan load completed");
+            return Optional.of(plan);
+        } catch (NoSuchFileException exception) {
+            if (Files.notExists(file, LinkOption.NOFOLLOW_LINKS)) {
+                if (!source.equals(Snapshot.empty())) {
+                    throw new StorageException("Saved data is missing for the loaded snapshot.");
+                }
+                LOGGER.log(Level.FINE, "Saved data absent; no frozen plan to load");
+                return Optional.empty();
+            }
+            throw new StorageException("Cannot load saved data: " + file, exception);
+        } catch (IOException | SecurityException exception) {
+            throw new StorageException("Cannot load saved data: " + file, exception);
+        }
+    }
+    // @@author
+
     /**
      * Writes a sibling temporary file and atomically replaces the target before returning.
      * A failed write or replacement attempts cleanup and retains the original failure.
@@ -93,6 +131,23 @@ public final class FileStorage implements Storage {
         Objects.requireNonNull(state, "state");
         LOGGER.log(Level.FINE, "Starting snapshot save");
         String text = codec.encode(state);
+        writeAtomically(text);
+    }
+
+    // @@author ernestgoh-god
+    /** Saves a plan only when its source still matches the complete saved snapshot. */
+    @Override
+    public void savePlan(Plan plan) throws StorageException {
+        Objects.requireNonNull(plan, "plan");
+        if (!load().equals(plan.source())) {
+            throw new StorageException("Cannot save a plan for different saved data.");
+        }
+        LOGGER.log(Level.FINE, "Starting frozen plan save");
+        writeAtomically(new PlanCodec(codec).encode(plan));
+    }
+
+    /** Replaces the sole data file atomically for both snapshots and plans. */
+    private void writeAtomically(String text) throws StorageException {
         Path temporaryFile = null;
         try {
             Path parent = file.getParent();
@@ -117,6 +172,7 @@ public final class FileStorage implements Storage {
             throw failure;
         }
     }
+    // @@author
 
     /**
      * Removes an abandoned temporary file, attaching cleanup errors to the original save failure.

@@ -16,6 +16,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import scheduleflow.commitment.CommitmentService;
 import scheduleflow.common.ValidationException;
@@ -565,6 +566,10 @@ class CommandDispatcherTest {
      */
     private static final class FakeStorage implements Storage {
         private Snapshot saved;
+        // @@author ernestgoh-god
+        private Optional<Plan> savedPlan = Optional.empty();
+        private int planSaveCalls;
+        // @@author ka-how
         private Snapshot attempted;
         private int saveCalls;
         private boolean failSave;
@@ -585,6 +590,16 @@ class CommandDispatcherTest {
             return saved;
         }
 
+        // @@author ernestgoh-god
+        @Override
+        public Optional<Plan> loadPlan(Snapshot source) throws StorageException {
+            if (!saved.equals(source)) {
+                throw new StorageException("Plan source differs from saved data");
+            }
+            return savedPlan;
+        }
+        // @@author ka-how
+
         @Override
         public void save(Snapshot state) throws StorageException {
             saveCalls++;
@@ -594,7 +609,21 @@ class CommandDispatcherTest {
                 throw new StorageException("Save rejected");
             }
             saved = state;
+            // @@author ernestgoh-god
+            savedPlan = Optional.empty();
+            // @@author ka-how
         }
+
+        // @@author ernestgoh-god
+        @Override
+        public void savePlan(Plan plan) throws StorageException {
+            planSaveCalls++;
+            if (failSave || !saved.equals(plan.source())) {
+                throw new StorageException("Plan save rejected");
+            }
+            savedPlan = Optional.of(plan);
+        }
+        // @@author ka-how
     }
 
     /**

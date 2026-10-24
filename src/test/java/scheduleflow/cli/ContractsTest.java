@@ -15,9 +15,11 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import scheduleflow.model.Snapshot;
+import scheduleflow.planning.Plan;
 import scheduleflow.storage.FileStorage;
 import scheduleflow.storage.StateCodec;
 import scheduleflow.storage.Storage;
@@ -74,6 +76,18 @@ class ContractsTest {
             public Snapshot load() {
                 throw new AssertionError("Constructor must not load");
             }
+
+            // @@author ernestgoh-god
+            @Override
+            public Optional<Plan> loadPlan(Snapshot source) {
+                throw new AssertionError("Constructor must not load a plan");
+            }
+
+            @Override
+            public void savePlan(Plan plan) {
+                throw new AssertionError("Constructor must not save a plan");
+            }
+            // @@author ka-how
 
             @Override
             public void save(Snapshot state) {

@@ -256,16 +256,23 @@ public final class CommandDispatcher {
         LOGGER.log(Level.FINE, "Saved candidate committed");
     }
 
+    // @@author ernestgoh-god
     /**
-     * Replaces the complete temporary plan without changing or saving task estimates.
+     * Saves and replaces the frozen plan without changing stored task estimates.
+     * A failed save leaves the current plan and saved file untouched.
      */
-    private String generatePlan(AppState state, LocalDateTime now) {
+    private String generatePlan(AppState state, LocalDateTime now) throws StorageException {
         LOGGER.log(Level.FINE, "Generating temporary plan");
         Plan plan = Objects.requireNonNull(planner.generate(state.snapshot(), now), "generated plan");
+        if (!plan.source().equals(state.snapshot())) {
+            throw new IllegalArgumentException("Plan source must match the current snapshot.");
+        }
+        storage.savePlan(plan);
         state.replacePlan(plan);
         LOGGER.log(Level.FINE, "Temporary plan published; formatting result");
         return renderer.plan(plan);
     }
+    // @@author ka-how
 
     /**
      * Gives absent plans precedence over date-range validation and projects existing frozen plans.

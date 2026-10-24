@@ -9,7 +9,7 @@ ScheduleFlow is a command line application for university students balancing cou
 
 Study hours default to **08:00–22:00 every day**, including weekends. You can set recurring weekday hours and override individual dates. Work is scheduled in **30-minute slots**, and any work that does not fit is reported explicitly.
 
-> **Implementation status:** All supported commands are connected to the console application. Changes save before success is printed, IDs survive restarts, and plans remain temporary. Java tests cover transactions and fixed-clock planning; packaged console tests cover startup, recovery and saved restarts.
+> **Implementation status:** All supported commands are connected to the console application. Changes save before success is printed, and both IDs and generated plans survive restarts. Java tests cover transactions and fixed-clock planning; packaged console tests cover startup, recovery and saved restarts.
 
 ## Contents
 
@@ -508,7 +508,7 @@ No tasks to schedule.
 
 Even with no tasks, `plan` creates a current plan. You can then view commitments and free or unplanned periods using `schedule`.
 
-Each `plan` command replaces the previous plan. It does not change stored task durations or save a plan to disk. This allocator follows deadline order; it does not guarantee the fewest sessions or the greatest number of fully completed tasks.
+Each `plan` command saves and replaces the previous plan without changing stored task durations. If saving fails, the previous plan remains available. This allocator follows deadline order; it does not guarantee the fewest sessions or the greatest number of fully completed tasks.
 
 ### Session limits and breaks (planned console feature)
 
@@ -650,7 +650,7 @@ No current plan. Run plan to generate one.
 
 A selected date must fall within the current plan's date range. An out-of-range request reports the earliest and latest allowed dates; it does not produce an empty schedule. Run `plan` again when you need a fresh range.
 
-**Plans remain fixed until regenerated.** Viewing a schedule later does not move its sessions, update its generation time, or account for completed work. Successful task or commitment additions, deletions and commitment edits, and study-hours sets and resets, clear the plan; failed commands preserve it. Restarting also clears the plan.
+**Plans remain fixed until regenerated.** Viewing a schedule later, including after a restart, does not move its sessions or update its generation time. Successful task or commitment additions, deletions and commitment edits, and study-hours sets and resets, clear the saved plan; failed commands preserve it.
 
 ## Help and exit
 
@@ -673,14 +673,16 @@ Goodbye for now!
 
 ## Saving and restoring data
 
-The application loads saved data before showing its first prompt and saves
-each successful task, commitment or study-hours change automatically.
+The application loads saved data and any saved plan before showing its first
+prompt. It saves each successful task, commitment or study-hours change and
+each generated plan automatically.
 
 Tasks, commitments, study hours and the next ID counters are saved automatically after each successful change and restored at startup. No manual save or load command is needed.
 
 - **Location:** `data/scheduleflow.txt`, relative to the folder from which you launch the application. Launch from the same folder to use the same data.
-- **First launch:** If the file is absent, the app starts empty. The first successful change creates the saved data.
-- **Temporary plans:** Plans are not saved. Run `plan` after restarting.
+- **First launch:** If the file is absent, the app starts empty. The first successful change or `plan` creates the saved data.
+- **Saved plans:** The latest generated schedule, generation time, sessions and unallocated work survive restarting. Successful changes to tasks, commitments or study hours clear it; run `plan` again afterward.
+- **Compatibility:** Older releases cannot read a file after this release saves a plan. Keep a backup before opening the same data folder with an older JAR.
 - **Failed save:** The change is rejected. Existing tasks, commitments, ID counters, saved data, and the current plan remain unchanged. Resolve the reported file or folder problem, then retry.
 - **Invalid or unreadable file:** The app reports an error and stops before accepting commands. It preserves the file instead of silently starting empty or loading only part of it.
 - **Overdue tasks:** Valid saved tasks remain available after their deadlines pass. Replanning reports their work as unallocated with reason `deadline passed`.
@@ -707,7 +709,8 @@ completed work, replace the task with your revised remaining-work estimate.
 
 A successful task or commitment addition, deletion, commitment edit or
 occurrence skip, or a study-hours set or reset, clears the current plan. Plans
-also disappear when the application restarts. Run `plan` to generate another one.
+remain available after restarting until a successful change invalidates them.
+Run `plan` to generate another one.
 
 ### Can I change the study hours or slot size?
 

@@ -297,8 +297,26 @@ Names are last so literal pipes need no escaping. Encoding preserves each
 list's order and writes LF line endings. Decoding also accepts CRLF/CR and an
 omitted final newline. Java's date/time parsers and existing domain constructors
 validate the complete snapshot, including overlaps and counters. Past deadlines
-remain valid; plans are never stored. Invalid data raises `StorageException`
+remain valid. Invalid data raises `StorageException`
 without returning a partial snapshot or modifying the file.
+
+Issue #68 adds version 5 when a plan is generated. `PlanCodec` appends one
+`PLAN|generatedAt|horizonEnd|sessionCount|unallocatedCount|breakCount` row,
+followed by counted `SESSION`, `UNALLOCATED` and `BREAK` rows. The source
+snapshot uses the complete version 4 record layout. Names remain last in
+unallocated rows so literal pipes survive. Loading validates both the source
+and the entire frozen result before the first prompt; versions 1–4 restore no
+plan. Ordinary snapshot saves still use the oldest suitable version and omit
+the plan, invalidating it atomically with any successful mutation.
+
+`Storage.savePlan` checks that the plan's source equals the saved snapshot,
+then replaces the same file atomically. The dispatcher saves a generated plan
+before publishing it in `AppState`; failed saves retain the previous disk and
+live plans. Startup restores the plan only when its embedded source matches
+the loaded snapshot. The stored generation time, horizon, sessions,
+unallocated work and reserved breaks are reused without rerunning the planner.
+`PlanCodecTest`, `FileStorageTest`, fixed-clock application tests and UI-022
+cover format validation, restart, rollback and invalidation.
 
 `StateCodecTest` covers the format and validation. `FileStorageTest` demonstrates
 a save followed by a fresh reader, replacement, missing/corrupt files, and
@@ -518,7 +536,7 @@ rules. It rejects repeated, reordered and unknown fields. Domain validation,
 including empty-edit rejection, remains in the service. The dispatcher resolves
 the replacement before the existing save-and-commit transaction and reports it
 through `TextRenderer.commitmentEdited`. Even identical-value valid edits save
-and invalidate the temporary plan, consistently with successful mutations.
+and invalidate the saved plan, consistently with successful mutations.
 
 Tests cover all fifteen nonempty field subsets, invalid syntax, immutable source
 snapshots, self-exclusion, multi-conflict ordering, adjacent and midnight bounds,
@@ -699,7 +717,7 @@ formats success. A failed save propagates without publishing the candidate,
 consuming an ID or clearing the current plan. Shared public APIs are unchanged.
 
 Help, lists, schedule and exit preserve state and make no save call. Planning
-replaces only the temporary plan; partial and empty results remain usable.
+saves and replaces the frozen plan; partial and empty results remain usable.
 Schedule requests project that frozen plan; absence takes precedence over date
 validation. Exceptions from domain services remain their owners' validation.
 
@@ -861,7 +879,7 @@ estimates or commitments before the deadline.
 * *Commitment* - A busy interval repeated on one weekday, optionally within
   inclusive dates, or a one-time busy interval on a single date.
 * *Snapshot* - Immutable tasks, commitments, study hours and independent next-ID counters.
-* *Plan* - Temporary allocations and unallocated work derived from a snapshot.
+* *Plan* - Frozen allocations and unallocated work derived from a snapshot, saved until a successful mutation.
 * *Planning horizon* - The calendar range ending at midnight on the same date
   next year, with February 29 adjusted to February 28 when necessary.
 * *Slot* - A 30-minute interval within the daily study window.

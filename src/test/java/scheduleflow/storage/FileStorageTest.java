@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -27,6 +28,8 @@ import scheduleflow.commitment.CommitmentService;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
+import scheduleflow.planning.Plan;
+import scheduleflow.planning.TimeRules;
 import scheduleflow.task.TaskService;
 
 // @@author ernestgoh-god
@@ -37,6 +40,41 @@ import scheduleflow.task.TaskService;
 class FileStorageTest {
     @TempDir
     private Path directory;
+
+    @Test
+    void savePlan_restartRestoresFrozenResultAndMutationRemovesIt() throws Exception {
+        Path file = directory.resolve("data/scheduleflow.txt");
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        LocalDateTime now = LocalDateTime.of(2026, 10, 5, 7, 0);
+        Plan empty = new Plan(now, TimeRules.horizonEnd(now), Snapshot.empty(), List.of(), List.of());
+
+        assertEquals(Optional.empty(), storage.loadPlan(Snapshot.empty()));
+        storage.savePlan(empty);
+        assertEquals(Snapshot.empty(), new FileStorage(file, new StateCodec()).load());
+        assertEquals(Optional.of(empty), new FileStorage(file, new StateCodec()).loadPlan(Snapshot.empty()));
+        assertTrue(Files.readString(file).startsWith("SCHEDULEFLOW|5\n"));
+
+        Snapshot changed = new Snapshot(List.of(new Task(1, "Draft", now.plusDays(1), 30)), List.of(), 2, 1);
+        storage.save(changed);
+        assertEquals(Optional.empty(), storage.loadPlan(changed));
+        assertEquals(changed, storage.load());
+    }
+
+    @Test
+    void savePlan_staleSourceRejectsWithoutChangingPriorBytes() throws Exception {
+        Path file = directory.resolve("scheduleflow.txt");
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        LocalDateTime now = LocalDateTime.of(2026, 10, 5, 7, 0);
+        Snapshot source = new Snapshot(List.of(new Task(1, "Draft", now.plusDays(1), 30)), List.of(), 2, 1);
+        storage.save(source);
+        byte[] original = Files.readAllBytes(file);
+        Plan stale = new Plan(now, TimeRules.horizonEnd(now), Snapshot.empty(), List.of(), List.of());
+
+        assertThrows(StorageException.class, () -> storage.savePlan(stale));
+        assertArrayEquals(original, Files.readAllBytes(file));
+        assertEquals(Optional.empty(), storage.loadPlan(source));
+        assertThrows(StorageException.class, () -> storage.loadPlan(Snapshot.empty()));
+    }
 
     @Test
     void constructor_nullDependencies_rejectsWithoutCreatingData() {

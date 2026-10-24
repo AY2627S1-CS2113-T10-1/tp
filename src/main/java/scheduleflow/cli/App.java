@@ -8,6 +8,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import scheduleflow.commitment.CommitmentService;
 import scheduleflow.common.ValidationException;
+import scheduleflow.model.Snapshot;
 import scheduleflow.planning.EarliestDeadlinePlanner;
 import scheduleflow.planning.ScheduleService;
 import scheduleflow.storage.Storage;
@@ -73,7 +74,11 @@ public final class App {
         AppState state;
         try {
             LOGGER.log(Level.FINE, "Loading saved snapshot");
-            state = new AppState(storage.load());
+            // @@author ernestgoh-god
+            Snapshot loaded = storage.load();
+            state = new AppState(loaded);
+            storage.loadPlan(loaded).ifPresent(state::replacePlan);
+            // @@author ka-how
             LOGGER.log(Level.FINE, "Saved snapshot loaded");
         } catch (StorageException exception) {
             LOGGER.log(Level.SEVERE, "Startup load failed", exception);

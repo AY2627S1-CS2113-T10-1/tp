@@ -54,7 +54,10 @@ class MainTest {
         assertEquals(0, second.status());
         assertEquals("", second.error());
         assertTrue(second.output().contains("C1. 10:00 - 10:30 | 学习 Café"));
-        assertTrue(second.output().contains("No current plan. Run plan to generate one."));
+        // @@author ernestgoh-god
+        assertTrue(second.output().contains("=== Schedule for"));
+        assertTrue(second.output().contains("Generated at:"));
+        // @@author ka-how
     }
 
     @Test

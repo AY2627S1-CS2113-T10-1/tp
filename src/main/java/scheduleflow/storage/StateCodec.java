@@ -57,6 +57,16 @@ public final class StateCodec {
      * @throws NullPointerException if the snapshot is null
      */
     public String encode(Snapshot state) {
+        return encodeSnapshot(state, false);
+    }
+
+    /** Encodes snapshot records in version 4's complete format for an appended saved plan. */
+    String encodeVersionFour(Snapshot state) {
+        return encodeSnapshot(state, true);
+    }
+
+    /** Preserves legacy versions for ordinary saves while allowing version 4's full record layout. */
+    private String encodeSnapshot(Snapshot state, boolean fullRecordLayout) {
         Objects.requireNonNull(state, "state");
         LOGGER.log(Level.FINE, "Starting snapshot encoding");
         // @@author Darren50
@@ -64,10 +74,12 @@ public final class StateCodec {
                 .anyMatch(commitment -> commitment.startDate() != null);
         boolean hasSkippedOccurrences = state.commitments().stream()
                 .anyMatch(commitment -> !commitment.skippedDates().isEmpty());
-        String version = hasSkippedOccurrences ? "SCHEDULEFLOW|4"
+        // @@author ernestgoh-god
+        boolean includeDateBounds = fullRecordLayout || hasDateBoundedCommitments || hasSkippedOccurrences;
+        boolean includeSkippedDates = fullRecordLayout || hasSkippedOccurrences;
+        String version = fullRecordLayout || hasSkippedOccurrences ? "SCHEDULEFLOW|4"
                 : hasDateBoundedCommitments ? "SCHEDULEFLOW|3"
                 : state.studyHours().windows().isEmpty() ? HEADER : "SCHEDULEFLOW|2";
-        // @@author ernestgoh-god
         StringBuilder text = new StringBuilder(version).append('\n');
         text.append("NEXT|").append(state.nextTaskId()).append('|').append(state.nextCommitmentId()).append('\n');
         for (Task task : state.tasks()) {
@@ -78,11 +90,11 @@ public final class StateCodec {
             text.append("COMMITMENT|").append(commitment.id()).append('|').append(commitment.day()).append('|')
                     .append(commitment.start()).append('|').append(commitment.durationMinutes()).append('|');
             // @@author Darren50
-            if (hasDateBoundedCommitments || hasSkippedOccurrences) {
+            if (includeDateBounds) {
                 text.append(commitment.startDate() == null ? "-" : commitment.startDate()).append('|')
                         .append(commitment.endDate() == null ? "-" : commitment.endDate()).append('|');
             }
-            if (hasSkippedOccurrences) {
+            if (includeSkippedDates) {
                 text.append(encodeSkippedDates(commitment.skippedDates())).append('|');
             }
             // @@author ernestgoh-god
@@ -111,6 +123,9 @@ public final class StateCodec {
         if (text == null) {
             LOGGER.log(Level.FINE, "Saved data decoding rejected; null text");
             throw new StorageException("Saved data must not be null.");
+        }
+        if (text.startsWith("SCHEDULEFLOW|5\n") || text.startsWith("SCHEDULEFLOW|5\r")) {
+            return new PlanCodec(this).decode(text).source();
         }
         List<String> lines = text.lines().toList();
         try {

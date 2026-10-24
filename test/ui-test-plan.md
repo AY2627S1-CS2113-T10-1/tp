@@ -5,7 +5,7 @@ acceptance remains planned until task-service integration, dispatcher
 transactions and Printing's confirmation are implemented. Existing active
 scenarios continue to exercise the unchanged console commands.
 
-All eighteen maintained process scenarios are active. They exercise the packaged
+All nineteen maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -22,6 +22,13 @@ candidates through fresh file readers, retaining values and both ID sequences
 after deletion. Repeated loading of valid overdue records preserves the original
 file bytes. These direct JUnit checks complement the active console scenarios
 and Printing's restart and rollback tests.
+
+Issue #68's UI-022 starts with a fixed version 5 file, checks the same schedule
+on two process launches, then confirms a successful task deletion clears it.
+Fixed-clock JUnit additionally generates and saves a plan through the command,
+compares its schedule before and after restart, verifies failed plan saves keep
+the prior plan, and rejects corrupt plan rows before the first prompt. Codec
+tests cover partial work, reserved breaks, literal pipes and legacy snapshots.
 
 Save's defensive-check tests also verify null snapshots are rejected before
 file changes, and capture opt-in storage diagnostics for success, corrupt input
@@ -94,7 +101,8 @@ active fixture expectations remain unchanged.
 | UI-004 | Unsupported store version stops before prompting | Active |
 | UI-005 | Strict syntax, usage hints and recovery including `exit extra` | Active |
 | UI-006 | Blank lines, duration/alignment/overlap errors, unknown IDs and retry IDs | Active |
-| UI-007 | Unicode save/restart and temporary-plan loss | Active |
+| UI-007 | Unicode save/restart and plan invalidation after deletion | Active |
+| UI-022 | Saved version 5 schedule survives restart and is invalidated by task deletion | Active |
 | UI-008 | Truncated saved record stops startup with status 1 | Active |
 | UI-009 | Restored overdue/out-of-horizon tasks, numeric listing, deletion and restart | Active |
 | UI-010 | Exhausted task and commitment ID sequences reject additions without overflow | Active |
