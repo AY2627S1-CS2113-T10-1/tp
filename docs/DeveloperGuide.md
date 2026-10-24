@@ -137,10 +137,12 @@ extensions; this branch remains independent of the #55 study-policy feature.
 
 #### Multi-date unavailable periods: implementation handoff (planned)
 
-**Status:** transport records, unwired throwing skeletons, exact planned console
-fixtures and tests for the resulting commitment representation are supplied.
-The two range commands themselves are NOT implemented. The following grammar
-and output are the proposed implementation contract for the team.
+**Status:** transport records, exact planned console fixtures and tests for the
+resulting commitment representation are supplied. The commitment service
+operations (step 1 below) are implemented and unit-tested. Parsing, dispatch
+and the confirmation renderer remain unwired throwing skeletons, so the two
+range commands are NOT yet usable from the console. The following grammar and
+output are the proposed implementation contract for the team.
 
 Continuous mode uses an inclusive start and exclusive end:
 
@@ -191,12 +193,20 @@ avoid arithmetic past year 9999 when stepping dates.
 
 **Owner implementation order:**
 
-1. **Darren (`Darren50`):** implement `CommitmentService.addContinuousBlock`
+1. **Darren (`Darren50`), implemented:** `CommitmentService.addContinuousBlock`
    and `addDailyBlocks`. Validate the request and calculate the required ID
    count before expansion. The last assignable ID remains `2147483646`; the
    next counter may be `2147483647`. Build a candidate locally using the existing
    dated-add logic; return it only if the whole request succeeds. No disk I/O,
    live publication, clock reads, partial results or mutation of the source.
+   Both operations validate in the order above, compute the date count
+   arithmetically (continuous mode omits an end date reached exactly at
+   midnight), check ID capacity, then create one `Commitment` per date with
+   equal date bounds through a shared private expansion helper. Each segment is
+   checked against stored commitments with the existing `rejectOverlaps`, in
+   date order, and the generated records are appended with one
+   `Snapshot.withCommitments` call. `CommitmentServiceTest` covers every
+   Darren row of the JUnit matrix below, plus null references and logging.
    Preserve tasks, their counter, custom hours and other commitments.
 2. **Ernest (`ernestgoh-god`), parsing:** implement the private
    `CommandParser.parseUnavailable` skeleton and route the new command word

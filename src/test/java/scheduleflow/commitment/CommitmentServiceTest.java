@@ -86,6 +86,185 @@ class CommitmentServiceTest {
     // @@author Darren50
 
     @Test
+    void addContinuousBlock_multiDayExample_splitsAtMidnightAndPreservesSource() {
+        Task task = new Task(4, "Draft", LocalDate.of(2026, 10, 30).atTime(18, 0), 60);
+        Commitment weekly = new Commitment(2, "Lecture", DayOfWeek.FRIDAY, LocalTime.NOON, 60);
+        StudyHours hours = new StudyHours(Map.of("monday", new StudyWindow(LocalTime.of(9, 0), LocalTime.of(18, 0))));
+        Snapshot source = new Snapshot(List.of(task), List.of(weekly), 5, 3).withStudyHours(hours);
+
+        Snapshot candidate = service.addContinuousBlock(source, " Trip ",
+                LocalDateTime.of(2026, 10, 26, 15, 0), LocalDateTime.of(2026, 10, 28, 11, 0));
+
+        assertEquals(List.of(weekly,
+                oneTime(3, "Trip", LocalDate.of(2026, 10, 26), 15, 0, 540),
+                oneTime(4, "Trip", LocalDate.of(2026, 10, 27), 0, 0, 1440),
+                oneTime(5, "Trip", LocalDate.of(2026, 10, 28), 0, 0, 660)), candidate.commitments());
+        assertTrue(candidate.commitments().subList(1, 4).stream().allMatch(Commitment::isOneTime));
+        assertEquals(6, candidate.nextCommitmentId());
+        assertEquals(List.of(task), candidate.tasks());
+        assertEquals(5, candidate.nextTaskId());
+        assertEquals(hours, candidate.studyHours());
+        assertEquals(List.of(weekly), source.commitments());
+        assertEquals(3, source.nextCommitmentId());
+    }
+
+    @Test
+    void addContinuousBlock_boundaries_omitEmptySegmentsAndRejectInvalidEndpoints() {
+        LocalDateTime monday = LocalDate.of(2026, 10, 26).atStartOfDay();
+        assertEquals(List.of(oneTime(1, "Block", monday.toLocalDate(), 9, 0, 90)), service.addContinuousBlock(
+                Snapshot.empty(), "Block", monday.withHour(9), monday.withHour(10).withMinute(30)).commitments());
+        assertEquals(List.of(oneTime(1, "Block", monday.toLocalDate(), 23, 0, 60)), service.addContinuousBlock(
+                Snapshot.empty(), "Block", monday.withHour(23), monday.plusDays(1)).commitments());
+        assertEquals(List.of(oneTime(1, "Block", monday.toLocalDate(), 0, 0, 1440)), service.addContinuousBlock(
+                Snapshot.empty(), "Block", monday, monday.plusDays(1)).commitments());
+
+        assertRejected("Unavailable interval end must be after its start.",
+                () -> service.addContinuousBlock(Snapshot.empty(), "Block", monday.withHour(9), monday.withHour(9)));
+        assertRejected("Unavailable interval end must be after its start.",
+                () -> service.addContinuousBlock(Snapshot.empty(), "Block", monday.withHour(9), monday.withHour(8)));
+        for (LocalDateTime unaligned : List.of(monday.withHour(10).withMinute(15), monday.withHour(10).withSecond(1),
+                monday.withHour(10).withNano(1))) {
+            assertRejected("Unavailable times must be on half-hour boundaries.",
+                    () -> service.addContinuousBlock(Snapshot.empty(), "Block", monday.withHour(9), unaligned));
+            assertRejected("Unavailable times must be on half-hour boundaries.",
+                    () -> service.addContinuousBlock(Snapshot.empty(), "Block", unaligned, monday.withHour(12)));
+        }
+        assertRejected("Commitment dates must use years 0001 to 9999.", () -> service.addContinuousBlock(
+                Snapshot.empty(), "Block", LocalDateTime.of(9999, 12, 31, 23, 0), LocalDateTime.of(10000, 1, 1, 0, 0)));
+        assertRejected("Name must not be blank.",
+                () -> service.addContinuousBlock(Snapshot.empty(), " ", monday, monday.plusHours(1)));
+    }
+
+    @Test
+    void addDailyBlocks_examples_createOneEqualWindowPerInclusiveDate() {
+        LocalDate first = LocalDate.of(2026, 10, 26);
+        Snapshot candidate = service.addDailyBlocks(Snapshot.empty(), "Appointment", first, first.plusDays(2),
+                LocalTime.of(15, 0), LocalTime.of(17, 0));
+        assertEquals(List.of(oneTime(1, "Appointment", first, 15, 0, 120),
+                oneTime(2, "Appointment", first.plusDays(1), 15, 0, 120),
+                oneTime(3, "Appointment", first.plusDays(2), 15, 0, 120)), candidate.commitments());
+        assertEquals(4, candidate.nextCommitmentId());
+
+        Snapshot single = service.addDailyBlocks(Snapshot.empty(), "Appointment", first, first,
+                LocalTime.of(15, 0), LocalTime.of(17, 0));
+        assertEquals(List.of(oneTime(1, "Appointment", first, 15, 0, 120)), single.commitments());
+    }
+
+    @Test
+    void addDailyBlocks_boundaries_includeLeapDayAndFinalDateButRejectInvalidWindows() {
+        Snapshot leap = service.addDailyBlocks(Snapshot.empty(), "Leap", LocalDate.of(2028, 2, 28),
+                LocalDate.of(2028, 3, 1), LocalTime.of(22, 0), LocalTime.of(23, 0));
+        assertEquals(List.of(LocalDate.of(2028, 2, 28), LocalDate.of(2028, 2, 29), LocalDate.of(2028, 3, 1)),
+                leap.commitments().stream().map(Commitment::startDate).toList());
+        LocalDate last = LocalDate.of(9999, 12, 31);
+        assertEquals(List.of(oneTime(1, "End", last, 8, 0, 60)), service.addDailyBlocks(Snapshot.empty(), "End",
+                last, last, LocalTime.of(8, 0), LocalTime.of(9, 0)).commitments());
+
+        LocalDate date = LocalDate.of(2026, 10, 26);
+        assertRejected("Unavailable date range must start on or before its end.", () -> service.addDailyBlocks(
+                Snapshot.empty(), "Block", date.plusDays(1), date, LocalTime.of(9, 0), LocalTime.of(10, 0)));
+        for (LocalTime[] window : new LocalTime[][] {{LocalTime.of(9, 0), LocalTime.of(9, 0)},
+                {LocalTime.of(22, 0), LocalTime.of(1, 0)}}) {
+            assertRejected("Daily unavailable start must be before end on the same day.", () -> service.addDailyBlocks(
+                    Snapshot.empty(), "Block", date, date, window[0], window[1]));
+        }
+        for (LocalTime unaligned : List.of(LocalTime.of(9, 15), LocalTime.of(9, 0, 1), LocalTime.of(9, 0, 0, 1))) {
+            assertRejected("Unavailable times must be on half-hour boundaries.", () -> service.addDailyBlocks(
+                    Snapshot.empty(), "Block", date, date, unaligned, LocalTime.of(11, 0)));
+        }
+        assertRejected("Commitment dates must use years 0001 to 9999.", () -> service.addDailyBlocks(
+                Snapshot.empty(), "Block", LocalDate.of(0, 12, 31), date, LocalTime.of(9, 0), LocalTime.of(10, 0)));
+    }
+
+    @Test
+    void unavailableBlocks_anyConflictingDate_rejectsWholeRequestWithoutConsumingIds() {
+        LocalDate monday = LocalDate.of(2026, 10, 26);
+        Snapshot weekly = service.add(Snapshot.empty(), "Lecture", DayOfWeek.MONDAY, LocalTime.of(15, 0), 60);
+        Snapshot source = service.add(weekly, "Meeting", DayOfWeek.WEDNESDAY, LocalTime.of(16, 0), 30,
+                monday.plusDays(2), monday.plusDays(2));
+
+        assertRejected("Commitment overlaps C1: Lecture", () -> service.addDailyBlocks(source, "Block",
+                monday, monday.plusDays(2), LocalTime.of(15, 0), LocalTime.of(17, 0)));
+        assertRejected("Commitment overlaps C2: Meeting", () -> service.addDailyBlocks(source, "Block",
+                monday.plusDays(1), monday.plusDays(3), LocalTime.of(15, 0), LocalTime.of(17, 0)));
+        assertRejected("Commitment overlaps C2: Meeting", () -> service.addContinuousBlock(source, "Block",
+                monday.plusDays(1).atTime(18, 0), monday.plusDays(2).atTime(17, 0)));
+        assertEquals(2, source.commitments().size());
+        assertEquals(3, source.nextCommitmentId());
+
+        Snapshot skipped = service.skip(source, 1, monday);
+        Snapshot released = service.addDailyBlocks(skipped, "Block", monday, monday,
+                LocalTime.of(15, 0), LocalTime.of(17, 0));
+        assertEquals(oneTime(3, "Block", monday, 15, 0, 120), released.commitments().getLast());
+        Snapshot adjacent = service.addDailyBlocks(source, "Block", monday.plusDays(1), monday.plusDays(2),
+                LocalTime.of(14, 0), LocalTime.of(16, 0));
+        assertEquals(List.of(3, 4), adjacent.commitments().subList(2, 4).stream().map(Commitment::id).toList());
+        assertEquals(5, adjacent.nextCommitmentId());
+    }
+
+    @Test
+    void unavailableBlocks_idCapacity_allowsFinalIdsAndRejectsShortfallWithoutChanges() {
+        LocalDate date = LocalDate.of(2026, 10, 26);
+        Snapshot nearlyFull = new Snapshot(List.of(), List.of(), 1, Integer.MAX_VALUE - 2);
+        Snapshot filled = service.addDailyBlocks(nearlyFull, "Block", date, date.plusDays(1),
+                LocalTime.of(9, 0), LocalTime.of(10, 0));
+        assertEquals(List.of(Integer.MAX_VALUE - 2, Integer.MAX_VALUE - 1),
+                filled.commitments().stream().map(Commitment::id).toList());
+        assertEquals(Integer.MAX_VALUE, filled.nextCommitmentId());
+
+        assertRejected("Commitment IDs are exhausted.", () -> service.addDailyBlocks(nearlyFull, "Block",
+                date, date.plusDays(2), LocalTime.of(9, 0), LocalTime.of(10, 0)));
+        assertTrue(nearlyFull.commitments().isEmpty());
+        assertRejected("Commitment IDs are exhausted.", () -> service.addContinuousBlock(filled, "Block",
+                date.plusDays(5).atTime(9, 0), date.plusDays(5).atTime(10, 0)));
+        assertRejected("Commitment IDs are exhausted.", () -> service.addDailyBlocks(filled, "Block",
+                date.plusDays(5), date.plusDays(5), LocalTime.of(9, 0), LocalTime.of(10, 0)));
+    }
+
+    @Test
+    void unavailableBlocks_nullReferencesAndLogging_failFastAndOmitPrivateValues() {
+        LocalDateTime start = LocalDateTime.of(2026, 10, 26, 9, 0);
+        LocalDate date = start.toLocalDate();
+        LocalTime time = start.toLocalTime();
+        assertEquals("state", assertThrows(NullPointerException.class,
+                () -> service.addContinuousBlock(null, "A", start, start.plusHours(1))).getMessage());
+        assertEquals("end", assertThrows(NullPointerException.class,
+                () -> service.addContinuousBlock(Snapshot.empty(), "A", start, null)).getMessage());
+        assertEquals("firstDate", assertThrows(NullPointerException.class,
+                () -> service.addDailyBlocks(Snapshot.empty(), "A", null, date, time, time.plusHours(1)))
+                .getMessage());
+        assertEquals("end", assertThrows(NullPointerException.class,
+                () -> service.addDailyBlocks(Snapshot.empty(), "A", date, date, time, null)).getMessage());
+
+        List<LogRecord> records = captureLogs(() -> {
+            service.addContinuousBlock(Snapshot.empty(), "Private trip", start, start.plusHours(1));
+            assertThrows(ValidationException.class, () -> service.addDailyBlocks(Snapshot.empty(), "Private block",
+                    date, date, time, time));
+        });
+        List<String> messages = records.stream().map(LogRecord::getMessage).toList();
+        assertEquals(List.of("Starting continuous unavailable addition",
+                "Unavailable segments validated; creating addition candidate",
+                "Unavailable addition candidate created; not yet saved or published",
+                "Starting daily unavailable addition",
+                "Unavailable addition rejected; source snapshot unchanged"), messages);
+        assertTrue(messages.stream().noneMatch(message -> message.contains("Private")));
+    }
+
+    /**
+     * Creates the one-time commitment expected for a generated unavailable segment.
+     */
+    private static Commitment oneTime(int id, String name, LocalDate date, int hour, int minute, int minutes) {
+        return new Commitment(id, name, date.getDayOfWeek(), LocalTime.of(hour, minute), minutes, date, date);
+    }
+
+    /**
+     * Asserts a domain rejection by its exact user-facing message.
+     */
+    private static void assertRejected(String message, Runnable operation) {
+        assertEquals(message, assertThrows(ValidationException.class, operation::run).getMessage());
+    }
+
+    @Test
     void addAndEdit_dateBounds_validateActualOccurrencesAndPreserveOmissions() {
         LocalDate semesterStart = LocalDate.of(2026, 8, 10);
         LocalDate semesterEnd = LocalDate.of(2026, 11, 16);
