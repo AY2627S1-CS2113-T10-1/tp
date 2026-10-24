@@ -203,6 +203,7 @@ class StateCodecTest {
         assertEquals(state, codec.decode(codec.encode(state)));
     }
 
+    // @@author ernestgoh-god
     @Test
     void encodeAndDecode_extendedTasksWithBoundedAndSkippedCommitments_preservesBothVersions()
             throws StorageException {
@@ -228,6 +229,7 @@ class StateCodecTest {
         assertEquals(versionFour, codec.decode(encodedFour));
     }
 
+    // @@author nickpatt
     @Test
     void decode_corruptExtendedTasks_rejectsWholeState() {
         for (String row : List.of("TASK2|1|NONE|-1|NORMAL|A", "TASK2|1|NONE|2147483648|NORMAL|A",

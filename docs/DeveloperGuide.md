@@ -29,6 +29,13 @@ Git-based attribution. CLI wiring remains attributed to its Printing owner.
 These tooling comments change no commands, runtime behaviour or UI fixtures;
 the existing Task JUnit coverage and packaged scenarios remain applicable.
 
+Nickhil's task editing and progress work remains in his original commits
+`2751189` and `bfba4b1`. Scoped tags in shared renderer, planning and storage
+files identify his added sections; untagged edits retain their Git attribution.
+The mixed storage codec test has separate tags for Nickhil's format tests and
+Ernest's cross-feature round-trip test, so neither test is credited to the
+other contributor.
+
 ## Duration verification (issue #13)
 
 Duration recording belongs to the existing add operations; no additional
