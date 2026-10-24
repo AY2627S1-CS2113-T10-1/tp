@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Path;
 import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -19,6 +20,7 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import scheduleflow.common.InputRules;
 import scheduleflow.common.ValidationException;
@@ -27,10 +29,13 @@ import scheduleflow.model.Snapshot;
 import scheduleflow.model.StudyHours;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
+import scheduleflow.planning.EarliestDeadlinePlanner;
 import scheduleflow.planning.TimeRules;
+import scheduleflow.storage.FileStorage;
+import scheduleflow.storage.StateCodec;
 
 /**
- * Verifies task candidates, deadline limits and stable identity without I/O or a live clock.
+ * Verifies task candidates, deadline limits and stable identity with isolated storage and fixed time.
  */
 @Isolated
 class TaskServiceTest {
@@ -39,6 +44,57 @@ class TaskServiceTest {
     private static final Commitment LECTURE = new Commitment(3, "Lecture", DayOfWeek.MONDAY,
             LocalTime.of(10, 0), 120);
     private final TaskService service = new TaskService();
+
+    // @@author ernestgoh-god
+    @Test
+    void reviseRemaining_knownTask_replacesOnlyEstimateAndPreservesMetadata() {
+        Task first = new Task(2, "First", DEADLINE, 30);
+        Task target = new Task(8, "Target", DEADLINE, 60);
+        Snapshot source = new Snapshot(List.of(first, target), List.of(LECTURE), 10, 11);
+
+        Snapshot candidate = service.reviseRemaining(source, 8, 90);
+
+        assertEquals(List.of(first, new Task(8, "Target", DEADLINE, 90)), candidate.tasks());
+        assertEquals(source.commitments(), candidate.commitments());
+        assertEquals(source.studyHours(), candidate.studyHours());
+        assertEquals(10, candidate.nextTaskId());
+        assertEquals(11, candidate.nextCommitmentId());
+        assertEquals(List.of(first, target), source.tasks());
+        assertSame(source, service.reviseRemaining(source, 8, 60));
+    }
+
+    @Test
+    void reviseRemaining_invalidTaskOrEstimate_rejectsWithoutChangingSource() {
+        Task task = new Task(2, "Target", DEADLINE, 60);
+        Snapshot source = new Snapshot(List.of(task), List.of(LECTURE), 3, 4);
+
+        assertEquals("state", assertThrows(NullPointerException.class,
+                () -> service.reviseRemaining(null, 2, 30)).getMessage());
+        assertEquals("Unknown task ID: T9", assertThrows(ValidationException.class,
+                () -> service.reviseRemaining(source, 9, 30)).getMessage());
+        for (int remaining : new int[] {0, -30, 45, Integer.MAX_VALUE}) {
+            assertThrows(ValidationException.class, () -> service.reviseRemaining(source, 2, remaining));
+        }
+        assertEquals(List.of(task), source.tasks());
+        assertEquals(3, source.nextTaskId());
+    }
+
+    @Test
+    void reviseRemaining_savedCandidateReloadsAndChangesPlanningDemand(@TempDir Path directory) throws Exception {
+        Task task = new Task(2, "Target", NOW.withHour(8).withMinute(30), 60);
+        Snapshot source = new Snapshot(List.of(task), List.of(), 3, 1);
+        Snapshot revised = service.reviseRemaining(source, 2, 90);
+        FileStorage storage = new FileStorage(directory.resolve("data/scheduleflow.txt"), new StateCodec());
+
+        storage.save(revised);
+        Snapshot restored = storage.load();
+
+        assertEquals(revised, restored);
+        EarliestDeadlinePlanner planner = new EarliestDeadlinePlanner();
+        assertEquals(30, planner.generate(source, NOW).unallocated().getFirst().minutes());
+        assertEquals(60, planner.generate(restored, NOW).unallocated().getFirst().minutes());
+    }
+    // @@author nickpatt
 
     @Test
     void methods_nullDependencies_reportNamedPreconditions() {

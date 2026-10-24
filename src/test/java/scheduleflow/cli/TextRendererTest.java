@@ -58,6 +58,10 @@ class TextRendererTest {
     void publicMethods_nullInputs_rejectWithArgumentNames() {
         assertEquals("task", assertThrows(NullPointerException.class, () -> renderer.taskAdded(null)).getMessage());
         assertEquals("task", assertThrows(NullPointerException.class, () -> renderer.taskDeleted(null)).getMessage());
+        // @@author ernestgoh-god
+        assertEquals("task", assertThrows(NullPointerException.class,
+                () -> renderer.taskRemainingUpdated(null)).getMessage());
+        // @@author ka-how
         assertEquals("tasks", assertThrows(NullPointerException.class, () -> renderer.tasks(null)).getMessage());
         assertEquals("commitment",
                 assertThrows(NullPointerException.class, () -> renderer.commitmentAdded(null)).getMessage());
@@ -93,7 +97,11 @@ class TextRendererTest {
         String output = renderer.help();
         assertTrue(output.startsWith("=== ScheduleFlow Command Help ===\n"));
         List<String> formats = List.of("help", "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES", "task list",
-                "task delete TNUMBER", "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
+                "task delete TNUMBER",
+                // @@author ernestgoh-god
+                "task remaining TNUMBER remaining/MINUTES",
+                // @@author ka-how
+                "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
                         + " [from/YYYY-MM-DD until/YYYY-MM-DD]",
                 "commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES", "commitment list",
                 "commitment delete CNUMBER", "commitment skip CNUMBER on/YYYY-MM-DD",
@@ -118,6 +126,15 @@ class TextRendererTest {
                 renderer.taskAdded(task));
         assertOutput("Deleted task T10: " + LONG_NAME, renderer.taskDeleted(task));
     }
+
+    // @@author ernestgoh-god
+    @Test
+    void taskRemainingUpdated_stableIdAndUnicodeName_reportsExactEstimate() {
+        Task task = new Task(10, LONG_NAME, DEADLINE, 90);
+        assertOutput("Remaining time for T10: " + LONG_NAME + " | 90 min", renderer.taskRemainingUpdated(task));
+        assertEquals(90, task.remainingMinutes());
+    }
+    // @@author ka-how
 
     @Test
     void tasks_empty_returnsExactMessage() {
