@@ -13,9 +13,11 @@ import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import scheduleflow.model.Commitment;
+import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskOccurrence;
 import scheduleflow.model.TaskPriority;
 
 // @@author ernestgoh-god
@@ -24,6 +26,102 @@ import scheduleflow.model.TaskPriority;
  */
 class StateCodecTest {
     private final StateCodec codec = new StateCodec();
+
+    // @@author nickpatt
+    @Test
+    void encodeAndDecode_recurrence_preservesNamesCursorsProvenanceAndWidestCommitments() throws Exception {
+        LocalDateTime first = LocalDateTime.of(2026, 10, 26, 18, 0);
+        RecurringTask recurring = new RecurringTask(2, "复习 | café", first,
+                Optional.of(first.toLocalDate().plusWeeks(3)), 60, Optional.of(first.plusWeeks(1)));
+        Task occurrence = new Task(4, "复习 | moved", first.plusDays(1), 30,
+                Optional.of(new TaskOccurrence(2, first)));
+        Commitment weekly = new Commitment(1, "Weekly | café", DayOfWeek.MONDAY, LocalTime.NOON, 30,
+                null, null, Set.of(first.toLocalDate()));
+        Commitment once = new Commitment(2, "Meeting", DayOfWeek.FRIDAY, LocalTime.NOON, 60,
+                LocalDate.of(2026, 10, 30), LocalDate.of(2026, 10, 30));
+        Snapshot state = new Snapshot(List.of(occurrence, new Task(5, "Ordinary", first, 30)),
+                List.of(weekly, once), 8, 7, Snapshot.empty().studyHours().withWindow("monday",
+                        new StudyWindow(LocalTime.of(9, 0), LocalTime.of(20, 0))), List.of(recurring), 6);
+        String encoded = codec.encode(state);
+        assertEquals("SCHEDULEFLOW|5\nNEXT|8|7|6\n"
+                + "OCCURRENCE|4|2026-10-27T18:00|30|NORMAL|2|2026-10-26T18:00|复习 | moved\n"
+                + "TASK2|5|2026-10-26T18:00|30|NORMAL|Ordinary\n"
+                + "RECURRING|2|2026-10-26T18:00|60|2026-11-16|2026-11-02T18:00|复习 | café\n"
+                + "COMMITMENT|1|MONDAY|12:00|30|-|-|2026-10-26|Weekly | café\n"
+                + "COMMITMENT|2|FRIDAY|12:00|60|2026-10-30|2026-10-30|-|Meeting\n"
+                + "HOURS|monday|09:00|20:00\n", encoded);
+        assertEquals(state, codec.decode(encoded));
+        Snapshot deletedTemplate = new Snapshot(state.tasks(), state.commitments(), 8, 7,
+                state.studyHours(), List.of(), 6);
+        assertEquals(deletedTemplate, codec.decode(codec.encode(deletedTemplate)));
+        Snapshot deletedAll = new Snapshot(List.of(), List.of(), 8, 7, state.studyHours(), List.of(), 6);
+        assertEquals(deletedAll, codec.decode(codec.encode(deletedAll)));
+        assertEquals("SCHEDULEFLOW|5\nNEXT|8|7|6\n", codec.encode(new Snapshot(List.of(), List.of(),
+                8, 7, Snapshot.empty().studyHours(), List.of(), 6)));
+        Snapshot unprocessed = new Snapshot(List.of(), List.of(), 1, 1, Snapshot.empty().studyHours(),
+                List.of(new RecurringTask(1, "Weekly", first, Optional.empty(), 30, Optional.empty())), 2);
+        assertEquals(unprocessed, codec.decode(codec.encode(unprocessed)));
+    }
+
+    @Test
+    void encodeAndDecode_extendedOccurrences_preservesExactProgressOptionalDeadlinesAndPriority() throws Exception {
+        LocalDateTime first = LocalDateTime.of(2026, 10, 26, 18, 0);
+        Snapshot state = new Snapshot(List.of(
+                new Task(1, "Complete|kept", Optional.empty(), 0, TaskPriority.HIGH,
+                        Optional.of(new TaskOccurrence(1, first))),
+                new Task(2, "Minute", Optional.of(first.plusDays(1)), 1, TaskPriority.LOW,
+                        Optional.of(new TaskOccurrence(1, first.plusWeeks(1)))),
+                new Task(3, "Undated", Optional.empty(), Integer.MAX_VALUE, TaskPriority.NORMAL,
+                        Optional.of(new TaskOccurrence(1, first.plusWeeks(2))))),
+                List.of(), 4, 1, Snapshot.empty().studyHours(), List.of(), 2);
+        String encoded = "SCHEDULEFLOW|5\nNEXT|4|1|2\n"
+                + "OCCURRENCE|1|NONE|0|HIGH|1|2026-10-26T18:00|Complete|kept\n"
+                + "OCCURRENCE|2|2026-10-27T18:00|1|LOW|1|2026-11-02T18:00|Minute\n"
+                + "OCCURRENCE|3|NONE|2147483647|NORMAL|1|2026-11-09T18:00|Undated\n";
+        assertEquals(encoded, codec.encode(state));
+        assertEquals(state, codec.decode(encoded));
+        assertEquals(state, codec.decode(encoded.replace("\n", "\r\n")));
+        assertEquals(new Task(1, "Legacy", first, 30),
+                codec.decode("SCHEDULEFLOW|5\nNEXT|2|1|2\nTASK|1|2026-10-26T18:00|30|Legacy")
+                        .tasks().getFirst());
+        assertThrows(StorageException.class, () -> codec.decode(
+                "SCHEDULEFLOW|5\nNEXT|2|1|2\nTASK|1|2026-10-26T18:00|0|Legacy"));
+    }
+
+    @Test
+    void decode_recurrence_rejectsMalformedDuplicateAndInconsistentRecords() {
+        String recurring = "RECURRING|1|2026-10-26T18:00|30|-|2026-11-02T18:00|Weekly";
+        String occurrence = "OCCURRENCE|1|2026-10-26T18:00|30|NORMAL|1|2026-10-26T18:00|Work";
+        for (String rows : List.of(recurring + "\n" + recurring,
+                occurrence + "\n" + occurrence,
+                occurrence + "\nOCCURRENCE|2|2026-10-27T18:00|30|NORMAL|1|2026-10-26T18:00|Duplicate",
+                occurrence + "\nTASK|1|2026-10-26T18:00|30|Duplicate",
+                "RECURRING|1|2026-10-26T18:00|45|-|-|Weekly",
+                "RECURRING|1|2026-10-26T18:00|30|2026-10-25|-|Weekly",
+                "RECURRING|1|2026-10-26T18:00|30|-|2026-10-27T18:00|Weekly",
+                "RECURRING|3|2026-10-26T18:00|30|-|-|Weekly",
+                "RECURRING|1|2026-10-26T18:00|30|-|-",
+                "OCCURRENCE|1|2026-10-26T18:00|30|NORMAL|0|2026-10-26T18:00|Work",
+                "OCCURRENCE|1|2026-10-26T18:00|30|NORMAL|3|2026-10-26T18:00|Work",
+                "OCCURRENCE|1|2026-10-26T18:00|30|NORMAL|1|bad|Work",
+                "OCCURRENCE|1|NONE|-1|NORMAL|1|2026-10-26T18:00|Work",
+                "OCCURRENCE|1|NONE|0|UNKNOWN|1|2026-10-26T18:00|Work",
+                "OCCURRENCE|1|NONE|0|HIGH|1|2026-10-26T18:00",
+                recurring + "\nOCCURRENCE|1|2026-11-09T18:00|30|NORMAL|1|2026-11-09T18:00|Beyond cursor",
+                "RECURRING|1|2026-10-26T18:00|30|-|-|Weekly\n" + occurrence,
+                recurring + "\nOCCURRENCE|1|2026-10-27T18:00|30|NORMAL|1|2026-10-27T18:00|Work")) {
+            assertThrows(StorageException.class, () -> codec.decode("SCHEDULEFLOW|5\nNEXT|3|1|3\n" + rows), rows);
+        }
+        for (String counters : List.of("NEXT|1|1", "NEXT|1|1|0", "NEXT|1|1|1|extra")) {
+            assertThrows(StorageException.class, () -> codec.decode("SCHEDULEFLOW|5\n" + counters));
+        }
+        for (int version = 1; version <= 4; version++) {
+            String header = "SCHEDULEFLOW|" + version + "\nNEXT|3|1\n";
+            assertThrows(StorageException.class, () -> codec.decode(header + recurring));
+            assertThrows(StorageException.class, () -> codec.decode(header + occurrence));
+        }
+    }
+    // @@author ernestgoh-god
 
     // @@author Darren50
     @Test

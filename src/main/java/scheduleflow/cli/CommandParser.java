@@ -10,10 +10,12 @@ import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import scheduleflow.task.TaskEdit;
 
 /**
  * Parses the complete case-sensitive command grammar without inspecting application state.
@@ -29,6 +31,11 @@ public final class CommandParser {
     private static final String HELP_USAGE = "Type help to see available commands";
     private static final String TASK_ADD_USAGE = "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES";
     private static final String TASK_DELETE_USAGE = "task delete TNUMBER";
+    // @@author nickpatt
+    private static final String TASK_EDIT_USAGE = "task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]";
+    private static final String TASK_RECUR_USAGE = "task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES"
+            + " every/WEEKLY [until/YYYY-MM-DD] OR task recur list OR task recur delete RNUMBER";
+    // @@author ka-how
     // @@author ernestgoh-god
     private static final String TASK_REMAINING_USAGE = "task remaining TNUMBER remaining/MINUTES";
     private static final String TASK_PROGRESS_USAGE =
@@ -82,6 +89,18 @@ public final class CommandParser {
                     + DATE_RANGE_PATTERN);
     private static final Pattern TASK_DELETE_PATTERN = Pattern.compile(
             "task +delete +T(?<id>" + POSITIVE_INT_TOKEN + ")");
+    // @@author nickpatt
+    private static final Pattern TASK_EDIT_PATTERN = Pattern.compile(
+            "task +edit +T(?<id>" + POSITIVE_INT_TOKEN + ")"
+                    + "(?: +n/(?<name>" + NAME_TOKEN + "))?"
+                    + "(?: +due/(?<date>" + DATE_TOKEN + ") +(?<time>" + TIME_TOKEN + "))?");
+    private static final Pattern TASK_RECUR_ADD_PATTERN = Pattern.compile(
+            "task +recur +add +n/(?<name>" + NAME_TOKEN + ") +due/(?<date>" + DATE_TOKEN
+                    + ") +(?<time>" + TIME_TOKEN + ") +d/(?<minutes>" + POSITIVE_INT_TOKEN + ")"
+                    + " +every/WEEKLY(?: +until/(?<until>" + DATE_TOKEN + "))?");
+    private static final Pattern TASK_RECUR_DELETE_PATTERN = Pattern.compile(
+            "task +recur +delete +R(?<id>" + POSITIVE_INT_TOKEN + ")");
+    // @@author ka-how
     // @@author ernestgoh-god
     private static final Pattern TASK_PROGRESS_WORK_PATTERN = Pattern.compile(
             "task +progress +T(?<id>" + POSITIVE_INT_TOKEN + ") +done/(?<done>0|" + POSITIVE_INT_TOKEN + ")");
@@ -166,6 +185,9 @@ public final class CommandParser {
                 case "task list" -> parseNoArguments(input, command, new Command.ListTasks());
                 case "task delete" -> new Command.DeleteTask(Integer.parseInt(
                         match(TASK_DELETE_PATTERN, input, usage).group("id")));
+                // @@author nickpatt
+                case "task edit" -> parseEditTask(input);
+                case "task recur" -> parseRecurringTask(input);
                 // @@author ernestgoh-god
                 case "task progress" -> parseTaskProgress(input);
                 case "task remaining" -> parseTaskRemaining(input);
@@ -216,6 +238,10 @@ public final class CommandParser {
         return switch (command) {
             case "task add" -> TASK_ADD_USAGE;
             case "task delete" -> TASK_DELETE_USAGE;
+            // @@author nickpatt
+            case "task edit" -> TASK_EDIT_USAGE;
+            case "task recur" -> TASK_RECUR_USAGE;
+            // @@author ka-how
             // @@author ernestgoh-god
             case "task progress" -> TASK_PROGRESS_USAGE;
             case "task remaining" -> TASK_REMAINING_USAGE;
@@ -253,6 +279,42 @@ public final class CommandParser {
         requireSupportedYear(deadline.toLocalDate(), TASK_ADD_USAGE);
         return new Command.AddTask(fields.group("name").strip(), deadline, Integer.parseInt(fields.group("minutes")));
     }
+
+    // @@author nickpatt
+    /** Preserves omitted fields and rejects malformed or reordered edits before execution. */
+    private Command.EditTask parseEditTask(String input) throws ParseException {
+        Matcher fields = match(TASK_EDIT_PATTERN, input, TASK_EDIT_USAGE);
+        Optional<String> name = Optional.ofNullable(fields.group("name")).map(String::strip);
+        Optional<LocalDateTime> deadline = Optional.empty();
+        if (fields.group("date") != null) {
+            LocalDateTime value = LocalDateTime.parse(fields.group("date") + " " + fields.group("time"),
+                    DEADLINE_FORMAT);
+            requireSupportedYear(value.toLocalDate(), TASK_EDIT_USAGE);
+            deadline = Optional.of(value);
+        }
+        if (name.isEmpty() && deadline.isEmpty()) {
+            throw new ParseException("Supply at least one task field to edit", TASK_EDIT_USAGE);
+        }
+        return new Command.EditTask(Integer.parseInt(fields.group("id")), new TaskEdit(name, deadline, false));
+    }
+
+    /** Parses the weekly-only recurrence vocabulary without inventing a weekday or reading a clock. */
+    private Command parseRecurringTask(String input) throws ParseException {
+        if (input.replaceAll(" +", " ").equals("task recur list")) {
+            return new Command.ListRecurringTasks();
+        }
+        Matcher deletion = TASK_RECUR_DELETE_PATTERN.matcher(input);
+        if (deletion.matches()) {
+            return new Command.DeleteRecurringTask(Integer.parseInt(deletion.group("id")));
+        }
+        Matcher fields = match(TASK_RECUR_ADD_PATTERN, input, TASK_RECUR_USAGE);
+        LocalDateTime first = LocalDateTime.parse(fields.group("date") + " " + fields.group("time"), DEADLINE_FORMAT);
+        requireSupportedYear(first.toLocalDate(), TASK_RECUR_USAGE);
+        LocalDate until = parseOptionalDate(fields.group("until"), TASK_RECUR_USAGE);
+        return new Command.AddRecurringTask(fields.group("name").strip(), first,
+                Integer.parseInt(fields.group("minutes")), Optional.ofNullable(until));
+    }
+    // @@author ka-how
 
     // @@author ernestgoh-god
     /** Parses either progress form without applying task-state validation. */

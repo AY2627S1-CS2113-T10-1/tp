@@ -12,7 +12,7 @@ exact output, invalid values, plan invalidation, replanning and saved data after
 two restarts. Save failure is covered by an isolated dispatcher fake because
 process-level fault injection is unavailable.
 
-All twenty-one maintained process scenarios are active. They exercise the packaged
+All twenty-three maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -86,6 +86,17 @@ timeouts and expected output; Java 25 and isolated workspace data were retained.
 
 ## Active packaged scenarios
 
+Task editing and weekly task recurrence now have parser/dispatcher/renderer
+implementations. UI-021 checks saved edits and rejection; UI-022 checks real template
+commands, definitions and R-counter persistence; UI-023 checks generated-task
+provenance/cursors through deletion, replanning and restart. Future additions use
+year 9999 outside the current horizon, and historical fixtures use year 2000, so
+exact results do not depend on a near-future deadline expiring. Actual eligible
+occurrence generation, original releases, rolling horizons, no-op edits, failures
+and retry IDs use fixed-clock JUnit tests. No production clock flag is introduced.
+The twenty inherited scenarios retain PR #84's expected outputs. Its domain
+lifecycle and exact-minute changes are merged and preserved alongside #39/#67.
+
 Task edit, deadline clear/absence, progress/session percentages, revised remaining,
 completion and reopening APIs have deterministic JUnit coverage. The two progress
 forms have parser and dispatcher tests, but `taskProgressUpdated` is still a
@@ -98,15 +109,19 @@ commands and confirmations remain deferred.
 Compatibility checks cover optional deadlines in existing add/list/remainder
 output, exact plan work totals (not rounded capacity), 45-minute work versus
 60-minute reservation, partial 30/15 allocation, completed-task exclusion, long
-arithmetic, custom hours, identity no-ops and legacy/v2-v4 save round trips.
+arithmetic, custom hours, identity no-ops and legacy/v2-v5 save round trips.
 Tasks now accept positive whole-minute additions; commitments retain the positive
 30-minute rule, including UI-006's rejected commitment `d/45`. All existing
-slot-aligned fixture responses remain unchanged. Restored-data UI-020 is
-active because existing list/plan/delete/restart commands need no new wiring.
+slot-aligned fixture responses remain unchanged. UI-020 retains PR #84's
+optional/completed restored-data compatibility case and exact-minute restart checks.
 
 | ID | Coverage | Status |
 | --- | --- | --- |
-| UI-021 | Unavailable study period: custom hours, add/delete plan invalidation, restart and released interval | Active |
+| UI-024 | Unavailable study period: custom hours, add/delete plan invalidation, restart and released interval | Active |
+| UI-020 | Restored optional/completed tasks, exact work and saved restart | Active |
+| UI-021 | Task edit, unchanged IDs, validation, plan invalidation and saved restart | Active |
+| UI-022 | Weekly template commands, bounded/unbounded definitions and stable R IDs across restarts | Active |
+| UI-023 | Version 5 occurrence history and no recreation after task deletion/replan/restart | Active |
 | UI-019 | Remaining-time revision, validation, plan invalidation and two saved restarts | Active |
 | UI-018 | One-time commitments: exact-date overlap, validation, restart, edit by date and deletion | Active |
 | UI-017 | One-date recurrence skips, validation, version 4 restart and released overlap | Active |
@@ -126,7 +141,6 @@ active because existing list/plan/delete/restart commands need no new wiring.
 | UI-014 | Partial commitment edits, unchanged IDs, rejection, plan invalidation and Unicode restart | Active |
 | UI-015 | Study hours precedence, validation, resets, plan invalidation and saved restarts | Active |
 | UI-016 | Inclusive recurring-commitment bounds, actual-occurrence overlap and version 3 restart | Active |
-| UI-020 | Extended saved tasks: absent deadlines, completed overdue exclusion, exact work and restart | Active |
 
 UI-021 verifies issue #48 through the existing one-time commitment commands.
 It configures a date's study window, generates an empty plan, adds an unavailable
@@ -217,6 +231,16 @@ the existing one-time API to verify allocation/projection compatibility for
 continuous and daily representations. They do not call or certify the new
 batch skeletons. Exact range-command parsing, creation, confirmation and
 transaction acceptance remain unexecuted until the owners implement them.
+## Planned issue #40 console acceptance
+
+Progress grammar, candidate transactions and exact work are implemented, but
+successful console acceptance awaits Printing and Ka How's confirmation.
+Completion/reopening commands are not wired. Do not count the recoverable
+pending-progress response as a successful progress operation.
+
+| ID | Coverage | Status |
+| --- | --- | --- |
+| UI-023 | Minute/session progress, exact credit, save/restart, plan invalidation and rollback | Planned; progress confirmation pending |
 
 ## Planned issue #55 console acceptance
 
@@ -234,6 +258,8 @@ After Printing and Save integrate the documented contract, add and activate:
 | --- | --- | --- |
 | UI-028 | Set/show/reset policy, invalid values, save/restart and plan invalidation/rollback | Planned; grammar, settings persistence and confirmations pending |
 | UI-029 | Cross-task limits, commitments below/at/2x/3x limit, fixed breaks and BREAK rows | Planned; configured console planner and rendering pending |
+| UI-024 | Set/show/reset policy, invalid values, save/restart and plan invalidation/rollback | Planned; grammar, settings persistence and confirmations pending |
+| UI-025 | Cross-task limits, commitments below/at/2x/3x limit, fixed breaks and BREAK rows | Planned; configured console planner and rendering pending |
 
 Use fixed-clock dispatcher JUnit tests for exact schedule times. Packaged
 acceptance must keep isolated saved data and deterministic output; an expected

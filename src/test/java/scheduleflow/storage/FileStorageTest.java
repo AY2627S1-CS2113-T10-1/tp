@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -25,9 +26,12 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import scheduleflow.commitment.CommitmentService;
 import scheduleflow.model.Commitment;
+import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskOccurrence;
+import scheduleflow.model.TaskPriority;
 import scheduleflow.task.TaskService;
 
 // @@author ernestgoh-god
@@ -40,6 +44,66 @@ class FileStorageTest {
     private Path directory;
 
     // @@author nickpatt
+    @Test
+    void saveAndLoad_recurrence_preservesBytesAndDoesNotRecreateDeletedTemplates() throws Exception {
+        LocalDateTime first = LocalDateTime.of(2026, 10, 26, 18, 0);
+        RecurringTask recurring = new RecurringTask(1, "Weekly | café", first, Optional.empty(), 60,
+                Optional.of(first.plusWeeks(2)));
+        Task occurrence = new Task(1, "Work | 复习", first, 30,
+                Optional.of(new TaskOccurrence(1, first)));
+        Snapshot state = new Snapshot(List.of(occurrence), List.of(), 5, 4,
+                Snapshot.empty().studyHours(), List.of(recurring), 3);
+        Path file = directory.resolve("recurrence.txt");
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        storage.save(state);
+        byte[] bytes = Files.readAllBytes(file);
+        assertEquals(state, new FileStorage(file, new StateCodec()).load());
+        assertArrayEquals(bytes, Files.readAllBytes(file));
+        Snapshot deleted = new Snapshot(state.tasks(), List.of(), 5, 4, state.studyHours(), List.of(), 3);
+        storage.save(deleted);
+        bytes = Files.readAllBytes(file);
+        assertEquals(deleted, new FileStorage(file, new StateCodec()).load());
+        assertEquals(deleted, storage.load());
+        assertArrayEquals(bytes, Files.readAllBytes(file));
+    }
+
+    @Test
+    void saveAndLoad_occurrenceLifecycle_preservesRecurrenceAndPeerTaskMetadata() throws Exception {
+        LocalDateTime first = LocalDateTime.of(2026, 10, 26, 18, 0);
+        Task occurrence = new Task(1, "Work|kept", Optional.empty(), 45, TaskPriority.HIGH,
+                Optional.of(new TaskOccurrence(1, first)));
+        RecurringTask recurring = new RecurringTask(1, "Weekly", first, Optional.empty(), 60, Optional.of(first));
+        Snapshot source = new Snapshot(List.of(occurrence), List.of(), 5, 4,
+                Snapshot.empty().studyHours().withWindow("monday",
+                        new StudyWindow(LocalTime.of(9, 0), LocalTime.of(20, 0))), List.of(recurring), 3);
+        TaskService tasks = new TaskService();
+        Snapshot progressed = tasks.recordWork(source, 1, 14);
+        Snapshot completed = tasks.complete(progressed, 1);
+        Snapshot reopened = tasks.reopen(completed, 1, 17);
+        Snapshot revised = tasks.reviseRemaining(reopened, 1, 19);
+        Snapshot session = tasks.recordSessionProgress(revised, 1, 5, 50);
+        Path file = directory.resolve("occurrence-lifecycle.txt");
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        for (Snapshot candidate : List.of(progressed, completed, reopened, revised, session)) {
+            Task task = candidate.tasks().getFirst();
+            assertEquals(occurrence.occurrence(), task.occurrence());
+            assertEquals(occurrence.deadline(), task.deadline());
+            assertEquals(occurrence.priority(), task.priority());
+            assertEquals(source.recurringTasks(), candidate.recurringTasks());
+            assertEquals(source.nextRecurringTaskId(), candidate.nextRecurringTaskId());
+            assertEquals(source.nextTaskId(), candidate.nextTaskId());
+            assertEquals(source.nextCommitmentId(), candidate.nextCommitmentId());
+            assertEquals(source.studyHours(), candidate.studyHours());
+            storage.save(candidate);
+            byte[] bytes = Files.readAllBytes(file);
+            assertEquals(candidate, new FileStorage(file, new StateCodec()).load());
+            assertArrayEquals(bytes, Files.readAllBytes(file));
+        }
+        assertEquals(List.of(31, 0, 17, 19, 17), List.of(progressed, completed, reopened, revised, session)
+                .stream().map(candidate -> candidate.tasks().getFirst().remainingMinutes()).toList());
+        assertEquals(45, source.tasks().getFirst().remainingMinutes());
+    }
+
     @Test
     void saveAndLoad_lifecycleCandidates_preservesExactStateAndReadOnlyMigration() throws Exception {
         Path file = directory.resolve("lifecycle.txt");

@@ -16,6 +16,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import scheduleflow.model.Commitment;
+import scheduleflow.model.RecurringTask;
 import scheduleflow.model.StudyHours;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
@@ -105,6 +106,12 @@ public final class TextRenderer {
                 "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES - Add a task.",
                 "task list - List stored tasks.",
                 "task delete TNUMBER - Delete a task.",
+                // @@author nickpatt
+                "task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm] - Edit at least one field; run plan again.",
+                "task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES every/WEEKLY [until/YYYY-MM-DD]"
+                        + " - Add a weekly task template and generate occurrences.",
+                "task recur list - List weekly task templates (R IDs).",
+                "task recur delete RNUMBER - Stop future generation; existing tasks remain.",
                 // @@author ernestgoh-god
                 "task remaining TNUMBER remaining/MINUTES - Revise a task's remaining time.",
                 // @@author ka-how
@@ -169,16 +176,54 @@ public final class TextRenderer {
 
     // @@author nickpatt
     /**
-     * Reserves formatting of a successfully saved task edit; not implemented or connected to the CLI.
-     * The planned response will use the stored ID, name, deadline and estimate without mutation or I/O.
+     * Formats validated task details without changing estimates, IDs or occurrence provenance.
      *
-     * @param task successfully saved edited task
-     * @return planned edit confirmation without a trailing newline
-     * @throws UnsupportedOperationException always, until task edit rendering is implemented
+     * @param task edited task, or unchanged task for a normalized no-op
+     * @return confirmation without a trailing newline
+     * @throws NullPointerException if task is null
      */
     public String taskEdited(Task task) {
-        // TODO(Tasks): implement TextRenderer.taskEdited
-        throw new UnsupportedOperationException("Task edit rendering is not implemented yet.");
+        Objects.requireNonNull(task, "task");
+        LOGGER.log(Level.FINE, "Formatting task edit response");
+        return finish("Edited " + task.displayId() + ": " + task.name() + "\nDue: "
+                + task.deadline().map(DATE_TIME::format).orElse("No deadline")
+                + " | Duration: " + task.remainingMinutes() + " min");
+    }
+
+    /** Formats a validated template without claiming a particular number of materialized tasks. */
+    public String recurringTaskAdded(RecurringTask task) {
+        Objects.requireNonNull(task, "task");
+        LOGGER.log(Level.FINE, "Formatting recurring task addition response");
+        return finish("Added " + task.displayId() + ": " + task.name() + "\n" + recurringTaskDetails(task));
+    }
+
+    /** Confirms stopping future generation, explicitly retaining previously generated tasks. */
+    public String recurringTaskDeleted(RecurringTask task) {
+        Objects.requireNonNull(task, "task");
+        LOGGER.log(Level.FINE, "Formatting recurring task deletion response");
+        return finish("Deleted recurring task " + task.displayId() + ": " + task.name()
+                + "\nExisting task occurrences are retained.");
+    }
+
+    /** Lists immutable template definitions in the service's numeric R-ID order. */
+    public String recurringTasks(List<RecurringTask> tasks) {
+        requireElements(tasks, "tasks");
+        LOGGER.log(Level.FINE, "Formatting recurring task list");
+        if (tasks.isEmpty()) {
+            return finish("No recurring tasks found.");
+        }
+        StringJoiner lines = new StringJoiner("\n");
+        lines.add("=== Weekly Recurring Tasks ===");
+        for (RecurringTask task : tasks) {
+            lines.add(task.displayId() + " | " + task.name() + " | " + recurringTaskDetails(task));
+        }
+        return finish(lines.add("Total: " + tasks.size() + " recurring task(s).").toString());
+    }
+
+    /** Formats the original weekly sequence, not the cursor or a regenerated occurrence count. */
+    private String recurringTaskDetails(RecurringTask task) {
+        return "Weekly from: " + DATE_TIME.format(task.firstDeadline()) + " | Duration: " + task.minutes()
+                + " min | Until: " + task.until().map(DATE::format).orElse("No end date");
     }
 
     /**

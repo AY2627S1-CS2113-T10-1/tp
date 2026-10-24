@@ -11,6 +11,7 @@ import java.util.logging.Logger;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskPriority;
 import scheduleflow.planning.TimeRules;
 
 /**
@@ -69,8 +70,7 @@ public final class TaskService {
             LOGGER.log(Level.FINE, "Task deadline validated; creating addition candidate");
             List<Task> tasks = new ArrayList<>(state.tasks());
             tasks.add(task);
-            Snapshot candidate = new Snapshot(tasks, state.commitments(), state.nextTaskId() + 1,
-                    state.nextCommitmentId(), state.studyHours());
+            Snapshot candidate = state.withTasks(tasks, state.nextTaskId() + 1);
             assert candidate.tasks().getLast().equals(task)
                     && candidate.tasks().subList(0, candidate.tasks().size() - 1).equals(state.tasks())
                     : "Addition must append exactly one task without changing existing records";
@@ -116,7 +116,7 @@ public final class TaskService {
                     .orElseThrow(() -> new ValidationException("Unknown task ID: T" + taskId));
             Task replacement = new Task(original.id(), edit.name().orElse(original.name()),
                     edit.clearDeadline() ? Optional.empty() : edit.deadline().or(() -> original.deadline()),
-                    original.remainingMinutes(), original.priority());
+                    original.remainingMinutes(), original.priority(), original.occurrence());
             if (!replacement.deadline().equals(original.deadline()) && replacement.deadline().isPresent()) {
                 if (!replacement.deadline().get().isAfter(now)) {
                     throw new ValidationException("Deadline must be in the future.");
@@ -132,8 +132,7 @@ public final class TaskService {
             List<Task> tasks = new ArrayList<>(state.tasks());
             int position = tasks.indexOf(original);
             tasks.set(position, replacement);
-            Snapshot candidate = new Snapshot(tasks, state.commitments(), state.nextTaskId(),
-                    state.nextCommitmentId(), state.studyHours());
+            Snapshot candidate = state.withTasks(tasks, state.nextTaskId());
             assert candidate.tasks().size() == state.tasks().size()
                     && candidate.tasks().get(position).equals(replacement)
                     && candidate.tasks().subList(0, position).equals(state.tasks().subList(0, position))
@@ -166,8 +165,7 @@ public final class TaskService {
         }
         List<Task> tasks = new ArrayList<>(state.tasks());
         tasks.add(Task.withoutDeadline(state.nextTaskId(), name, minutes));
-        return new Snapshot(tasks, state.commitments(), state.nextTaskId() + 1,
-                state.nextCommitmentId(), state.studyHours());
+        return state.withTasks(tasks, state.nextTaskId() + 1);
     }
 
     /**
@@ -259,9 +257,22 @@ public final class TaskService {
             return state;
         }
         List<Task> tasks = new ArrayList<>(state.tasks());
-        tasks.set(tasks.indexOf(task), new Task(task.id(), task.name(), task.deadline(), remaining, task.priority()));
-        return new Snapshot(tasks, state.commitments(), state.nextTaskId(),
-                state.nextCommitmentId(), state.studyHours());
+        tasks.set(tasks.indexOf(task), new Task(task.id(), task.name(), task.deadline(), remaining,
+                task.priority(), task.occurrence()));
+        return state.withTasks(tasks, state.nextTaskId());
+    }
+
+    /** Changes only a task's priority, returning the identical snapshot when it is unchanged. */
+    public Snapshot setPriority(Snapshot state, int taskId, TaskPriority priority) {
+        Objects.requireNonNull(priority, "priority");
+        Task task = findTask(state, taskId);
+        if (task.priority() == priority) {
+            return state;
+        }
+        List<Task> tasks = new ArrayList<>(state.tasks());
+        tasks.set(tasks.indexOf(task), new Task(task.id(), task.name(), task.deadline(), task.remainingMinutes(),
+                priority, task.occurrence()));
+        return state.withTasks(tasks, state.nextTaskId());
     }
 
     /**
@@ -283,8 +294,7 @@ public final class TaskService {
             throw new ValidationException("Unknown task ID: T" + taskId);
         }
         LOGGER.log(Level.FINE, "Task ID resolved; creating deletion candidate");
-        Snapshot candidate = new Snapshot(tasks, state.commitments(), state.nextTaskId(), state.nextCommitmentId(),
-                state.studyHours());
+        Snapshot candidate = state.withTasks(tasks, state.nextTaskId());
         assert candidate.tasks().size() == state.tasks().size() - 1
                 && candidate.tasks().stream().noneMatch(task -> task.id() == taskId)
                 : "Deletion must remove exactly one matching task";

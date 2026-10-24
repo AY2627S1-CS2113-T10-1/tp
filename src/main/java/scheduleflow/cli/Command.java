@@ -6,6 +6,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Objects;
+import java.util.Optional;
+import scheduleflow.task.TaskEdit;
 
 /**
  * Defines the complete command vocabulary as immutable transport values.
@@ -96,6 +98,35 @@ public sealed interface Command {
      */
     record DeleteTask(int id) implements Command {
     }
+
+    // @@author nickpatt
+    /** Carries optional name/deadline replacements without applying domain validation. */
+    record EditTask(int id, TaskEdit edit) implements Command {
+        /** Requires the partial edit while leaving ID and field validation to TaskService. */
+        public EditTask {
+            Objects.requireNonNull(edit, "edit");
+        }
+    }
+
+    /** Carries a weekly template's first deadline, work estimate and optional inclusive last date. */
+    record AddRecurringTask(String name, LocalDateTime firstDeadline, int minutes,
+            Optional<LocalDate> until) implements Command {
+        /** Requires explicit transport values without allocating IDs or reading the clock. */
+        public AddRecurringTask {
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(firstDeadline, "firstDeadline");
+            Objects.requireNonNull(until, "until");
+        }
+    }
+
+    /** Requests weekly template definitions rather than their individual task occurrences. */
+    record ListRecurringTasks() implements Command {
+    }
+
+    /** Carries the independent numeric R-ID of a weekly template to remove. */
+    record DeleteRecurringTask(int id) implements Command {
+    }
+    // @@author ka-how
 
     // @@author ernestgoh-god
     /** Carries a replacement remaining-work estimate for a stored task. */
