@@ -114,12 +114,13 @@ Examples below are independent unless a sequence is explicitly described. Use ex
 Task name/deadline editing is implemented only as an internal Java service API.
 Console integration and edit-confirmation rendering are pending; no task-edit
 command is supported yet. The existing add, list and delete commands below are
-unchanged. Deadline removal and progress tracking are not supported.
+unchanged. You can revise a task's remaining-work estimate with `task remaining`;
+deadline removal and progress tracking are not supported.
 
 ### Recording duration (tasks and commitments)
 
 Enter duration when adding a task or commitment using `d/MINUTES`; there is no
-separate duration command or timer. For example, `d/90` records 90 minutes.
+timer. For example, `d/90` records 90 minutes.
 Both types require positive multiples of 30: `d/30` and `d/90` are valid,
 while `d/0` and `d/45` are rejected, not rounded.
 
@@ -130,13 +131,18 @@ does not reduce either stored value. Saving and loading preserve both values.
 
 Every stored task represents unfinished work. Its duration is your estimate of the work still required. Generating a plan or letting time pass does not reduce that estimate.
 
-> **Pending issue #41 command:** `task remaining T1 remaining/90` will replace
-> a task's estimate with 90 minutes; it does not record completed work. The
-> parser, validation and save wiring are prepared, but Printing has not supplied
-> the confirmation. Until then, this command reports
-> `Error: Revising remaining work is awaiting printing.` and leaves saved data
-> and the current plan unchanged. The current task model accepts positive
-> multiples of 30 minutes, so `remaining/45` is rejected.
+To revise a task's remaining-work estimate without recording completed work, use:
+
+```text
+scheduleflow> task remaining T1 remaining/90
+Remaining time for T1: CS2113 draft | 90 min
+```
+
+Use an existing task ID and a positive multiple of 30 minutes. For example,
+`remaining/45` is rejected. A changed estimate saves automatically and clears
+the current plan; run `plan` again to reflect it. Repeating the same value
+reports the stored estimate without saving or clearing the plan. Unknown IDs,
+invalid values and failed saves leave saved data and the current plan unchanged.
 
 > **Planned issue #40 command:** The parser recognizes `task progress T1 done/30`
 > and `task progress T1 session/60 percent/50`, but the application does not
@@ -682,7 +688,8 @@ Goodbye for now!
 ## Saving and restoring data
 
 The application loads saved data before showing its first prompt and saves
-each successful task, commitment or study-hours change automatically.
+each successful task, commitment or study-hours change automatically, including
+changed remaining-work estimates.
 
 Tasks, commitments, study hours and the next ID counters are saved automatically after each successful change and restored at startup. No manual save or load command is needed.
 
@@ -701,19 +708,19 @@ To back up your data, close the app and copy `data/scheduleflow.txt`. To transfe
 
 ### What if my work does not fit before its deadline?
 
-Run `plan` and review the unallocated minutes and reasons. The app retains every session that fits. You can correct an estimate or deadline by deleting the task and adding a replacement, or remove a commitment if that time has become available. Run `plan` again after changes.
+Run `plan` and review the unallocated minutes and reasons. The app retains every session that fits. Revise an estimate with `task remaining`, delete and re-add a task to change its deadline, or remove a commitment if that time has become available. Run `plan` again after changes.
 
 ### How do I mark work as complete or correct an entry?
 
 Delete completed tasks using `task delete TNUMBER`. Correct commitments with
 `commitment edit CNUMBER` and one or more fields; the ID is preserved. To correct
-a task, delete it and add a replacement with the correct details and a new ID.
-Task editing and completion commands are not supported yet. For partially
-completed work, replace the task with your revised remaining-work estimate.
+a task's name or deadline, delete it and add a replacement with the correct
+details and a new ID. Task completion commands are not supported yet. For
+partially completed work, use `task remaining` with your revised estimate.
 
 ### Why did my schedule disappear?
 
-A successful task or commitment addition, deletion, commitment edit or
+A successful task or commitment addition, deletion, remaining-work revision, commitment edit or
 occurrence skip, or a study-hours set or reset, clears the current plan. Plans
 also disappear when the application restarts. Run `plan` to generate another one.
 
@@ -748,6 +755,7 @@ these storage logs do not include your task names or saved file contents.
 | Add a task | `task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES` |
 | List tasks | `task list` |
 | Delete a task | `task delete TNUMBER` |
+| Revise a task's remaining time | `task remaining TNUMBER remaining/MINUTES` |
 | Add a weekly commitment | `commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD]` |
 | Add a one-time commitment | `commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES` |
 | List commitments | `commitment list` |

@@ -515,29 +515,77 @@ class CommandDispatcherTest {
 
     // @@author ernestgoh-god
     @Test
-    void execute_reviseTaskRemaining_pendingPrintingPreservesSavedAndLiveState() throws Exception {
+    void execute_reviseTaskRemaining_savesBeforePublicationAndInvalidatesPlan() throws Exception {
+        Snapshot original = populatedSnapshot();
+        AppState state = new AppState(original);
+        Plan plan = new EarliestDeadlinePlanner().generate(original, NOW);
+        state.replacePlan(plan);
+        FakeStorage storage = new FakeStorage(original);
+        storage.beforeSave = () -> {
+            assertSame(original, state.snapshot());
+            assertSame(plan, state.currentPlan().orElseThrow());
+        };
+
+        String output = dispatcher(storage, CLOCK).execute(new Command.ReviseTaskRemaining(2, 90), state).output();
+
+        assertEquals("Remaining time for T2: Existing | 90 min", output);
+        assertEquals(1, storage.saveCalls);
+        assertSame(storage.saved, state.snapshot());
+        assertTrue(state.currentPlan().isEmpty());
+        assertEquals(30, original.tasks().getFirst().remainingMinutes());
+        assertEquals(90, state.snapshot().tasks().getFirst().remainingMinutes());
+        assertEquals(original.commitments(), state.snapshot().commitments());
+        assertEquals(original.studyHours(), state.snapshot().studyHours());
+        assertEquals(original.nextTaskId(), state.snapshot().nextTaskId());
+        assertEquals(original.nextCommitmentId(), state.snapshot().nextCommitmentId());
+        dispatcher(storage, CLOCK).execute(new Command.GeneratePlan(), state);
+        assertEquals(90, state.currentPlan().orElseThrow().sessions().stream()
+                .mapToInt(StudySession::minutes).sum());
+    }
+
+    @Test
+    void execute_reviseTaskRemaining_unchangedOrInvalidPreservesPlanAndDisk() throws Exception {
         Snapshot original = populatedSnapshot();
         AppState state = new AppState(original);
         Plan plan = new EarliestDeadlinePlanner().generate(original, NOW);
         state.replacePlan(plan);
         FakeStorage storage = new FakeStorage(original);
         CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
-        for (int minutes : List.of(30, 90)) {
-            ValidationException failure = assertThrows(ValidationException.class,
-                    () -> dispatcher.execute(new Command.ReviseTaskRemaining(2, minutes), state));
-            assertEquals("Revising remaining work is awaiting printing.", failure.getMessage());
+
+        assertEquals("Remaining time for T2: Existing | 30 min",
+                dispatcher.execute(new Command.ReviseTaskRemaining(2, 30), state).output());
+        assertSame(original, state.snapshot());
+        assertSame(original, storage.saved);
+        assertSame(plan, state.currentPlan().orElseThrow());
+        assertEquals(0, storage.saveCalls);
+        for (Command.ReviseTaskRemaining command : List.of(new Command.ReviseTaskRemaining(99, 90),
+                new Command.ReviseTaskRemaining(2, 0), new Command.ReviseTaskRemaining(2, 45))) {
+            assertThrows(ValidationException.class, () -> dispatcher.execute(command, state));
             assertSame(original, state.snapshot());
             assertSame(original, storage.saved);
             assertSame(plan, state.currentPlan().orElseThrow());
             assertEquals(0, storage.saveCalls);
         }
-        for (Command.ReviseTaskRemaining command : List.of(new Command.ReviseTaskRemaining(99, 90),
-                new Command.ReviseTaskRemaining(2, 0), new Command.ReviseTaskRemaining(2, 45))) {
-            assertThrows(ValidationException.class, () -> dispatcher.execute(command, state));
-            assertSame(original, state.snapshot());
-            assertSame(plan, state.currentPlan().orElseThrow());
-            assertEquals(0, storage.saveCalls);
-        }
+    }
+
+    @Test
+    void execute_reviseTaskRemaining_failedSaveRetainsTaskAndPlan() {
+        Snapshot original = populatedSnapshot();
+        AppState state = new AppState(original);
+        Plan plan = new EarliestDeadlinePlanner().generate(original, NOW);
+        state.replacePlan(plan);
+        FakeStorage storage = new FakeStorage(original);
+        storage.failSave = true;
+
+        StorageException failure = assertThrows(StorageException.class,
+                () -> dispatcher(storage, CLOCK).execute(new Command.ReviseTaskRemaining(2, 90), state));
+
+        assertEquals("Save rejected", failure.getMessage());
+        assertEquals(1, storage.saveCalls);
+        assertEquals(90, storage.attempted.tasks().getFirst().remainingMinutes());
+        assertSame(original, storage.saved);
+        assertSame(original, state.snapshot());
+        assertSame(plan, state.currentPlan().orElseThrow());
     }
     // @@author ka-how
 

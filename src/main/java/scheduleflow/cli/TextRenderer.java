@@ -66,15 +66,17 @@ public final class TextRenderer {
     }
 
     /**
-     * Reserves the confirmation for a revised task estimate.
+     * Reports a validated remaining-work estimate without implying that unchanged values were saved again.
      *
-     * @param task validated task candidate with its revised remaining minutes
-     * @return confirmation text once Printing implements this method
-     * @throws UnsupportedOperationException until Printing supplies the response
+     * @param task validated task with its remaining minutes
+     * @return confirmation without a trailing newline
+     * @throws NullPointerException if task is null
      */
     public String taskRemainingUpdated(Task task) {
-        // TODO(ka-how): implement confirmation, add command help, and activate exact-output UI tests.
-        throw new UnsupportedOperationException("Task remaining-work rendering is not implemented yet.");
+        Objects.requireNonNull(task, "task");
+        LOGGER.log(Level.FINE, "Formatting task remaining-work response");
+        return finish("Remaining time for " + task.displayId() + ": " + task.name()
+                + " | " + task.remainingMinutes() + " min");
     }
     // @@author ka-how
 
@@ -88,6 +90,9 @@ public final class TextRenderer {
                 "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES - Add a task.",
                 "task list - List stored tasks.",
                 "task delete TNUMBER - Delete a task.",
+                // @@author ernestgoh-god
+                "task remaining TNUMBER remaining/MINUTES - Revise a task's remaining time.",
+                // @@author ka-how
                 "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
                         + " [from/YYYY-MM-DD until/YYYY-MM-DD] - Add a weekly commitment.",
                 // @@author

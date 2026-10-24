@@ -182,9 +182,9 @@ public final class CommandDispatcher {
      *
      * @param command task ID and replacement remaining minutes
      * @param state live snapshot and temporary plan
-     * @return confirmation for a successfully saved revision
+     * @return confirmation for the validated estimate, including an unchanged estimate
      * @throws StorageException if the candidate cannot be saved
-     * @throws ValidationException if the task or estimate is invalid, or printing is still pending
+     * @throws ValidationException if the task or estimate is invalid
      */
     private String reviseTaskRemaining(Command.ReviseTaskRemaining command, AppState state) throws StorageException {
         LOGGER.log(Level.FINE, "Validating task remaining-work revision");
@@ -193,17 +193,8 @@ public final class CommandDispatcher {
         Task revised = candidate.tasks().stream().filter(task -> task.id() == command.id())
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("Validated revision is missing its target."));
-        String confirmation;
-        try {
-            confirmation = Objects.requireNonNull(renderer.taskRemainingUpdated(revised),
-                    "task remaining confirmation");
-        } catch (UnsupportedOperationException exception) {
-            if (!"Task remaining-work rendering is not implemented yet.".equals(exception.getMessage())) {
-                throw exception;
-            }
-            LOGGER.log(Level.FINE, "Task revision confirmation is still pending");
-            throw new ValidationException("Revising remaining work is awaiting printing.");
-        }
+        String confirmation = Objects.requireNonNull(renderer.taskRemainingUpdated(revised),
+                "task remaining confirmation");
         if (candidate != original) {
             saveAndCommit(candidate, state);
         }

@@ -2,6 +2,37 @@
   "version": 1,
   "cases": [
     {
+      "id": "UI-019", "aim": "Revise remaining task time, reject invalid values, invalidate a plan and persist across restarts",
+      "status": "active", "setup": "One overdue saved task; no dependence on the current date",
+      "requiredComponents": ["CommandParser.parse", "TaskService.reviseRemaining",
+        "CommandDispatcher.execute", "TextRenderer.taskRemainingUpdated", "FileStorage.save", "FileStorage.load"],
+      "files": {
+        "data/scheduleflow.txt": "SCHEDULEFLOW|1\nNEXT|3|1\nTASK|2|2000-01-01T09:00|30|Draft\n"
+      },
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "plan", "output": "Study plan generated with unallocated work.\nScheduled: 0 min | Unallocated: 30 min\nT2: Draft | Unallocated: 30 min | Reason: deadline passed" },
+          { "input": "task remaining T2 remaining/45", "output": "Error: Duration must be a positive multiple of 30 minutes." },
+          { "input": "task remaining T9 remaining/90", "output": "Error: Unknown task ID: T9" },
+          { "input": "task remaining T2 remaining/90", "output": "Remaining time for T2: Draft | 90 min" },
+          { "input": "schedule today", "output": "No current plan. Run plan to generate one." },
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 90 min | 2000-01-01 09:00\nTotal: 1 task(s)." },
+          { "input": "plan", "output": "Study plan generated with unallocated work.\nScheduled: 0 min | Unallocated: 90 min\nT2: Draft | Unallocated: 90 min | Reason: deadline passed" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 90 min | 2000-01-01 09:00\nTotal: 1 task(s)." },
+          { "input": "task remaining T2 remaining/30", "output": "Remaining time for T2: Draft | 30 min" },
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 30 min | 2000-01-01 09:00\nTotal: 1 task(s)." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 30 min | 2000-01-01 09:00\nTotal: 1 task(s)." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
       "id": "UI-018", "aim": "One-time commitments block one date, validate input, persist and support edit/delete",
       "status": "active", "setup": "No data file; one weekly series and dated one-time commitments",
       "sessions": [

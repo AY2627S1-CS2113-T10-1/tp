@@ -5,14 +5,14 @@ acceptance remains planned until task-service integration, dispatcher
 transactions and Printing's confirmation are implemented. Existing active
 scenarios continue to exercise the unchanged console commands.
 
-Issue #41 remaining-work parsing, service candidates, saved-candidate reload,
-planning demand and pending dispatcher behaviour have JUnit coverage. The
-renderer confirmation remains a Ka How TODO.
-Packaged successful revision, restart and save-failure acceptance remain planned;
-the current command reports a recoverable pending error without saving or
-clearing the plan. Existing active fixtures do not claim issue #41 completion.
+Issue #41 remaining-work parsing, service candidates, renderer output,
+saved-candidate reload, planning demand, successful dispatch, no-op behavior and
+save-failure rollback have JUnit coverage. UI-019 checks the packaged command's
+exact output, invalid values, plan invalidation, replanning and saved data after
+two restarts. Save failure is covered by an isolated dispatcher fake because
+process-level fault injection is unavailable.
 
-All eighteen maintained process scenarios are active. They exercise the packaged
+All nineteen maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -93,6 +93,7 @@ active fixture expectations remain unchanged.
 
 | ID | Coverage | Status |
 | --- | --- | --- |
+| UI-019 | Remaining-time revision, validation, plan invalidation and two saved restarts | Active |
 | UI-018 | One-time commitments: exact-date overlap, validation, restart, edit by date and deletion | Active |
 | UI-017 | One-date recurrence skips, validation, version 4 restart and released overlap | Active |
 | UI-001 | Missing file, empty lists and absent plan | Active |
@@ -127,6 +128,9 @@ range syntax and skipping a one-time entry, then checks adjacency, the separate
 list section, restart persistence, `on/` edits, deletion and unconsumed IDs.
 Plan and schedule blocking for one-time dates is covered by fixed-clock JUnit
 tests because packaged runs cannot control the current date.
+UI-019 starts with a fixed overdue task so its unallocated totals stay stable
+regardless of the launch date. It verifies the revised estimate is visible to
+planning and survives two separate application restarts.
 Usage-hint expectations in UI-005 and UI-014 include the new `on/` syntax.
 
 The original eight scenarios retain their exact expectations. UI-009 through
