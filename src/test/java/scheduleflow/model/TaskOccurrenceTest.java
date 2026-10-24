@@ -22,4 +22,28 @@ class TaskOccurrenceTest {
         assertThrows(NullPointerException.class, () -> new Task(1, "Quiz", first, 30, null));
         assertEquals(Optional.empty(), new Task(1, "Quiz", first, 30).occurrence());
     }
+
+    @Test
+    void task_unifiedConstructors_preserveOptionalDeadlineExactWorkAndProvenance() {
+        LocalDateTime due = LocalDateTime.of(2026, 10, 2, 12, 0);
+        Optional<TaskOccurrence> occurrence = Optional.of(new TaskOccurrence(2, due));
+        Task undatedCompleted = new Task(1, "Quiz", Optional.empty(), 0, TaskPriority.HIGH, occurrence);
+        assertEquals(Optional.empty(), undatedCompleted.deadline());
+        assertEquals(occurrence, undatedCompleted.occurrence());
+        assertEquals(TaskPriority.HIGH, undatedCompleted.priority());
+        Task legacy = new Task(1, "Quiz", due, 17, occurrence);
+        assertEquals(Optional.of(due), legacy.deadline());
+        assertEquals(TaskPriority.NORMAL, legacy.priority());
+        assertEquals(17, legacy.remainingMinutes());
+        assertEquals(Optional.empty(), new Task(1, "Quiz", Optional.of(due), 17,
+                TaskPriority.LOW).occurrence());
+        assertThrows(NullPointerException.class, () -> new Task(1, "Quiz", null, 0,
+                TaskPriority.NORMAL, occurrence));
+        assertThrows(NullPointerException.class, () -> new Task(1, "Quiz", Optional.empty(), 0,
+                null, occurrence));
+        assertThrows(NullPointerException.class, () -> new Task(1, "Quiz", Optional.empty(), 0,
+                TaskPriority.NORMAL, null));
+        assertThrows(ValidationException.class, () -> new Task(1, "Quiz", Optional.empty(), -1,
+                TaskPriority.NORMAL, occurrence));
+    }
 }

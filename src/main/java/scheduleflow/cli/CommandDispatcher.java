@@ -123,10 +123,8 @@ public final class CommandDispatcher {
             case Command.ListRecurringTasks ignored -> renderer.recurringTasks(recurringTasks.list(state.snapshot()));
             case Command.DeleteRecurringTask delete -> deleteRecurringTask(delete.id(), state);
             // @@author ernestgoh-god
-            case Command.RecordTaskWork ignored -> throw new ValidationException(
-                    "Task progress is awaiting task-service integration.");
-            case Command.RecordTaskSession ignored -> throw new ValidationException(
-                    "Task progress is awaiting task-service integration.");
+            case Command.RecordTaskWork work -> recordTaskWork(work, state);
+            case Command.RecordTaskSession session -> recordTaskSession(session, state);
             case Command.ReviseTaskRemaining revise -> reviseTaskRemaining(revise, state);
             // @@author ka-how
             case Command.AddCommitment add -> addCommitment(add, state);
@@ -227,6 +225,71 @@ public final class CommandDispatcher {
     // @@author ka-how
 
     // @@author ernestgoh-god
+    /**
+     * Prepares a whole-minute progress candidate without changing the live snapshot.
+     *
+     * @param command task ID and reported completed minutes
+     * @param state live snapshot and temporary plan
+     * @return confirmation once Printing supplies it
+     * @throws StorageException if saving a changed candidate fails
+     */
+    private String recordTaskWork(Command.RecordTaskWork command, AppState state) throws StorageException {
+        Snapshot original = state.snapshot();
+        Snapshot candidate = tasks.recordWork(original, command.id(), command.doneMinutes());
+        return publishTaskProgress(command.id(), original, candidate, state);
+    }
+
+    /**
+     * Prepares the service's rounded session credit without duplicating its arithmetic in the CLI.
+     *
+     * @param command task ID, session minutes and percentage of work completed
+     * @param state live snapshot and temporary plan
+     * @return confirmation once Printing supplies it
+     * @throws StorageException if saving a changed candidate fails
+     */
+    private String recordTaskSession(Command.RecordTaskSession command, AppState state) throws StorageException {
+        Snapshot original = state.snapshot();
+        Snapshot candidate = tasks.recordSessionProgress(original, command.id(), command.sessionMinutes(),
+                command.percent());
+        return publishTaskProgress(command.id(), original, candidate, state);
+    }
+
+    /**
+     * Prepares the actual credited amount for Printing before saving and publishing any change.
+     * An unfinished renderer leaves the command recoverable and the saved/live data untouched.
+     *
+     * @param taskId validated task ID
+     * @param original source snapshot
+     * @param candidate validated candidate or original instance for zero credited work
+     * @param state live state to publish after a successful save
+     * @return progress confirmation once Printing supplies it
+     * @throws StorageException if saving a changed candidate fails
+     */
+    private String publishTaskProgress(int taskId, Snapshot original, Snapshot candidate, AppState state)
+            throws StorageException {
+        Task previous = original.tasks().stream().filter(task -> task.id() == taskId).findFirst()
+                .orElseThrow(() -> new IllegalStateException("Validated progress is missing its original task."));
+        Task revised = candidate.tasks().stream().filter(task -> task.id() == taskId).findFirst()
+                .orElseThrow(() -> new IllegalStateException("Validated progress is missing its revised task."));
+        int creditedMinutes = previous.remainingMinutes() - revised.remainingMinutes();
+        LOGGER.log(Level.FINE, "Preparing task progress confirmation");
+        String confirmation;
+        try {
+            confirmation = Objects.requireNonNull(renderer.taskProgressUpdated(revised, creditedMinutes),
+                    "task progress confirmation");
+        } catch (UnsupportedOperationException exception) {
+            if (!"Task progress rendering is not implemented yet.".equals(exception.getMessage())) {
+                throw exception;
+            }
+            LOGGER.log(Level.FINE, "Task progress confirmation is still pending");
+            throw new ValidationException("Task progress is awaiting printing.");
+        }
+        if (candidate != original) {
+            saveAndCommit(candidate, state);
+        }
+        return confirmation;
+    }
+
     /**
      * Validates a revised estimate and prepares its response before any save or publication.
      *

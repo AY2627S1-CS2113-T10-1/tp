@@ -14,6 +14,7 @@ import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
 import scheduleflow.model.TaskOccurrence;
+import scheduleflow.model.TaskPriority;
 
 /** Verifies task mutations preserve recurrence data and reject inconsistent snapshot fixtures. */
 class TaskRecurrenceTest {
@@ -40,6 +41,45 @@ class TaskRecurrenceTest {
         assertSame(revised, service.reviseRemaining(revised, 1, 60));
         assertSame(edited, service.edit(edited, 1,
                 new TaskEdit(Optional.of("Renamed"), Optional.empty(), false), NOW));
+    }
+
+    @Test
+    void lifecycle_generatedTask_preservesPriorityProvenanceAndIdentityNoOps() {
+        Snapshot source = new RecurringTaskService().add(Snapshot.empty(), "Quiz", NOW.plusDays(1), 30,
+                Optional.empty(), NOW);
+        TaskService service = new TaskService();
+        Snapshot prioritized = service.setPriority(source, 1, TaskPriority.HIGH);
+        Snapshot worked = service.recordWork(prioritized, 1, 7);
+        Snapshot credited = service.recordSessionProgress(worked, 1, 3, 50);
+        Snapshot revised = service.reviseRemaining(credited, 1, 19);
+        Snapshot completed = service.complete(revised, 1);
+        Snapshot cleared = service.edit(completed, 1,
+                new TaskEdit(Optional.empty(), Optional.empty(), true), NOW);
+        Snapshot reopened = service.reopen(cleared, 1, 17);
+        Snapshot undatedAdded = service.addWithoutDeadline(reopened, "Undated", 11);
+        for (Snapshot candidate : List.of(prioritized, worked, credited, revised, completed, cleared,
+                reopened, undatedAdded)) {
+            assertEquals(source.recurringTasks(), candidate.recurringTasks());
+            assertEquals(source.nextRecurringTaskId(), candidate.nextRecurringTaskId());
+            assertEquals(source.tasks().getFirst().occurrence(), candidate.tasks().getFirst().occurrence());
+            assertEquals(TaskPriority.HIGH, candidate.tasks().getFirst().priority());
+        }
+        assertEquals(22, credited.tasks().getFirst().remainingMinutes());
+        assertEquals(0, completed.tasks().getFirst().remainingMinutes());
+        assertEquals(Optional.empty(), reopened.tasks().getFirst().deadline());
+        assertEquals(17, reopened.tasks().getFirst().remainingMinutes());
+        assertSame(prioritized, service.setPriority(prioritized, 1, TaskPriority.HIGH));
+        assertSame(prioritized, service.recordWork(prioritized, 1, 0));
+        assertSame(prioritized, service.recordSessionProgress(prioritized, 1, 1, 99));
+        assertSame(completed, service.complete(completed, 1));
+        assertSame(cleared, service.edit(cleared, 1,
+                new TaskEdit(Optional.empty(), Optional.empty(), true), NOW));
+        assertSame(cleared, new RecurringTaskService().materialize(cleared, NOW));
+        assertThrows(ValidationException.class, () -> service.recordWork(completed, 1, 0));
+        assertThrows(ValidationException.class, () -> service.reviseRemaining(completed, 1, 19));
+        assertThrows(ValidationException.class, () -> service.reopen(reopened, 1, 19));
+        assertThrows(NullPointerException.class, () -> service.setPriority(source, 1, null));
+        assertThrows(ValidationException.class, () -> service.setPriority(source, 0, TaskPriority.HIGH));
     }
 
     @Test

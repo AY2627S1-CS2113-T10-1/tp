@@ -19,6 +19,8 @@ import scheduleflow.model.Snapshot;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 import scheduleflow.model.TaskOccurrence;
+import scheduleflow.model.TaskPriority;
+import scheduleflow.task.TaskService;
 
 /**
  * Checks deterministic slot allocation, deadline handling and minute conservation.
@@ -163,7 +165,7 @@ class EarliestDeadlinePlannerTest {
         Plan result = planner.generate(source, EARLY_MORNING);
 
         assertEquals(List.of(new StudySession(1, MONDAY.atTime(8, 0), MONDAY.atTime(8, 30))), result.sessions());
-        assertEquals(List.of(new UnallocatedWork(1, "Essay", task.deadline(), 60,
+        assertEquals(List.of(new UnallocatedWork(1, "Essay", task.deadline().orElseThrow(), 60,
                 UnallocatedReason.INSUFFICIENT_CAPACITY)), result.unallocated());
         assertEquals(90, task.remainingMinutes());
     }
@@ -180,8 +182,10 @@ class EarliestDeadlinePlannerTest {
 
         assertEquals(List.of(new StudySession(3, MONDAY.atTime(10, 30), MONDAY.atTime(11, 0))), result.sessions());
         assertEquals(List.of(
-                new UnallocatedWork(1, "Overdue", overdue.deadline(), 30, UnallocatedReason.DEADLINE_PASSED),
-                new UnallocatedWork(2, "Future", afterHorizon.deadline(), 60, UnallocatedReason.OUTSIDE_HORIZON)),
+                new UnallocatedWork(1, "Overdue", overdue.deadline().orElseThrow(), 30,
+                        UnallocatedReason.DEADLINE_PASSED),
+                new UnallocatedWork(2, "Future", afterHorizon.deadline().orElseThrow(), 60,
+                        UnallocatedReason.OUTSIDE_HORIZON)),
                 result.unallocated());
     }
 
@@ -215,7 +219,7 @@ class EarliestDeadlinePlannerTest {
                 new StudySession(1, MONDAY.atTime(21, 0), MONDAY.atTime(22, 0)),
                 new StudySession(1, MONDAY.plusDays(1).atTime(8, 0), MONDAY.plusDays(1).atTime(9, 0))),
                 result.sessions());
-        assertEquals(List.of(new UnallocatedWork(1, "Essay", task.deadline(), 30,
+        assertEquals(List.of(new UnallocatedWork(1, "Essay", task.deadline().orElseThrow(), 30,
                 UnallocatedReason.INSUFFICIENT_CAPACITY)), result.unallocated());
         assertEquals(150, source.tasks().getFirst().remainingMinutes());
         assertSame(source, result.source());
@@ -243,6 +247,111 @@ class EarliestDeadlinePlannerTest {
                 UnallocatedReason.INSUFFICIENT_CAPACITY)), result.unallocated());
         assertEquals(availableMinutes + 30, source.tasks().getFirst().remainingMinutes());
     }
+
+    // @@author nickpatt
+    @Test
+    void generate_lifecycleCandidates_consumesRevisedWorkWithoutChangingFrozenPlan() {
+        TaskService tasks = new TaskService();
+        Snapshot source = snapshot(List.of(task(1, "Draft", MONDAY.atTime(8, 30), 45)), List.of());
+        Plan frozen = planner.generate(source, EARLY_MORNING);
+        Snapshot progressed = tasks.recordWork(source, 1, 30);
+        Plan revised = planner.generate(tasks.reviseRemaining(progressed, 1, 1), EARLY_MORNING);
+        assertEquals(1, revised.sessions().getFirst().workMinutes());
+        assertTrue(revised.unallocated().isEmpty());
+        Snapshot completed = tasks.complete(progressed, 1);
+        assertTrue(planner.generate(completed, EARLY_MORNING).sessions().isEmpty());
+        Snapshot reopened = tasks.reopen(completed, 1, 45);
+        Plan overdue = planner.generate(reopened, MONDAY.atTime(9, 0));
+        assertEquals(UnallocatedReason.DEADLINE_PASSED, overdue.unallocated().getFirst().reason());
+        assertEquals(45, overdue.unallocated().getFirst().minutes());
+        assertSame(source, frozen.source());
+        assertEquals(15, frozen.unallocated().getFirst().minutes());
+    }
+
+    @Test
+    void generate_exactWork45_reserves60AndPartial30Leaves15() {
+        Task task = task(1, "Draft", MONDAY.atTime(9, 0), 45);
+        Snapshot source = snapshot(List.of(task), List.of());
+        Plan full = planner.generate(source, EARLY_MORNING);
+        assertEquals(List.of(new StudySession(1, MONDAY.atTime(8, 0), MONDAY.atTime(9, 0), 45)), full.sessions());
+        assertTrue(full.unallocated().isEmpty());
+        Snapshot partialSource = source.withStudyHours(source.studyHours().withWindow("monday",
+                new StudyWindow(LocalTime.of(8, 0), LocalTime.of(8, 30))));
+        Plan partial = planner.generate(partialSource, EARLY_MORNING);
+        assertEquals(30, partial.sessions().getFirst().minutes());
+        assertEquals(30, partial.sessions().getFirst().workMinutes());
+        assertEquals(15, partial.unallocated().getFirst().minutes());
+        assertEquals(30L, partial.unallocated().getFirst().capacityMinutes());
+        assertEquals(45, task.remainingMinutes());
+        assertSame(partialSource.studyHours(), partial.source().studyHours());
+    }
+
+    // @@author ernestgoh-god
+    @Test
+    void generate_policyWithExactWork_keepsPaddingAndBreaksSeparateFromCreditedMinutes() {
+        Task active = task(1, "Draft", MONDAY.atTime(10, 0), 45);
+        Task completed = Task.withoutDeadline(2, "Finished", 0);
+        Snapshot source = snapshot(List.of(completed, active), List.of());
+        Plan plan = new EarliestDeadlinePlanner(new StudyPolicy(30, 30)).generate(source, EARLY_MORNING);
+        assertEquals(List.of(new StudySession(1, MONDAY.atTime(8, 0), MONDAY.atTime(8, 30), 30),
+                new StudySession(1, MONDAY.atTime(9, 0), MONDAY.atTime(9, 30), 15)), plan.sessions());
+        assertEquals(List.of(rest(8, 30, 9, 0)), plan.breaks());
+        assertEquals(45L, plan.sessions().stream().mapToLong(StudySession::workMinutes).sum());
+        assertTrue(plan.unallocated().isEmpty());
+        assertSame(source, plan.source());
+    }
+    // @@author nickpatt
+
+    @Test
+    void generate_splitExactWork_onlyFinalSessionContainsPadding() {
+        Snapshot source = snapshot(List.of(task(1, "Draft", MONDAY.atTime(10, 0), 45)),
+                List.of(new Commitment(1, "Class", DayOfWeek.MONDAY, LocalTime.of(8, 30), 30)));
+        Plan plan = planner.generate(source, EARLY_MORNING);
+        assertEquals(List.of(new StudySession(1, MONDAY.atTime(8, 0), MONDAY.atTime(8, 30), 30),
+                new StudySession(1, MONDAY.atTime(9, 0), MONDAY.atTime(9, 30), 15)), plan.sessions());
+        assertEquals(45L, plan.sessions().stream().mapToLong(StudySession::workMinutes).sum());
+        assertEquals(60L, plan.sessions().stream().mapToLong(StudySession::minutes).sum());
+    }
+
+    @Test
+    void generate_mixedDeadlinesPrioritiesAndCompletion_ordersAndExcludesCorrectly() {
+        LocalDateTime deadline = MONDAY.atTime(8, 30);
+        Task completed = new Task(1, "Old completed", EARLY_MORNING.minusYears(1), 0);
+        Task normal = new Task(2, "Normal", deadline, 30);
+        Task high = new Task(10, "High", Optional.of(deadline), 30, TaskPriority.HIGH);
+        Task undated = Task.withoutDeadline(3, "Undated", 1);
+        Task highUndated = new Task(4, "Undated high", Optional.empty(), 1, TaskPriority.HIGH);
+        Snapshot source = snapshot(List.of(undated, normal, completed, highUndated, high), List.of());
+        Plan plan = planner.generate(source, EARLY_MORNING);
+        assertEquals(List.of(10, 4, 3), plan.sessions().stream().map(StudySession::taskId).toList());
+        assertEquals(List.of(2), plan.unallocated().stream().map(UnallocatedWork::taskId).toList());
+        assertEquals(plan, planner.generate(source, EARLY_MORNING));
+        assertEquals(0, completed.remainingMinutes());
+        assertTrue(planner.generate(snapshot(List.of(completed), List.of()), EARLY_MORNING).sessions().isEmpty());
+        assertTrue(planner.generate(snapshot(List.of(completed), List.of()), EARLY_MORNING).unallocated().isEmpty());
+    }
+
+    @Test
+    void generate_largeUndatedDemand_usesLongCapacityAndNeverAssignsDeadlineReasons() {
+        Task dated = task(1, "Dated", EARLY_MORNING, Integer.MAX_VALUE);
+        Task undated = Task.withoutDeadline(2, "Undated", Integer.MAX_VALUE);
+        Task second = Task.withoutDeadline(3, "Second", Integer.MAX_VALUE);
+        Plan plan = planner.generate(snapshot(List.of(second, undated, dated), List.of()), EARLY_MORNING);
+        assertEquals(List.of(1, 2, 3), plan.unallocated().stream().map(UnallocatedWork::taskId).toList());
+        assertEquals(2147483670L, plan.unallocated().getFirst().capacityMinutes());
+        assertEquals(UnallocatedReason.DEADLINE_PASSED, plan.unallocated().getFirst().reason());
+        for (UnallocatedWork work : plan.unallocated().subList(1, 3)) {
+            assertEquals(Optional.empty(), work.deadline());
+            assertEquals(UnallocatedReason.INSUFFICIENT_CAPACITY, work.reason());
+        }
+        long allocatedCapacity = plan.sessions().stream().mapToLong(StudySession::minutes).sum();
+        long allocatedWork = plan.sessions().stream().mapToLong(StudySession::workMinutes).sum();
+        assertEquals(3L * Integer.MAX_VALUE,
+                allocatedWork + plan.unallocated().stream().mapToLong(UnallocatedWork::minutes).sum());
+        assertEquals(3L * 2147483670L,
+                allocatedCapacity + plan.unallocated().stream().mapToLong(UnallocatedWork::capacityMinutes).sum());
+    }
+    // @@author
 
     @Test
     void generate_policy_splitsStudyAndReservesOnlyRequiredBreaks() {
@@ -443,20 +552,20 @@ class EarliestDeadlinePlannerTest {
     @Test
     void generate_editedDeadlines_retainsOriginalReleaseAndConservesUnallocatedWork() {
         LocalDateTime original = MONDAY.plusWeeks(1).atTime(9, 0);
-        Task earlier = new Task(1, "Earlier", MONDAY.atTime(8, 30), 60,
+        Task earlier = new Task(1, "Earlier", MONDAY.atTime(8, 30), 45,
                 Optional.of(new TaskOccurrence(2, original)));
-        Task later = occurrence(2, MONDAY.plusWeeks(2).atTime(12, 0), original, 30);
+        Task later = occurrence(2, MONDAY.plusWeeks(2).atTime(12, 0), original, 15);
         Snapshot source = snapshot(List.of(later, earlier), List.of());
 
         Plan result = planner.generate(source, EARLY_MORNING);
 
-        assertEquals(List.of(study(2, 9, 0, 9, 30)), result.sessions());
-        assertEquals(List.of(new UnallocatedWork(1, earlier.name(), earlier.deadline(), 60,
+        assertEquals(List.of(new StudySession(2, MONDAY.atTime(9, 0), MONDAY.atTime(9, 30), 15)), result.sessions());
+        assertEquals(List.of(new UnallocatedWork(1, earlier.name(), earlier.deadline(), 45, 60L,
                 UnallocatedReason.INSUFFICIENT_CAPACITY)), result.unallocated());
         assertEquals(result, planner.generate(source, EARLY_MORNING));
         for (Task task : source.tasks()) {
             int scheduled = result.sessions().stream().filter(session -> session.taskId() == task.id())
-                    .mapToInt(StudySession::minutes).sum();
+                    .mapToInt(StudySession::workMinutes).sum();
             int unallocated = result.unallocated().stream().filter(work -> work.taskId() == task.id())
                     .mapToInt(UnallocatedWork::minutes).sum();
             assertEquals(task.remainingMinutes(), scheduled + unallocated);

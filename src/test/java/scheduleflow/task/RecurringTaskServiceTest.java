@@ -44,7 +44,7 @@ class RecurringTaskServiceTest {
         LocalDateTime horizon = TimeRules.horizonEnd(NOW);
         Snapshot boundary = service.add(Snapshot.empty(), " Quiz ", horizon, 60,
                 Optional.of(horizon.toLocalDate()), NOW);
-        assertEquals(horizon, boundary.tasks().getFirst().deadline());
+        assertEquals(Optional.of(horizon), boundary.tasks().getFirst().deadline());
         assertEquals(horizon.minusWeeks(1), boundary.tasks().getFirst().occurrence().orElseThrow().release());
         assertEquals("Quiz", boundary.tasks().getFirst().name());
         Snapshot beyond = service.add(Snapshot.empty(), "Later", horizon.plusMinutes(1), 30,
@@ -64,7 +64,7 @@ class RecurringTaskServiceTest {
         Snapshot result = assertTimeout(Duration.ofSeconds(2), () -> service.materialize(
                 state(List.of(template(1, first, Optional.empty())), 1, 2), NOW));
         assertTrue(result.tasks().size() <= 53);
-        assertTrue(result.tasks().stream().allMatch(task -> task.deadline().isAfter(NOW)));
+        assertTrue(result.tasks().stream().allMatch(task -> task.deadline().orElseThrow().isAfter(NOW)));
         Snapshot expired = service.materialize(state(List.of(template(1, first,
                 Optional.of(first.plusDays(16).toLocalDate()))), Integer.MAX_VALUE, 2), NOW);
         assertTrue(expired.tasks().isEmpty());
@@ -75,7 +75,7 @@ class RecurringTaskServiceTest {
     @Test
     void materialize_dueNowAndDeletion_neverRecreatesProcessedOccurrences() {
         Snapshot generated = service.materialize(state(List.of(template(1, NOW, Optional.empty())), 1, 2), NOW);
-        assertEquals(NOW.plusWeeks(1), generated.tasks().getFirst().deadline());
+        assertEquals(Optional.of(NOW.plusWeeks(1)), generated.tasks().getFirst().deadline());
         Snapshot deleted = new TaskService().delete(generated, 1);
         assertSame(deleted, service.materialize(deleted, NOW));
         Snapshot advanced = service.materialize(deleted, NOW.plusWeeks(4));
@@ -111,7 +111,8 @@ class RecurringTaskServiceTest {
         LocalDateTime horizon = TimeRules.horizonEnd(leap);
         Snapshot result = service.materialize(state(List.of(template(1, horizon.minusWeeks(1),
                 Optional.empty())), 1, 2), leap);
-        assertEquals(List.of(horizon.minusWeeks(1), horizon), result.tasks().stream().map(Task::deadline).toList());
+        assertEquals(List.of(Optional.of(horizon.minusWeeks(1)), Optional.of(horizon)),
+                result.tasks().stream().map(Task::deadline).toList());
         LocalDateTime first = LocalDateTime.of(9999, 12, 24, 23, 59);
         Snapshot last = service.materialize(state(List.of(template(1, first, Optional.empty())), 1, 2),
                 first.minusDays(1));

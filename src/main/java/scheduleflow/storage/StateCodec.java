@@ -17,6 +17,7 @@ import java.util.TreeSet;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import scheduleflow.common.InputRules;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.RecurringTask;
@@ -25,6 +26,7 @@ import scheduleflow.model.StudyHours;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 import scheduleflow.model.TaskOccurrence;
+import scheduleflow.model.TaskPriority;
 
 /**
  * Converts snapshots to and from the versioned text format without accessing saved files.
@@ -39,7 +41,7 @@ public final class StateCodec {
     private static final Logger LOGGER = Logger.getLogger(StateCodec.class.getName());
 
     /**
-     * Identifies the legacy format used when no custom study hours are present.
+     * Identifies the readable legacy format, which supplies default study hours and task priorities.
      */
     private static final String HEADER = "SCHEDULEFLOW|1";
     // @@author
@@ -52,7 +54,7 @@ public final class StateCodec {
 
     // @@author ernestgoh-god
     /**
-     * Encodes a complete snapshot using the oldest format that can represent all stored values.
+     * Encodes extended tasks in versions 2-4, or version 5 when recurrence or its history is present.
      * Stores names last so names containing pipes do not need escaping.
      *
      * @param state validated immutable snapshot to encode in its existing list order
@@ -72,7 +74,7 @@ public final class StateCodec {
                 || state.tasks().stream().anyMatch(task -> task.occurrence().isPresent());
         String version = hasRecurrence ? "SCHEDULEFLOW|5" : hasSkippedOccurrences ? "SCHEDULEFLOW|4"
                 : hasDateBoundedCommitments ? "SCHEDULEFLOW|3"
-                : state.studyHours().windows().isEmpty() ? HEADER : "SCHEDULEFLOW|2";
+                : "SCHEDULEFLOW|2";
         // @@author ernestgoh-god
         StringBuilder text = new StringBuilder(version).append('\n');
         text.append("NEXT|").append(state.nextTaskId()).append('|').append(state.nextCommitmentId());
@@ -81,9 +83,10 @@ public final class StateCodec {
         }
         text.append('\n');
         for (Task task : state.tasks()) {
-            text.append(task.occurrence().isPresent() ? "OCCURRENCE|" : "TASK|")
-                    .append(task.id()).append('|').append(task.deadline()).append('|')
-                    .append(task.remainingMinutes()).append('|');
+            text.append(task.occurrence().isPresent() ? "OCCURRENCE|" : "TASK2|")
+                    .append(task.id()).append('|')
+                    .append(task.deadline().map(LocalDateTime::toString).orElse("NONE")).append('|')
+                    .append(task.remainingMinutes()).append('|').append(task.priority()).append('|');
             if (task.occurrence().isPresent()) {
                 TaskOccurrence occurrence = task.occurrence().orElseThrow();
                 text.append(occurrence.templateId()).append('|').append(occurrence.originalDeadline()).append('|');
@@ -160,6 +163,13 @@ public final class StateCodec {
                     decodeRecurrence(line, tasks, recurringTasks);
                 } else if (supportsExtensions && line.startsWith("HOURS|")) {
                     decodeHours(line, windows);
+                } else if (supportsExtensions && line.startsWith("TASK2|")) {
+                    // @@author nickpatt
+                    String[] fields = splitFields(line, 6);
+                    tasks.add(new Task(Integer.parseInt(fields[1]), fields[5], fields[2].equals("NONE")
+                            ? Optional.empty() : Optional.of(LocalDateTime.parse(fields[2])),
+                            Integer.parseInt(fields[3]), TaskPriority.valueOf(fields[4])));
+                    // @@author ernestgoh-god
                 } else {
                     boolean supportsDateRanges = lines.getFirst().equals("SCHEDULEFLOW|3")
                             || lines.getFirst().equals("SCHEDULEFLOW|4") || supportsRecurrence;
@@ -217,6 +227,10 @@ public final class StateCodec {
             boolean supportsDateRanges, boolean supportsSkippedDates) throws StorageException {
         if (line.startsWith("TASK|")) {
             String[] fields = splitFields(line, 5);
+            // @@author nickpatt
+            // Legacy TASK rows retain their original positive half-hour contract, including old v2 hours files.
+            InputRules.requireDuration(Integer.parseInt(fields[3]));
+            // @@author ernestgoh-god
             tasks.add(new Task(Integer.parseInt(fields[1]), fields[4],
                     LocalDateTime.parse(fields[2]), Integer.parseInt(fields[3])));
         } else if (line.startsWith("COMMITMENT|")) {
@@ -248,12 +262,14 @@ public final class StateCodec {
     /** Decodes recurrence records privately before the complete snapshot validates cross-record invariants. */
     private void decodeRecurrence(String line, List<Task> tasks, List<RecurringTask> recurringTasks)
             throws StorageException {
-        String[] fields = splitFields(line, 7);
-        if (fields[0].equals("OCCURRENCE")) {
-            tasks.add(new Task(Integer.parseInt(fields[1]), fields[6], LocalDateTime.parse(fields[2]),
-                    Integer.parseInt(fields[3]), Optional.of(new TaskOccurrence(Integer.parseInt(fields[4]),
-                            LocalDateTime.parse(fields[5])))));
+        if (line.startsWith("OCCURRENCE|")) {
+            String[] fields = splitFields(line, 8);
+            tasks.add(new Task(Integer.parseInt(fields[1]), fields[7], fields[2].equals("NONE")
+                    ? Optional.empty() : Optional.of(LocalDateTime.parse(fields[2])),
+                    Integer.parseInt(fields[3]), TaskPriority.valueOf(fields[4]),
+                    Optional.of(new TaskOccurrence(Integer.parseInt(fields[5]), LocalDateTime.parse(fields[6])))));
         } else {
+            String[] fields = splitFields(line, 7);
             recurringTasks.add(new RecurringTask(Integer.parseInt(fields[1]), fields[6],
                     LocalDateTime.parse(fields[2]), Optional.ofNullable(parseOptionalDate(fields[4])),
                     Integer.parseInt(fields[3]), fields[5].equals("-") ? Optional.empty()

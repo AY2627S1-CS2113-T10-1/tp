@@ -73,6 +73,34 @@ class TextRendererTest {
         assertEquals("tasks element", assertThrows(NullPointerException.class,
                 () -> renderer.recurringTasks(Arrays.asList((RecurringTask) null))).getMessage());
     }
+    // @@author nickpatt
+    @Test
+    void existingTaskOutput_absentDeadlineAndExactMinutes_usesExplicitAbsence() {
+        Task task = Task.withoutDeadline(1, "Draft", 45);
+        assertOutput("Added T1: Draft\nDue: No deadline | Duration: 45 min", renderer.taskAdded(task));
+        assertOutput("=== Actionable Tasks ===\nID | Name | Duration | Deadline"
+                + "\nT1 | Draft | 45 min | No deadline\nTotal: 1 task(s).", renderer.tasks(List.of(task)));
+        UnallocatedWork work = new UnallocatedWork(1, "Draft", Optional.empty(), 15, 30,
+                UnallocatedReason.INSUFFICIENT_CAPACITY);
+        Plan plan = new Plan(NOW, TimeRules.horizonEnd(NOW), new Snapshot(List.of(task), List.of(), 2, 1),
+                List.of(new StudySession(1, DATE.atTime(8, 0), DATE.atTime(8, 30))), List.of(work));
+        String remainder = "T1: Draft | Unallocated: 15 min | Reason: insufficient available study time"
+                + " | No deadline";
+        assertOutput("Study plan generated with unallocated work.\nScheduled: 30 min | Unallocated: 15 min\n"
+                + remainder, renderer.plan(plan));
+        assertTrue(renderer.schedule(new ScheduleService().forDate(plan, DATE)).endsWith(remainder));
+    }
+
+    @Test
+    void existingPlanSummary_paddedSession_totalsExactWorkInsteadOfCapacity() {
+        Task task = new Task(1, "Draft", DEADLINE, 45);
+        Task overdue = new Task(2, "Old", NOW, 1);
+        Plan plan = new EarliestDeadlinePlanner().generate(
+                new Snapshot(List.of(task, overdue), List.of(), 3, 1), NOW);
+        assertOutput("Study plan generated with unallocated work.\nScheduled: 45 min | Unallocated: 1 min"
+                + "\nT2: Old | Unallocated: 1 min | Reason: deadline passed", renderer.plan(plan));
+    }
+    // @@author ka-how
 
     //@@author Darren50
     @Test
@@ -506,7 +534,7 @@ class TextRendererTest {
      * Retains task metadata while selecting its remaining minutes and reason.
      */
     private UnallocatedWork createWork(Task task, int minutes, UnallocatedReason reason) {
-        return new UnallocatedWork(task.id(), task.name(), task.deadline(), minutes, reason);
+        return new UnallocatedWork(task.id(), task.name(), task.deadline().orElseThrow(), minutes, reason);
     }
 
     /**

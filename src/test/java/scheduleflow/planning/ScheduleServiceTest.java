@@ -87,7 +87,7 @@ class ScheduleServiceTest {
         Task task = new Task(1, "Tomorrow", MONDAY.plusDays(1).atTime(8, 30), 30);
         Snapshot source = new Snapshot(List.of(task), List.of(
                 new Commitment(1, "Lecture", DayOfWeek.MONDAY, LocalTime.of(9, 0), 60)), 2, 2);
-        UnallocatedWork remainder = new UnallocatedWork(1, task.name(), task.deadline(), 30,
+        UnallocatedWork remainder = new UnallocatedWork(1, task.name(), task.deadline().orElseThrow(), 30,
                 UnallocatedReason.INSUFFICIENT_CAPACITY);
         Plan plan = plan(source, generated, List.of(), List.of(remainder));
 
