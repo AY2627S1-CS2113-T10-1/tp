@@ -1,6 +1,18 @@
 # ScheduleFlow UI test plan
 
-All nineteen maintained process scenarios are active. They exercise the packaged
+Issue #40 progress grammar, service candidates and dispatcher transactions have
+JUnit coverage. Packaged progress acceptance remains planned until Printing's
+confirmation is implemented. The current command reports a recoverable pending
+message without changing live state, saved data or the plan.
+
+Issue #41 remaining-work parsing, service candidates, renderer output,
+saved-candidate reload, planning demand, successful dispatch, no-op behavior and
+save-failure rollback have JUnit coverage. UI-019 checks the packaged command's
+exact output, invalid values, plan invalidation, replanning and saved data after
+two restarts. Save failure is covered by an isolated dispatcher fake because
+process-level fault injection is unavailable.
+
+All twenty maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -89,11 +101,12 @@ output, exact plan work totals (not rounded capacity), 45-minute work versus
 arithmetic, custom hours, identity no-ops and legacy/v2-v4 save round trips.
 Tasks now accept positive whole-minute additions; commitments retain the positive
 30-minute rule, including UI-006's rejected commitment `d/45`. All existing
-slot-aligned fixture responses remain unchanged. New restored-data UI-019 is
+slot-aligned fixture responses remain unchanged. Restored-data UI-020 is
 active because existing list/plan/delete/restart commands need no new wiring.
 
 | ID | Coverage | Status |
 | --- | --- | --- |
+| UI-019 | Remaining-time revision, validation, plan invalidation and two saved restarts | Active |
 | UI-018 | One-time commitments: exact-date overlap, validation, restart, edit by date and deletion | Active |
 | UI-017 | One-date recurrence skips, validation, version 4 restart and released overlap | Active |
 | UI-001 | Missing file, empty lists and absent plan | Active |
@@ -112,7 +125,7 @@ active because existing list/plan/delete/restart commands need no new wiring.
 | UI-014 | Partial commitment edits, unchanged IDs, rejection, plan invalidation and Unicode restart | Active |
 | UI-015 | Study hours precedence, validation, resets, plan invalidation and saved restarts | Active |
 | UI-016 | Inclusive recurring-commitment bounds, actual-occurrence overlap and version 3 restart | Active |
-| UI-019 | Extended saved tasks: absent deadlines, completed overdue exclusion, exact work and restart | Active |
+| UI-020 | Extended saved tasks: absent deadlines, completed overdue exclusion, exact work and restart | Active |
 
 UI-015 asserts reset confirmations name the restored source and its endpoints.
 UI-016 adds nonoverlapping semester series at the same weekly time, rejects a
@@ -129,6 +142,9 @@ range syntax and skipping a one-time entry, then checks adjacency, the separate
 list section, restart persistence, `on/` edits, deletion and unconsumed IDs.
 Plan and schedule blocking for one-time dates is covered by fixed-clock JUnit
 tests because packaged runs cannot control the current date.
+UI-019 starts with a fixed overdue task so its unallocated totals stay stable
+regardless of the launch date. It verifies the revised estimate is visible to
+planning and survives two separate application restarts.
 Usage-hint expectations in UI-005 and UI-014 include the new `on/` syntax.
 
 The original eight scenarios retain their exact expectations. UI-009 through

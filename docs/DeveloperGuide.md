@@ -336,8 +336,9 @@ existing structural/edit diagnostics retain privacy protections.
 `taskProgressUpdated(Task,int)` remains a throwing Printing skeleton. The two
 progress forms are parsed and dispatched through the candidate service, but
 the renderer currently blocks publication before saving. `taskCompleted(Task)`,
-`taskReopened(Task)`, `taskRemainingUpdated(Task)` and `taskEdited(Task)` remain
-unwired throwing skeletons. There are no other new Task console commands.
+`taskReopened(Task)` and `taskEdited(Task)` remain unwired throwing skeletons.
+`taskRemainingUpdated(Task)` formats issue #41's active remaining-time command.
+There are no other new Task console commands.
 Existing renderer compatibility changes only display `No deadline` in add/list
 output and undated remainder rows, use an undated capacity-shortfall reason, and
 sum exact session work in plan summaries. Existing schedule interval durations
@@ -510,6 +511,25 @@ forms and preservation while Printing is pending. Successful console acceptance
 and save-failure coverage remain pending the renderer implementation. Scoped
 Ernest author tags cover parser and dispatcher work and tests; Ka How owns the
 Printing skeleton and output.
+
+Issue #41 parses `task remaining TNUMBER remaining/MINUTES` into
+`ReviseTaskRemaining` without reading state. The parser requires positive decimal
+tokens; `TaskService.reviseRemaining` checks the ID and requires a positive
+whole-minute estimate on an active task. It preserves the task's priority and
+optional deadline, replaces only the estimate at its stored position, preserves
+both counters, commitments and study hours, and
+returns the original snapshot for an unchanged estimate. The dispatcher prepares
+the candidate and its confirmation before saving. Changed candidates save
+before live publication and plan invalidation; unchanged candidates report the
+stored value without saving or clearing the plan. `TextRenderer.taskRemainingUpdated`
+formats the stable ID, name and new minutes without claiming that an unchanged
+value was saved again. A failed save preserves the live snapshot and plan.
+Parser, service, renderer and dispatcher JUnit tests cover syntax, values,
+successful publication, no-op behavior and rollback. The Task regression saves
+a revised candidate to an isolated file, reloads it and verifies higher planning
+demand. UI-019 checks exact console responses, plan invalidation, replanning and
+two restarts against a fixed overdue task. Scoped Ernest tags identify issue #41
+additions without claiming existing Task or Printing code.
 
 `CommandParser.parse` implements all command formats in the User Guide and
 returns the existing nested `Command` records. The parser has no clock, storage

@@ -54,6 +54,28 @@ class CommandParserTest {
             assertEquals(usage, assertThrows(ParseException.class, () -> parser.parse(input), input).usage());
         }
     }
+
+    @Test
+    void parse_taskRemaining_acceptsPositiveWholeMinuteTokens() throws ParseException {
+        assertEquals(new Command.ReviseTaskRemaining(1, 30),
+                parser.parse("task remaining T1 remaining/30"));
+        assertEquals(new Command.ReviseTaskRemaining(12, Integer.MAX_VALUE),
+                parser.parse(" task  remaining  T12  remaining/2147483647 "));
+    }
+
+    @Test
+    void parse_taskRemaining_rejectsMalformedAndOverflowingInput() {
+        String usage = "task remaining TNUMBER remaining/MINUTES";
+        for (String input : List.of("task remaining", "task remaining 1 remaining/30",
+                "task remaining C1 remaining/30", "task remaining T0 remaining/30",
+                "task remaining T01 remaining/30", "task remaining T1 remaining/0",
+                "task remaining T1 remaining/01", "task remaining T1 remaining/-30",
+                "task remaining T1 remaining/2147483648", "task remaining T2147483648 remaining/30",
+                "task remaining T1 d/30", "task remaining T1 remaining/30 extra",
+                "task remaining T1 remaining/30 remaining/60", "task remaining T1 done/30 remaining/60")) {
+            assertEquals(usage, assertThrows(ParseException.class, () -> parser.parse(input), input).usage());
+        }
+    }
     // @@author ka-how
 
     // @@author GabrielYuSP

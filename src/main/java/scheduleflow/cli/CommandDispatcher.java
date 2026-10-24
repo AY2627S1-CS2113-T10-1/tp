@@ -113,6 +113,7 @@ public final class CommandDispatcher {
             // @@author ernestgoh-god
             case Command.RecordTaskWork work -> recordTaskWork(work, state);
             case Command.RecordTaskSession session -> recordTaskSession(session, state);
+            case Command.ReviseTaskRemaining revise -> reviseTaskRemaining(revise, state);
             // @@author ka-how
             case Command.AddCommitment add -> addCommitment(add, state);
             case Command.EditCommitment edit -> editCommitment(edit, state);
@@ -233,6 +234,30 @@ public final class CommandDispatcher {
             LOGGER.log(Level.FINE, "Task progress confirmation is still pending");
             throw new ValidationException("Task progress is awaiting printing.");
         }
+        if (candidate != original) {
+            saveAndCommit(candidate, state);
+        }
+        return confirmation;
+    }
+
+    /**
+     * Validates a revised estimate and prepares its response before any save or publication.
+     *
+     * @param command task ID and replacement remaining minutes
+     * @param state live snapshot and temporary plan
+     * @return confirmation for the validated estimate, including an unchanged estimate
+     * @throws StorageException if the candidate cannot be saved
+     * @throws ValidationException if the task or estimate is invalid
+     */
+    private String reviseTaskRemaining(Command.ReviseTaskRemaining command, AppState state) throws StorageException {
+        LOGGER.log(Level.FINE, "Validating task remaining-work revision");
+        Snapshot original = state.snapshot();
+        Snapshot candidate = tasks.reviseRemaining(original, command.id(), command.remainingMinutes());
+        Task revised = candidate.tasks().stream().filter(task -> task.id() == command.id())
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Validated revision is missing its target."));
+        String confirmation = Objects.requireNonNull(renderer.taskRemainingUpdated(revised),
+                "task remaining confirmation");
         if (candidate != original) {
             saveAndCommit(candidate, state);
         }
