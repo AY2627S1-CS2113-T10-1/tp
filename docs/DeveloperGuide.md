@@ -87,6 +87,67 @@ allocation relationships remain the planner's responsibility. Fixed-date
 planner and projection tests verify deadline order, conservation of minutes,
 cutoff rounding, clipping, midnight commitments and allowed schedule dates.
 
+### Continuous work and fixed breaks (issue #55, Planning API only)
+
+The Optimizer implementation is available through
+`new EarliestDeadlinePlanner(new StudyPolicy(90, 30))`. `StudyPolicy` validates
+positive multiples of 30 minutes for the continuous-work limit and required
+break. No numeric default is selected yet. The original no-argument planner
+and `Planner.generate(Snapshot, LocalDateTime)` remain usable, with the original
+unrestricted behavior until settings are integrated. No #55 command exists yet.
+
+Allocation now walks slots chronologically, choosing unfinished eligible tasks
+by deadline and numeric ID. This preserves the original allocation order while
+allowing one work counter to cover different tasks and commitments. Fixed
+commitments count even outside study windows and before the rounded generation
+cutoff. The counter starts at midnight on the generation date; activity before
+that date and past task study are not reconstructed. Across future dates,
+calendar midnight does not itself reset the counter: actual unoccupied time does.
+
+Tasks may immediately follow commitments while the combined work total is below
+the limit. At the limit, another task slot must wait for the configured consecutive
+rest. Short idle gaps retain accumulated work; any new work interrupts partial
+rest. Fixed commitments are never moved or shortened, even when they push the
+combined work total above the limit. The allocator does not reserve rest in
+anticipation of a future commitment. After an overrun of any size, one configured
+break suffices; proportional break scaling is deferred. Natural idle time,
+including time outside study hours, can satisfy all or part of the required rest.
+
+`Plan.breaks()` contains chronological immutable `ScheduleEntry` rows with
+`SlotKind.BREAK` and empty reference/name fields. Its original five-argument
+constructor remains available and supplies an empty break list. Relationships
+between sessions, breaks and commitments remain the planner's responsibility.
+Only eligible slots withheld from pending, deadline-eligible tasks are marked
+as breaks; natural rest and trailing idle time remain ordinary free/unplanned
+time. An interrupted break can therefore appear as separate partial rows, and
+a break may end at a deadline even if the task ultimately remains unallocated.
+`ScheduleService` projects frozen break rows without recomputing the policy.
+
+Integration handoff (ownership-marked comments are present at the relevant code):
+
+- **Printing/parsing:** agree on set/show/reset command grammar and defaults;
+  transport integer minutes and use `StudyPolicy` for domain validation. Update
+  `Command`, `CommandParser`, help, settings responses and dispatcher tests.
+- **Printing/dispatch:** obtain the current policy for each generation and use
+  the configured planner constructor. Settings changes must save before publication
+  and plan invalidation, preserving both settings and plan on failure. The existing
+  injected planner remains unchanged until this integration is implemented.
+- **Printing/rendering:** implement the explicit throwing `BREAK` switch branch
+  in `TextRenderer.formatScheduleRow` (proposed row: `09:30 - 10:00 | [BREAK]`).
+  Keep output based on supplied intervals; the renderer must not allocate breaks.
+- **Save:** coordinate adding settings to `Snapshot`, codec versioning and legacy
+  defaults. Ensure task, commitment and hours mutations preserve them. This change
+  does not modify the snapshot or saved format; #68 plan persistence is separate.
+
+Fixed-time JUnit tests cover cross-task limits, exact and 2x/3x commitment
+overruns, adjacent commitments, interrupted and partially elapsed breaks,
+pre-window commitments, cutoff rounding, overnight rest, deadline capacity,
+minute conservation, deterministic generation and frozen schedule projection.
+Record tests cover duration validation, anonymous break rows, immutable lists,
+ordering and the original plan constructor. #55 console acceptance remains
+planned until commands, persistence and rendering are integrated; existing
+active process scenarios exercise the no-argument planner.
+
 ### Configurable study hours
 
 `StudyWindow` validates positive same-day intervals on half-hour boundaries.

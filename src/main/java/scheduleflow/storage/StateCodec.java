@@ -27,6 +27,8 @@ import scheduleflow.model.Task;
  * Converts snapshots to and from the versioned text format without accessing saved files.
  */
 public final class StateCodec {
+    // TODO(Save): implement issue #55 policy persistence with Snapshot and legacy-file defaults.
+    // Coordinate defaults and preserve policy through all task, commitment and study-hours mutations.
     // @@author ernestgoh-god
     /**
      * Records conversion stages at FINE level without including stored values or exception messages.

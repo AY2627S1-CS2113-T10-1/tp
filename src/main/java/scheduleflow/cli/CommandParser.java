@@ -19,6 +19,8 @@ import java.util.regex.Pattern;
  * Parses the complete case-sensitive command grammar without inspecting application state.
  */
 public final class CommandParser {
+    // TODO(Printing): implement issue #55 settings commands after agreeing on set/show/reset grammar.
+    // Transport integer minutes; StudyPolicy owns positive half-hour duration validation.
     /**
      * Records recognition and syntax-checking stages without logging raw command text.
      */

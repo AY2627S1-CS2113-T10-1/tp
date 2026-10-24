@@ -158,11 +158,55 @@ class ScheduleServiceTest {
         assertEquals(SlotKind.FREE, nextDay.entries().getFirst().kind());
     }
 
+    @Test
+    void forDate_policyPlan_projectsMergedBreaksAndKeepsFrozenResults() {
+        Snapshot source = new Snapshot(List.of(new Task(1, "Draft", MONDAY.atTime(12, 0), 90)), List.of(), 2, 1);
+        Plan plan = new EarliestDeadlinePlanner(new StudyPolicy(60, 60)).generate(source, MORNING);
+        List<ScheduleEntry> expected = List.of(entry(8, 0, 9, 0, SlotKind.TASK, "T1", "Draft"),
+                entry(9, 0, 10, 0, SlotKind.BREAK, "", ""),
+                entry(10, 0, 10, 30, SlotKind.TASK, "T1", "Draft"),
+                entry(10, 30, 22, 0, SlotKind.FREE, "", ""));
+        assertEquals(expected, schedules.forDate(plan, MONDAY).entries());
+        new EarliestDeadlinePlanner(new StudyPolicy(30, 30)).generate(source, MONDAY.atTime(11, 0));
+        assertEquals(expected, schedules.forDate(plan, MONDAY).entries());
+        assertEquals(MORNING, plan.generatedAt());
+    }
+
+    @Test
+    void forDate_interruptedBreak_preservesCommitmentAndPartialRestBoundaries() {
+        Snapshot source = new Snapshot(List.of(new Task(1, "Draft", MONDAY.atTime(12, 0), 30)), List.of(
+                new Commitment(1, "First", DayOfWeek.MONDAY, LocalTime.of(8, 0), 60),
+                new Commitment(2, "Second", DayOfWeek.MONDAY, LocalTime.of(9, 30), 30)), 2, 3);
+        Plan plan = new EarliestDeadlinePlanner(new StudyPolicy(60, 60)).generate(source, MORNING);
+        assertEquals(List.of(entry(8, 0, 9, 0, SlotKind.BUSY, "C1", "First"),
+                entry(9, 0, 9, 30, SlotKind.BREAK, "", ""),
+                entry(9, 30, 10, 0, SlotKind.BUSY, "C2", "Second"),
+                entry(10, 0, 11, 0, SlotKind.BREAK, "", ""),
+                entry(11, 0, 11, 30, SlotKind.TASK, "T1", "Draft"),
+                entry(11, 30, 22, 0, SlotKind.FREE, "", "")), schedules.forDate(plan, MONDAY).entries());
+    }
+
+    @Test
+    void forDate_partialEarlierRest_preservesUnplannedCutoffAndWholePlanRemainder() {
+        Snapshot source = new Snapshot(List.of(new Task(1, "Draft", MONDAY.atTime(10, 0), 30)), List.of(
+                new Commitment(1, "Lecture", DayOfWeek.MONDAY, LocalTime.of(8, 0), 60)), 2, 2);
+        Plan plan = new EarliestDeadlinePlanner(new StudyPolicy(60, 60)).generate(source, MONDAY.atTime(9, 30));
+        ScheduleView view = schedules.forDate(plan, MONDAY);
+        assertEquals(List.of(entry(8, 0, 9, 0, SlotKind.BUSY, "C1", "Lecture"),
+                entry(9, 0, 9, 30, SlotKind.UNPLANNED, "", ""),
+                entry(9, 30, 10, 0, SlotKind.BREAK, "", ""),
+                entry(10, 0, 22, 0, SlotKind.FREE, "", "")), view.entries());
+        assertEquals(plan.unallocated(), view.unallocated());
+        assertEquals(30, view.unallocated().getFirst().minutes());
+    }
+
+    /** Creates a legacy plan without reserved breaks for projection-only checks. */
     private static Plan plan(Snapshot source, LocalDateTime generated, List<StudySession> sessions,
             List<UnallocatedWork> unallocated) {
         return new Plan(generated, TimeRules.horizonEnd(generated), source, sessions, unallocated);
     }
 
+    /** Creates an expected row on the fixed schedule date. */
     private static ScheduleEntry entry(int startHour, int startMinute, int endHour, int endMinute,
             SlotKind kind, String reference, String name) {
         return new ScheduleEntry(MONDAY.atTime(startHour, startMinute), MONDAY.atTime(endHour, endMinute),

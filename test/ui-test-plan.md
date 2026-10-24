@@ -147,6 +147,29 @@ dependent scenarios; ready active cases must run even if another component is
 unfinished. Exit 0 means active scenarios passed, exit 1 means FAILED, and
 exit 2 means BLOCKED. A planned or diagnostic scaffold case is never a pass.
 
+## Planned issue #55 console acceptance
+
+The continuous-work allocator and frozen BREAK projection have direct JUnit
+coverage in the planning package. They are enabled through the configured
+planner constructor only. The original console planner retains unrestricted
+allocation; existing active fixtures and their exact outputs remain applicable.
+The explicit BREAK renderer branch is an unwired throwing skeleton, not a
+feature pass. No #55 process case is ready to activate yet, and no speculative
+command grammar or output has been added to `ui-scenarios.json`.
+
+After Printing and Save integrate the documented contract, add and activate:
+
+| ID | Coverage | Status |
+| --- | --- | --- |
+| UI-016 | Set/show/reset policy, invalid values, save/restart and plan invalidation/rollback | Planned; grammar, settings persistence and confirmations pending |
+| UI-017 | Cross-task limits, commitments below/at/2x/3x limit, fixed breaks and BREAK rows | Planned; configured console planner and rendering pending |
+
+Use fixed-clock dispatcher JUnit tests for exact schedule times. Packaged
+acceptance must keep isolated saved data and deterministic output; an expected
+stub exception must never count as acceptance. Planner coverage includes
+partial-rest interruption, natural rest before the cutoff, overnight rest,
+deadline remainders and conservation of source work estimates.
+
 ## Fixed-clock acceptance and remaining checks
 
 `CommandDispatcherTest` covers every command, single clock capture, every
