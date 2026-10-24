@@ -1,6 +1,8 @@
 package scheduleflow.model;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import scheduleflow.common.InputRules;
@@ -14,14 +16,21 @@ import scheduleflow.common.ValidationException;
  * @param name nonblank description, stripped at both ends; slash and ISO controls are forbidden
  * @param deadline local deadline with minute precision and a year from 0001 to 9999
  * @param remainingMinutes whole remaining-work estimate, a positive multiple of 30
+ * @param occurrence immutable weekly provenance, absent for ordinary tasks
  */
-public record Task(int id, String name, LocalDateTime deadline, int remainingMinutes) {
+public record Task(int id, String name, LocalDateTime deadline, int remainingMinutes,
+        Optional<TaskOccurrence> occurrence) {
     // @@author nickpatt
     /**
      * Records opt-in structural validation stages without task values or exception payloads.
      */
     private static final Logger LOGGER = Logger.getLogger(Task.class.getName());
     // @@author
+
+    /** Creates an ordinary task without recurrence provenance. */
+    public Task(int id, String name, LocalDateTime deadline, int remainingMinutes) {
+        this(id, name, deadline, remainingMinutes, Optional.empty());
+    }
 
     /**
      * Creates a structurally valid task and normalizes its name.
@@ -30,6 +39,7 @@ public record Task(int id, String name, LocalDateTime deadline, int remainingMin
      * @throws ValidationException if the ID, name, deadline or duration violates a structural rule
      */
     public Task {
+        Objects.requireNonNull(occurrence, "occurrence");
         // @@author nickpatt
         LOGGER.log(Level.FINE, "Starting task structural validation");
         try {

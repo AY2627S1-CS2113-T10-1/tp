@@ -248,7 +248,7 @@ privacy and absence of false completion after rejection. Run the owned tests wit
 `./gradlew test --tests 'scheduleflow.task.*' --tests 'scheduleflow.common.*' --tests 'scheduleflow.model.TaskTest'`.
 The existing packaged UI fixtures require no changed output expectations.
 
-### Task detail editing (service API only)
+### Task detail editing (issue #39)
 
 `TaskService.edit(state, id, TaskEdit, now)` implements immutable partial name and
 deadline edits. `TaskEdit` uses nonnull `Optional` containers; omitted fields retain
@@ -265,13 +265,104 @@ instance. The API does not save, publish or invalidate plans. FINE diagnostics
 omit private values; assertions check candidate preservation. Nickhil's additions
 use scoped `// @@author nickpatt` markers without replacing teammates' attribution.
 
+`Command.EditTask` transports a partial edit and `CommandParser` accepts
+`task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]`. At least one field is required,
+in name/deadline order. `TextRenderer.taskEdited` is implemented and reports the
+stored ID, name, deadline and estimate without mutating or saving anything.
+The dispatcher prepares the response before saving, then publishes changed
+candidates only after save succeeds. A normalized no-op returns a confirmation
+without saving or invalidating the current plan. Failed syntax, validation or
+saving retains the old snapshot, counters, file and plan.
+
 Deterministic `TaskServiceTest` and `TaskEditTest` cases cover all field subsets,
 atomic rejection, no-ops, immutable mixed snapshots and custom hours, precise
 command times, structural deadline limits, inclusive/moving/leap-day horizons,
-null preconditions and private diagnostics. Existing console fixtures are unchanged.
-There is no task-edit command, parser or dispatcher integration in this change.
-`TextRenderer.taskEdited(Task)` is an unwired planned-contract skeleton that
-always throws `UnsupportedOperationException`, not a working rendering feature.
+null preconditions and private diagnostics. Parser, renderer and dispatcher tests
+cover strict grammar, exact output, no-op publication, failed-save retry and
+replanning against edited details. UI-020 covers a real saved rename, rejection,
+invalidation and restart with an overdue task, avoiding real-date assumptions.
+
+### Weekly recurring tasks (issue #67)
+
+`RecurringTaskService` integrates the previously isolated Task recurrence design
+with current master rather than importing the divergent lifecycle/priority stack.
+`RecurringTask` stores an independent positive R ID, normalized name, first
+deadline, optional inclusive final date, positive half-hour estimate and persisted
+last-processed deadline. `TaskOccurrence` retains the template ID and original
+deadline; release is always one week before that original deadline. Ordinary
+Task deadlines and positive 30-minute estimates retain their existing semantics.
+The four-argument Task and four/five-argument Snapshot constructors remain usable
+for shipped callers and legacy data, defaulting recurrence to empty.
+
+`task recur add`, `task recur list` and `task recur delete` are parsed, dispatched
+and rendered at the console. The first deadline establishes weekday/time; only
+`every/WEEKLY` is supported. Creation materializes all future due dates through
+the rolling horizon (including its boundary), subject to an optional last date.
+Future templates beyond the horizon are retained without premature tasks.
+Materialization skips missed deadlines arithmetically rather than backfilling;
+the saved cursor also covers skipped dates. Pending tasks get T IDs in deadline,
+then numeric-template-ID order. The complete batch must fit before any ID is
+allocated. Replanning, a backwards clock change, task deletion and restarting
+never rewind the cursor or recreate a processed occurrence.
+
+Snapshot validates distinct logical occurrences, cursor coverage and the separate
+R counter, including retained provenance after a template is deleted. Task edits,
+remaining revisions, deletions, commitment changes and study-hours changes retain
+the recurrence definitions/counters. Editing one generated task does not edit
+its template or release. Template deletion stops only new generation and retains
+all already-generated tasks. The allocator checks the original release against
+slot start while retaining current study hours, dated/skipped commitments and
+continuous-work policy. No second allocation algorithm is introduced.
+
+`plan` first materializes a candidate and generates its Plan, validates the source
+association and formats the result before any publication. If data or cursors
+changed, it saves the complete candidate once, commits and then publishes the
+already-validated temporary plan. Planner/null/stale-result/rendering/save failure
+preserves the previous snapshot and plan. No-op materialization causes no write.
+Plans remain temporary; this change does not implement exact-plan persistence.
+
+#### Recurrence storage format
+
+Version 5 is selected only if a template, occurrence provenance or allocated R
+counter requires it. Otherwise the existing oldest-compatible v1-v4 behavior is
+unchanged. Loading old versions does not write or migrate files automatically.
+Version 5 stores names last (including literal pipes) and uses these rows:
+
+```text
+SCHEDULEFLOW|5
+NEXT|2|1|2
+OCCURRENCE|1|2026-11-02T18:00|60|1|2026-11-02T18:00|Weekly quiz
+RECURRING|1|2026-11-02T18:00|60|2026-11-02|2026-11-02T18:00|Weekly quiz
+```
+
+`NEXT` adds next R ID after the existing T/C counters. Ordinary tasks still use
+`TASK|id|deadline|minutes|name`. Occurrences additionally store template ID and
+original deadline before the name; templates use first deadline, minutes, last
+date and processing cursor, with `-` for absent last date/cursor. V5 commitments
+use the widest existing v4 layout, including bounds and skipped dates; hours rows
+are unchanged. Even an empty state retains v5 after allocating an R ID, so IDs
+are never reused. Invalid/duplicate/counter-inconsistent records reject the whole
+load. Old executables cannot read v5; back up data before upgrading or downgrading.
+
+Fixed-time model/service/planner tests cover weekly bounds, ordering, arithmetic
+catch-up, leap years, release times, exhaustion, no-op identity and recurrence
+preservation. Storage tests cover v1-v4 compatibility, v5 Unicode/pipe round trips,
+corruption, deleted templates and saved cursors. Dispatcher tests cover one-save
+transactions, read-only lists, failed-save retry, cursor-only publication and
+planner failure. UI-021 exercises actual template commands and counters through
+restart with a deliberately beyond-horizon future template. UI-022 uses restored
+historical occurrences to prove replanning/restart do not recreate deleted tasks.
+Fixed-clock JUnit tests cover materialization of currently eligible new tasks.
+
+#### Remaining Task stories
+
+The earlier PRs #74-#76 were merged into stacked feature branches, not all into
+master. This integration completes the current #39/#67 path; it does not claim
+that retained completion/reopening (#52/#56), optional deadlines, priorities or
+search are available. Issue #40/PR #84 owns the separate exact-progress integration
+and pending confirmation. Reconcile those model/schema extensions with v5 before
+merging them rather than replacing the current commitment/hours formats or
+restoring throwing Task edit/recurrence renderers.
 
 ### Basic saving and loading
 
@@ -613,7 +704,7 @@ store it, and version 4 is used only when some series also has skipped dates.
 Older stores remain readable unchanged.
 
 The alternative of an explicit kind flag would need a new record component,
-constructor overloads and a version 5 format while behaving identically. The
+constructor overloads and another format extension while behaving identically. The
 trade-off is that a weekly series entered with the same `from/` and `until/`
 date is shown as one-time, which matches its single occurrence. The packaged
 UI-017 expectation for that input was updated accordingly.

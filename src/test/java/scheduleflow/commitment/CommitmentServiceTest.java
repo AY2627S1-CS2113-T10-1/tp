@@ -7,13 +7,16 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -23,10 +26,12 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
+import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.StudyHours;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskOccurrence;
 import scheduleflow.planning.EarliestDeadlinePlanner;
 import scheduleflow.planning.Plan;
 import scheduleflow.planning.StudySession;
@@ -42,6 +47,43 @@ import scheduleflow.task.TaskService;
 @Isolated("Logging checks temporarily configure the commitment service logger.")
 class CommitmentServiceTest {
     private final CommitmentService service = new CommitmentService();
+
+    // @@author nickpatt
+    @Test
+    void mutations_recurrence_preserveHistoryHoursAndCountersThroughStorageAndDiscardedCandidates(
+            @TempDir Path directory) throws Exception {
+        LocalDateTime first = LocalDateTime.of(2026, 10, 26, 18, 0);
+        RecurringTask recurring = new RecurringTask(2, "Weekly", first, Optional.empty(), 60,
+                Optional.of(first.plusWeeks(1)));
+        Task occurrence = new Task(1, "Work", first, 30, Optional.of(new TaskOccurrence(2, first)));
+        Snapshot source = new Snapshot(List.of(occurrence), List.of(new Commitment(1, "Lecture",
+                DayOfWeek.MONDAY, LocalTime.NOON, 30)), 8, 6,
+                new StudyHours(Map.of("monday", new StudyWindow(LocalTime.of(9, 0), LocalTime.of(20, 0)))),
+                List.of(recurring), 7);
+        Snapshot added = service.add(source, "New", DayOfWeek.TUESDAY, LocalTime.NOON, 30);
+        List<Snapshot> candidates = List.of(added,
+                service.edit(source, 1, "Renamed", null, null, null),
+                service.edit(source, 1, "Lecture", null, null, null),
+                service.skip(source, 1, first.toLocalDate()), service.delete(source, 1));
+        StateCodec codec = new StateCodec();
+        for (Snapshot candidate : candidates) {
+            assertEquals(source.tasks(), candidate.tasks());
+            assertEquals(source.recurringTasks(), candidate.recurringTasks());
+            assertEquals(source.nextRecurringTaskId(), candidate.nextRecurringTaskId());
+            assertEquals(source.nextTaskId(), candidate.nextTaskId());
+            assertEquals(source.studyHours(), candidate.studyHours());
+            assertEquals(candidate == added ? 7 : 6, candidate.nextCommitmentId());
+            assertEquals(candidate, codec.decode(codec.encode(candidate)));
+        }
+        Path blocked = Files.createFile(directory.resolve("blocked.txt"));
+        FileStorage failing = new FileStorage(blocked.resolve("data.txt"), codec);
+        for (Snapshot candidate : candidates) {
+            assertThrows(StorageException.class, () -> failing.save(candidate));
+            assertEquals(source, codec.decode(codec.encode(source)));
+        }
+        assertEquals(added, service.add(source, "New", DayOfWeek.TUESDAY, LocalTime.NOON, 30));
+    }
+    // @@author Darren50
 
     @Test
     void addAndEdit_dateBounds_validateActualOccurrencesAndPreserveOmissions() {

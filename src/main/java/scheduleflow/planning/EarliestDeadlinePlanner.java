@@ -88,7 +88,7 @@ public final class EarliestDeadlinePlanner implements Planner {
             workClock.work();
             return slot;
         }
-        PendingTask next = eligible ? nextTask(pending, start.plusMinutes(TimeRules.SLOT_MINUTES)) : null;
+        PendingTask next = eligible ? nextTask(pending, start) : null;
         if (next != null && !workClock.needsBreak()) {
             slot.taskId = next.task.id();
             next.remainingMinutes -= TimeRules.SLOT_MINUTES;
@@ -100,10 +100,12 @@ public final class EarliestDeadlinePlanner implements Planner {
         return slot;
     }
 
-    /** Selects the earliest-deadline unfinished task whose whole slot fits its deadline. */
-    private static PendingTask nextTask(List<PendingTask> pending, LocalDateTime slotEnd) {
+    /** Selects unfinished work released by the slot start whose whole slot fits its deadline. */
+    private static PendingTask nextTask(List<PendingTask> pending, LocalDateTime slotStart) {
+        LocalDateTime slotEnd = slotStart.plusMinutes(TimeRules.SLOT_MINUTES);
         for (PendingTask work : pending) {
             if (work.reason == UnallocatedReason.INSUFFICIENT_CAPACITY && work.remainingMinutes > 0
+                    && work.task.occurrence().map(occurrence -> !slotStart.isBefore(occurrence.release())).orElse(true)
                     && !slotEnd.isAfter(work.task.deadline())) {
                 return work;
             }

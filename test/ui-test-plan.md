@@ -12,7 +12,7 @@ exact output, invalid values, plan invalidation, replanning and saved data after
 two restarts. Save failure is covered by an isolated dispatcher fake because
 process-level fault injection is unavailable.
 
-All nineteen maintained process scenarios are active. They exercise the packaged
+All twenty-two maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -86,13 +86,23 @@ timeouts and expected output; Java 25 and isolated workspace data were retained.
 
 ## Active packaged scenarios
 
-Task name/deadline edit API cases are covered by deterministic JUnit tests only.
-They are not process-active until task-edit CLI wiring and rendering are integrated;
-the new renderer method is an unwired skeleton, not acceptance coverage. All current
-active fixture expectations remain unchanged.
+Task editing and weekly task recurrence now have parser/dispatcher/renderer
+implementations. UI-020 checks saved edits and rejection; UI-021 checks real template
+commands, definitions and R-counter persistence; UI-022 checks generated-task
+provenance/cursors through deletion, replanning and restart. Future additions use
+year 9999 outside the current horizon, and historical fixtures use year 2000, so
+exact results do not depend on a near-future deadline expiring. Actual eligible
+occurrence generation, original releases, rolling horizons, no-op edits, failures
+and retry IDs use fixed-clock JUnit tests. No production clock flag is introduced.
+The original nineteen scenarios retain their expected outputs. Issue #40 progress,
+retained completion/reopening and other unmerged lifecycle/query commands remain
+pending; these successful scenarios do not certify those separate features.
 
 | ID | Coverage | Status |
 | --- | --- | --- |
+| UI-020 | Task edit, unchanged IDs, validation, plan invalidation and saved restart | Active |
+| UI-021 | Weekly template commands, bounded/unbounded definitions and stable R IDs across restarts | Active |
+| UI-022 | Version 5 occurrence history and no recreation after task deletion/replan/restart | Active |
 | UI-019 | Remaining-time revision, validation, plan invalidation and two saved restarts | Active |
 | UI-018 | One-time commitments: exact-date overlap, validation, restart, edit by date and deletion | Active |
 | UI-017 | One-date recurrence skips, validation, version 4 restart and released overlap | Active |

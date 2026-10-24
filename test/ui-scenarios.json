@@ -2,6 +2,78 @@
   "version": 1,
   "cases": [
     {
+      "id": "UI-020", "aim": "Task edits are saved, keep IDs and recover from rejected changes",
+      "status": "active", "setup": "Restored overdue task; no dependence on a future system date",
+      "files": { "data/scheduleflow.txt": "SCHEDULEFLOW|1\nNEXT|2|1\nTASK|1|2000-01-01T09:00|60|Old draft\n" },
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "plan", "output": "Study plan generated with unallocated work.\nScheduled: 0 min | Unallocated: 60 min\nT1: Old draft | Unallocated: 60 min | Reason: deadline passed" },
+          { "input": "task edit T1 n/Renamed draft", "output": "Edited T1: Renamed draft\nDue: 2000-01-01 09:00 | Duration: 60 min" },
+          { "input": "schedule today", "output": "No current plan. Run plan to generate one." },
+          { "input": "task edit T1 due/2000-01-02 0900", "output": "Error: Deadline must be in the future." },
+          { "input": "task edit T1 due/9999-12-31 2359", "output": "Error: Deadline must be within the rolling one-year horizon." },
+          { "input": "task edit T1", "output": "Error: Supply at least one task field to edit\nExpected: task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]" },
+          { "input": "task edit T9 n/Unknown", "output": "Error: Unknown task ID: T9" },
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT1 | Renamed draft | 60 min | 2000-01-01 09:00\nTotal: 1 task(s)." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "task edit T1 n/Renamed draft", "output": "Edited T1: Renamed draft\nDue: 2000-01-01 09:00 | Duration: 60 min" },
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT1 | Renamed draft | 60 min | 2000-01-01 09:00\nTotal: 1 task(s)." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
+      "id": "UI-021", "aim": "Recurring task commands retain definitions and never reuse R IDs after restart",
+      "status": "active", "setup": "Future templates deliberately outside the current planning horizon",
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "task recur list", "output": "No recurring tasks found." },
+          { "input": "task recur add n/Weekly quiz due/9999-12-17 1800 d/60 every/WEEKLY until/9999-12-24", "output": "Added R1: Weekly quiz\nWeekly from: 9999-12-17 18:00 | Duration: 60 min | Until: 9999-12-24" },
+          { "input": "task recur list", "output": "=== Weekly Recurring Tasks ===\nR1 | Weekly quiz | Weekly from: 9999-12-17 18:00 | Duration: 60 min | Until: 9999-12-24\nTotal: 1 recurring task(s)." },
+          { "input": "task list", "output": "No tasks found." },
+          { "input": "plan", "output": "No tasks to schedule." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "task recur list", "output": "=== Weekly Recurring Tasks ===\nR1 | Weekly quiz | Weekly from: 9999-12-17 18:00 | Duration: 60 min | Until: 9999-12-24\nTotal: 1 recurring task(s)." },
+          { "input": "task recur delete R1", "output": "Deleted recurring task R1: Weekly quiz\nExisting task occurrences are retained." },
+          { "input": "task recur add n/Next quiz due/9999-12-17 1800 d/30 every/WEEKLY", "output": "Added R2: Next quiz\nWeekly from: 9999-12-17 18:00 | Duration: 30 min | Until: No end date" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "task recur list", "output": "=== Weekly Recurring Tasks ===\nR2 | Next quiz | Weekly from: 9999-12-17 18:00 | Duration: 30 min | Until: No end date\nTotal: 1 recurring task(s)." },
+          { "input": "task recur delete R1", "output": "Error: Unknown recurring task ID: R1" },
+          { "input": "task recur delete R2", "output": "Deleted recurring task R2: Next quiz\nExisting task occurrences are retained." },
+          { "input": "task recur list", "output": "No recurring tasks found." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
+      "id": "UI-022", "aim": "Processed recurring occurrences are not recreated after deletion, replanning or restart",
+      "status": "active", "setup": "Version 5 historical weekly template and one restored generated task",
+      "files": { "data/scheduleflow.txt": "SCHEDULEFLOW|5\nNEXT|8|1|3\nOCCURRENCE|7|2000-01-03T18:00|30|2|2000-01-03T18:00|Old quiz\nRECURRING|2|2000-01-03T18:00|30|2000-01-10|2000-01-03T18:00|Weekly quiz\n" },
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "plan", "output": "Study plan generated with unallocated work.\nScheduled: 0 min | Unallocated: 30 min\nT7: Old quiz | Unallocated: 30 min | Reason: deadline passed" },
+          { "input": "task edit T7 n/Renamed quiz", "output": "Edited T7: Renamed quiz\nDue: 2000-01-03 18:00 | Duration: 30 min" },
+          { "input": "task delete T7", "output": "Deleted task T7: Renamed quiz" },
+          { "input": "plan", "output": "No tasks to schedule." },
+          { "input": "task list", "output": "No tasks found." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "plan", "output": "No tasks to schedule." },
+          { "input": "task list", "output": "No tasks found." },
+          { "input": "task recur delete R2", "output": "Deleted recurring task R2: Weekly quiz\nExisting task occurrences are retained." },
+          { "input": "task recur list", "output": "No recurring tasks found." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
       "id": "UI-019", "aim": "Revise remaining task time, reject invalid values, invalidate a plan and persist across restarts",
       "status": "active", "setup": "One overdue saved task; no dependence on the current date",
       "requiredComponents": ["CommandParser.parse", "TaskService.reviseRemaining",

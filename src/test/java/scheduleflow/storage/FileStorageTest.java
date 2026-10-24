@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -25,8 +26,10 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import scheduleflow.commitment.CommitmentService;
 import scheduleflow.model.Commitment;
+import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskOccurrence;
 import scheduleflow.task.TaskService;
 
 // @@author ernestgoh-god
@@ -37,6 +40,31 @@ import scheduleflow.task.TaskService;
 class FileStorageTest {
     @TempDir
     private Path directory;
+
+    // @@author nickpatt
+    @Test
+    void saveAndLoad_recurrence_preservesBytesAndDoesNotRecreateDeletedTemplates() throws Exception {
+        LocalDateTime first = LocalDateTime.of(2026, 10, 26, 18, 0);
+        RecurringTask recurring = new RecurringTask(1, "Weekly | café", first, Optional.empty(), 60,
+                Optional.of(first.plusWeeks(2)));
+        Task occurrence = new Task(1, "Work | 复习", first, 30,
+                Optional.of(new TaskOccurrence(1, first)));
+        Snapshot state = new Snapshot(List.of(occurrence), List.of(), 5, 4,
+                Snapshot.empty().studyHours(), List.of(recurring), 3);
+        Path file = directory.resolve("recurrence.txt");
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        storage.save(state);
+        byte[] bytes = Files.readAllBytes(file);
+        assertEquals(state, new FileStorage(file, new StateCodec()).load());
+        assertArrayEquals(bytes, Files.readAllBytes(file));
+        Snapshot deleted = new Snapshot(state.tasks(), List.of(), 5, 4, state.studyHours(), List.of(), 3);
+        storage.save(deleted);
+        bytes = Files.readAllBytes(file);
+        assertEquals(deleted, new FileStorage(file, new StateCodec()).load());
+        assertEquals(deleted, storage.load());
+        assertArrayEquals(bytes, Files.readAllBytes(file));
+    }
+    // @@author ernestgoh-god
 
     @Test
     void constructor_nullDependencies_rejectsWithoutCreatingData() {

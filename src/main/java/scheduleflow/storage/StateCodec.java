@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
@@ -18,10 +19,12 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
+import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.StudyHours;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskOccurrence;
 
 /**
  * Converts snapshots to and from the versioned text format without accessing saved files.
@@ -64,25 +67,46 @@ public final class StateCodec {
                 .anyMatch(commitment -> commitment.startDate() != null);
         boolean hasSkippedOccurrences = state.commitments().stream()
                 .anyMatch(commitment -> !commitment.skippedDates().isEmpty());
-        String version = hasSkippedOccurrences ? "SCHEDULEFLOW|4"
+        // @@author nickpatt
+        boolean hasRecurrence = !state.recurringTasks().isEmpty() || state.nextRecurringTaskId() != 1
+                || state.tasks().stream().anyMatch(task -> task.occurrence().isPresent());
+        String version = hasRecurrence ? "SCHEDULEFLOW|5" : hasSkippedOccurrences ? "SCHEDULEFLOW|4"
                 : hasDateBoundedCommitments ? "SCHEDULEFLOW|3"
                 : state.studyHours().windows().isEmpty() ? HEADER : "SCHEDULEFLOW|2";
         // @@author ernestgoh-god
         StringBuilder text = new StringBuilder(version).append('\n');
-        text.append("NEXT|").append(state.nextTaskId()).append('|').append(state.nextCommitmentId()).append('\n');
-        for (Task task : state.tasks()) {
-            text.append("TASK|").append(task.id()).append('|').append(task.deadline()).append('|')
-                    .append(task.remainingMinutes()).append('|').append(task.name()).append('\n');
+        text.append("NEXT|").append(state.nextTaskId()).append('|').append(state.nextCommitmentId());
+        if (hasRecurrence) {
+            text.append('|').append(state.nextRecurringTaskId());
         }
+        text.append('\n');
+        for (Task task : state.tasks()) {
+            text.append(task.occurrence().isPresent() ? "OCCURRENCE|" : "TASK|")
+                    .append(task.id()).append('|').append(task.deadline()).append('|')
+                    .append(task.remainingMinutes()).append('|');
+            if (task.occurrence().isPresent()) {
+                TaskOccurrence occurrence = task.occurrence().orElseThrow();
+                text.append(occurrence.templateId()).append('|').append(occurrence.originalDeadline()).append('|');
+            }
+            text.append(task.name()).append('\n');
+        }
+        for (RecurringTask recurring : state.recurringTasks()) {
+            text.append("RECURRING|").append(recurring.id()).append('|').append(recurring.firstDeadline())
+                    .append('|').append(recurring.minutes()).append('|')
+                    .append(recurring.until().map(LocalDate::toString).orElse("-")).append('|')
+                    .append(recurring.generatedThrough().map(LocalDateTime::toString).orElse("-")).append('|')
+                    .append(recurring.name()).append('\n');
+        }
+        // @@author ernestgoh-god
         for (Commitment commitment : state.commitments()) {
             text.append("COMMITMENT|").append(commitment.id()).append('|').append(commitment.day()).append('|')
                     .append(commitment.start()).append('|').append(commitment.durationMinutes()).append('|');
             // @@author Darren50
-            if (hasDateBoundedCommitments || hasSkippedOccurrences) {
+            if (hasDateBoundedCommitments || hasSkippedOccurrences || hasRecurrence) {
                 text.append(commitment.startDate() == null ? "-" : commitment.startDate()).append('|')
                         .append(commitment.endDate() == null ? "-" : commitment.endDate()).append('|');
             }
-            if (hasSkippedOccurrences) {
+            if (hasSkippedOccurrences || hasRecurrence) {
                 text.append(encodeSkippedDates(commitment.skippedDates())).append('|');
             }
             // @@author ernestgoh-god
@@ -92,7 +116,7 @@ public final class StateCodec {
                 .append(target).append('|').append(window.start()).append('|').append(window.end()).append('\n'));
         String encoded = text.toString();
         assert encoded.lines().count() == 2L + state.tasks().size() + state.commitments().size()
-                + state.studyHours().windows().size()
+                + state.studyHours().windows().size() + state.recurringTasks().size()
                 : "Encoding must produce a header, counters and one line per record";
         LOGGER.log(Level.FINE, "Snapshot encoding completed");
         return encoded;
@@ -116,32 +140,41 @@ public final class StateCodec {
         try {
             validateHeader(lines);
             LOGGER.log(Level.FINE, "Saved data header validated; reading counters and records");
-            String[] counters = splitFields(lines.get(1), 3);
+            // @@author nickpatt
+            boolean supportsRecurrence = lines.getFirst().equals("SCHEDULEFLOW|5");
+            String[] counters = splitFields(lines.get(1), supportsRecurrence ? 4 : 3);
+            // @@author ernestgoh-god
             if (!counters[0].equals("NEXT")) {
                 throw new StorageException("Missing next ID counters.");
             }
             List<Task> tasks = new ArrayList<>();
             List<Commitment> commitments = new ArrayList<>();
+            List<RecurringTask> recurringTasks = new ArrayList<>();
             Map<String, StudyWindow> windows = new HashMap<>();
             for (int i = 2; i < lines.size(); i++) {
                 String line = lines.get(i);
                 // @@author Darren50
                 boolean supportsExtensions = !lines.getFirst().equals(HEADER);
-                if (supportsExtensions && line.startsWith("HOURS|")) {
+                // @@author nickpatt
+                if (supportsRecurrence && (line.startsWith("RECURRING|") || line.startsWith("OCCURRENCE|"))) {
+                    decodeRecurrence(line, tasks, recurringTasks);
+                } else if (supportsExtensions && line.startsWith("HOURS|")) {
                     decodeHours(line, windows);
                 } else {
                     boolean supportsDateRanges = lines.getFirst().equals("SCHEDULEFLOW|3")
-                            || lines.getFirst().equals("SCHEDULEFLOW|4");
+                            || lines.getFirst().equals("SCHEDULEFLOW|4") || supportsRecurrence;
                     decodeRecord(line, tasks, commitments, supportsDateRanges,
-                            lines.getFirst().equals("SCHEDULEFLOW|4"));
+                            lines.getFirst().equals("SCHEDULEFLOW|4") || supportsRecurrence);
                 }
                 // @@author ernestgoh-god
             }
-            assert (long) tasks.size() + commitments.size() + windows.size() == lines.size() - 2L
+            assert (long) tasks.size() + commitments.size() + windows.size() + recurringTasks.size()
+                    == lines.size() - 2L
                     : "Every saved record line must decode to exactly one record";
             LOGGER.log(Level.FINE, "Saved records decoded; validating snapshot invariants");
             Snapshot decoded = new Snapshot(tasks, commitments,
-                    Integer.parseInt(counters[1]), Integer.parseInt(counters[2]), new StudyHours(windows));
+                    Integer.parseInt(counters[1]), Integer.parseInt(counters[2]), new StudyHours(windows),
+                    recurringTasks, supportsRecurrence ? Integer.parseInt(counters[3]) : 1);
             LOGGER.log(Level.FINE, "Saved data decoding completed");
             return decoded;
         } catch (StorageException exception) {
@@ -164,7 +197,8 @@ public final class StateCodec {
         }
         if (!lines.getFirst().equals(HEADER) && !lines.getFirst().equals("SCHEDULEFLOW|2")
                 && !lines.getFirst().equals("SCHEDULEFLOW|3")
-                && !lines.getFirst().equals("SCHEDULEFLOW|4")) {
+                && !lines.getFirst().equals("SCHEDULEFLOW|4")
+                && !lines.getFirst().equals("SCHEDULEFLOW|5")) {
             throw new StorageException("Unsupported file version: "
                     + lines.getFirst().substring("SCHEDULEFLOW|".length()));
         }
@@ -209,6 +243,24 @@ public final class StateCodec {
             throw new StorageException("Unknown or empty saved record.");
         }
     }
+
+    // @@author nickpatt
+    /** Decodes recurrence records privately before the complete snapshot validates cross-record invariants. */
+    private void decodeRecurrence(String line, List<Task> tasks, List<RecurringTask> recurringTasks)
+            throws StorageException {
+        String[] fields = splitFields(line, 7);
+        if (fields[0].equals("OCCURRENCE")) {
+            tasks.add(new Task(Integer.parseInt(fields[1]), fields[6], LocalDateTime.parse(fields[2]),
+                    Integer.parseInt(fields[3]), Optional.of(new TaskOccurrence(Integer.parseInt(fields[4]),
+                            LocalDateTime.parse(fields[5])))));
+        } else {
+            recurringTasks.add(new RecurringTask(Integer.parseInt(fields[1]), fields[6],
+                    LocalDateTime.parse(fields[2]), Optional.ofNullable(parseOptionalDate(fields[4])),
+                    Integer.parseInt(fields[3]), fields[5].equals("-") ? Optional.empty()
+                            : Optional.of(LocalDateTime.parse(fields[5]))));
+        }
+    }
+    // @@author
 
     // @@author Darren50
     /** Decodes the version 3 dash sentinel used for an unbounded endpoint. */

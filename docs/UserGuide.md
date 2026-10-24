@@ -17,6 +17,8 @@ Study hours default to **08:00–22:00 every day**, including weekends. You can 
 - [Command format](#command-format)
 - [Tasks](#tasks)
   - [Adding a task](#adding-a-task)
+  - [Editing a task](#editing-a-task)
+  - [Weekly recurring tasks](#weekly-recurring-tasks)
   - [Listing tasks](#listing-tasks)
   - [Deleting a task](#deleting-a-task)
 - [Commitments](#commitments)
@@ -93,6 +95,7 @@ Enter each command on one line. In syntax examples, uppercase placeholders such 
 | Commitment weekdays | Exactly `MON`, `TUE`, `WED`, `THU`, `FRI`, `SAT`, or `SUN` | `MON` |
 | Study-hours weekdays | Full lowercase weekday names | `tuesday` |
 | Task IDs | `T` followed by a positive integer, without leading zeroes | `T1`, `T12` |
+| Recurring task template IDs | `R` followed by a positive integer, separate from occurrence IDs | `R1`, `R12` |
 | Commitment IDs | `C` followed by a positive integer, without leading zeroes | `C1`, `C12` |
 
 Use one or more ordinary spaces between fields. Outer whitespace is trimmed, and blank lines are ignored. Names are trimmed at both ends while retaining internal spaces. Quotation marks have no special meaning and are unnecessary. Duplicate names are allowed.
@@ -111,11 +114,11 @@ Examples below are independent unless a sequence is explicitly described. Use ex
 
 ## Tasks
 
-Task name/deadline editing is implemented only as an internal Java service API.
-Console integration and edit-confirmation rendering are pending; no task-edit
-command is supported yet. The existing add, list and delete commands below are
-unchanged. You can revise a task's remaining-work estimate with `task remaining`;
-deadline removal and progress tracking are not supported.
+Task addition, editing, deletion and weekly recurring templates are available at
+the console. You can revise a task's remaining-work estimate with `task remaining`.
+Deadline removal, retained completion/reopening and recorded progress remain
+outside the currently supported Task commands. Issue #40 progress work is pending
+separate integration; recognizing its syntax is not successful execution.
 
 ### Recording duration (tasks and commitments)
 
@@ -207,13 +210,82 @@ No tasks found.
 
 The listed duration is the stored work estimate, not the unallocated remainder of the latest plan.
 
+### Editing a task
+
+```text
+task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]
+```
+
+Supply at least one field. When both are supplied, `n/` must precede `due/`.
+Omitted fields retain their values. Use an existing ID from `task list`:
+
+```text
+scheduleflow> task edit T1 n/CS2113 final draft due/2026-11-20 1800
+Edited T1: CS2113 final draft
+Due: 2026-11-20 18:00 | Duration: 180 min
+```
+
+Replace example dates with suitable future dates. A changed deadline must be
+strictly after the command time and at or before the rolling calendar-year
+limit. Renaming an overdue task is allowed; keeping its unchanged old deadline
+is also allowed. Deadlines cannot currently be removed. Use `task remaining T1
+remaining/90` to revise the estimate rather than adding an unsupported `d/` edit.
+
+Edits preserve the task ID, list position, estimate, other records and all ID
+counters. A changed edit is saved before it clears the current plan; run `plan`
+again. An unchanged normalized edit reports the same details without saving or
+clearing the plan. Invalid edits or failed saves apply nothing.
+
+### Weekly recurring tasks
+
+```text
+task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES every/WEEKLY [until/YYYY-MM-DD]
+task recur list
+task recur delete RNUMBER
+```
+
+A template describes unfinished work repeated each week, not a fixed busy
+commitment. Its first deadline fixes the weekday and time of all occurrences.
+The first deadline must be in the future. Estimates remain positive multiples
+of 30 minutes. Optional `until/` is an inclusive last due date, on or after the
+first due date; omit it for no end date. Only `every/WEEKLY` is supported.
+
+```text
+scheduleflow> task recur add n/Weekly quiz due/2026-11-02 1800 d/60 every/WEEKLY until/2026-11-30
+Added R1: Weekly quiz
+Weekly from: 2026-11-02 18:00 | Duration: 60 min | Until: 2026-11-30
+```
+
+Use future dates in your own session. `task recur list` displays the stable
+`R` IDs and definitions; an empty list prints `No recurring tasks found.`
+Each materialized occurrence gets its own `T` ID and appears in `task list`.
+Adding a template materializes future deadlines through the rolling planning
+horizon. Each `plan` command extends generation as that horizon moves forward.
+Templates may start beyond the current horizon; their first tasks appear once
+eligible. A task is never scheduled before one week before its original due
+date, even if you later edit that occurrence's deadline.
+
+Generation skips ungenerated deadlines already passed; it does not backfill
+missed weeks. Saved cursors prevent restart, replanning or deleting an occurrence
+from recreating it. Templates, provenance and all counters survive saved
+restarts and unrelated task/commitment/study-hours changes. Template IDs are
+never reused. Failed validation, planning or saving leaves live state unchanged.
+
+`task recur delete R1` stops future generation but **retains every already
+generated task**, including future occurrences. Remove unwanted occurrences
+separately with `task delete TNUMBER`. Editing a generated task affects only
+that task, not its template or original release time. Template editing and
+daily/monthly recurrence are not supported.
+
 ### Deleting a task
 
 ```text
 task delete TNUMBER
 ```
 
-Deletes the task permanently. Use this command to remove completed work or to remove an incorrect task before adding a replacement. There is no undo or completion command.
+Deletes the task permanently. Use this command to remove completed or unwanted
+work. Use `task edit` to correct a name/deadline without replacing the ID.
+There is no undo or retained-completion command.
 
 ```text
 scheduleflow> task delete T1
@@ -708,19 +780,22 @@ To back up your data, close the app and copy `data/scheduleflow.txt`. To transfe
 
 ### What if my work does not fit before its deadline?
 
-Run `plan` and review the unallocated minutes and reasons. The app retains every session that fits. Revise an estimate with `task remaining`, delete and re-add a task to change its deadline, or remove a commitment if that time has become available. Run `plan` again after changes.
+Run `plan` and review the unallocated minutes and reasons. The app retains every
+session that fits. Revise an estimate with `task remaining`, change a deadline
+with `task edit`, or remove a commitment if that time has become available.
+Run `plan` again after changes.
 
 ### How do I mark work as complete or correct an entry?
 
 Delete completed tasks using `task delete TNUMBER`. Correct commitments with
 `commitment edit CNUMBER` and one or more fields; the ID is preserved. To correct
-a task's name or deadline, delete it and add a replacement with the correct
-details and a new ID. Task completion commands are not supported yet. For
+a task's name or deadline, use `task edit TNUMBER` with `n/` and/or `due/`;
+the ID is preserved. Task completion commands are not supported yet. For
 partially completed work, use `task remaining` with your revised estimate.
 
 ### Why did my schedule disappear?
 
-A successful task or commitment addition, deletion, remaining-work revision, commitment edit or
+A successful task or commitment addition, deletion, task edit, template change, remaining-work revision, commitment edit or
 occurrence skip, or a study-hours set or reset, clears the current plan. Plans
 also disappear when the application restarts. Run `plan` to generate another one.
 
@@ -753,6 +828,10 @@ these storage logs do not include your task names or saved file contents.
 | --- | --- |
 | View help | `help` |
 | Add a task | `task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES` |
+| Edit a task | `task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]` |
+| Add weekly task template | `task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES every/WEEKLY [until/YYYY-MM-DD]` |
+| List task templates | `task recur list` |
+| Stop future task generation | `task recur delete RNUMBER` |
 | List tasks | `task list` |
 | Delete a task | `task delete TNUMBER` |
 | Revise a task's remaining time | `task remaining TNUMBER remaining/MINUTES` |
@@ -770,6 +849,8 @@ these storage logs do not include your task names or saved file contents.
 | View a dated schedule | `schedule YYYY-MM-DD` |
 | Exit | `exit` |
 
-`TNUMBER` and `CNUMBER` mean existing IDs such as `T1` and `C1`. Replace other uppercase placeholders with your values; do not type the placeholders literally.
+`TNUMBER`, `CNUMBER` and `RNUMBER` mean existing IDs such as `T1`, `C1` and `R1`.
+`WEEKLY` is a literal keyword, not a placeholder. Replace the other uppercase
+placeholders with your values; do not type the placeholders literally.
 
 [Back to top](#scheduleflow-user-guide)

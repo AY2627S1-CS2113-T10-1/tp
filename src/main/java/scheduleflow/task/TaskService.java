@@ -67,8 +67,7 @@ public final class TaskService {
             LOGGER.log(Level.FINE, "Task deadline validated; creating addition candidate");
             List<Task> tasks = new ArrayList<>(state.tasks());
             tasks.add(task);
-            Snapshot candidate = new Snapshot(tasks, state.commitments(), state.nextTaskId() + 1,
-                    state.nextCommitmentId(), state.studyHours());
+            Snapshot candidate = state.withTasks(tasks, state.nextTaskId() + 1);
             assert candidate.tasks().getLast().equals(task)
                     && candidate.tasks().subList(0, candidate.tasks().size() - 1).equals(state.tasks())
                     : "Addition must append exactly one task without changing existing records";
@@ -113,7 +112,7 @@ public final class TaskService {
             Task original = state.tasks().stream().filter(task -> task.id() == taskId).findFirst()
                     .orElseThrow(() -> new ValidationException("Unknown task ID: T" + taskId));
             Task replacement = new Task(original.id(), edit.name().orElse(original.name()),
-                    edit.deadline().orElse(original.deadline()), original.remainingMinutes());
+                    edit.deadline().orElse(original.deadline()), original.remainingMinutes(), original.occurrence());
             if (!replacement.deadline().equals(original.deadline())) {
                 if (!replacement.deadline().isAfter(now)) {
                     throw new ValidationException("Deadline must be in the future.");
@@ -129,8 +128,7 @@ public final class TaskService {
             List<Task> tasks = new ArrayList<>(state.tasks());
             int position = tasks.indexOf(original);
             tasks.set(position, replacement);
-            Snapshot candidate = new Snapshot(tasks, state.commitments(), state.nextTaskId(),
-                    state.nextCommitmentId(), state.studyHours());
+            Snapshot candidate = state.withTasks(tasks, state.nextTaskId());
             assert candidate.tasks().size() == state.tasks().size()
                     && candidate.tasks().get(position).equals(replacement)
                     && candidate.tasks().subList(0, position).equals(state.tasks().subList(0, position))
@@ -168,15 +166,15 @@ public final class TaskService {
         try {
             Task original = state.tasks().stream().filter(task -> task.id() == taskId).findFirst()
                     .orElseThrow(() -> new ValidationException("Unknown task ID: T" + taskId));
-            Task revised = new Task(original.id(), original.name(), original.deadline(), remaining);
+            Task revised = new Task(original.id(), original.name(), original.deadline(), remaining,
+                    original.occurrence());
             if (revised.equals(original)) {
                 LOGGER.log(Level.FINE, "Task estimate unchanged; source snapshot returned");
                 return state;
             }
             List<Task> revisedTasks = new ArrayList<>(state.tasks());
             revisedTasks.set(revisedTasks.indexOf(original), revised);
-            Snapshot candidate = new Snapshot(revisedTasks, state.commitments(), state.nextTaskId(),
-                    state.nextCommitmentId(), state.studyHours());
+            Snapshot candidate = state.withTasks(revisedTasks, state.nextTaskId());
             assert candidate.tasks().size() == state.tasks().size()
                     && candidate.tasks().stream().filter(task -> task.id() != taskId).toList()
                             .equals(state.tasks().stream().filter(task -> task.id() != taskId).toList())
@@ -209,8 +207,7 @@ public final class TaskService {
             throw new ValidationException("Unknown task ID: T" + taskId);
         }
         LOGGER.log(Level.FINE, "Task ID resolved; creating deletion candidate");
-        Snapshot candidate = new Snapshot(tasks, state.commitments(), state.nextTaskId(), state.nextCommitmentId(),
-                state.studyHours());
+        Snapshot candidate = state.withTasks(tasks, state.nextTaskId());
         assert candidate.tasks().size() == state.tasks().size() - 1
                 && candidate.tasks().stream().noneMatch(task -> task.id() == taskId)
                 : "Deletion must remove exactly one matching task";
