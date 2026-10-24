@@ -52,6 +52,21 @@ public final class TextRenderer {
     public TextRenderer() {
     }
 
+    // @@author GabrielYuSP
+    /**
+     * Reserves the exact batch confirmation specified for issue #48; no existing route calls it.
+     *
+     * @param added nonempty chronological list of newly persisted one-time commitments
+     * @return batch count, individual IDs and date/time rows, and regeneration guidance once implemented
+     * @throws UnsupportedOperationException until Printing implements the response
+     */
+    public String unavailablePeriodsAdded(List<Commitment> added) {
+        // TODO(ka-how): implement TextRenderer.unavailablePeriodsAdded using the planned UI fixtures.
+        throw new UnsupportedOperationException("Unavailable range rendering is not implemented yet.");
+    }
+    // @@author
+    // @@author ka-how
+
     // @@author ernestgoh-god
     /**
      * Reserves the confirmation for recorded task progress.

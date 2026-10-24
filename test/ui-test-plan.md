@@ -117,6 +117,7 @@ optional/completed restored-data compatibility case and exact-minute restart che
 
 | ID | Coverage | Status |
 | --- | --- | --- |
+| UI-024 | Unavailable study period: custom hours, add/delete plan invalidation, restart and released interval | Active |
 | UI-020 | Restored optional/completed tasks, exact work and saved restart | Active |
 | UI-021 | Task edit, unchanged IDs, validation, plan invalidation and saved restart | Active |
 | UI-022 | Weekly template commands, bounded/unbounded definitions and stable R IDs across restarts | Active |
@@ -140,6 +141,18 @@ optional/completed restored-data compatibility case and exact-minute restart che
 | UI-014 | Partial commitment edits, unchanged IDs, rejection, plan invalidation and Unicode restart | Active |
 | UI-015 | Study hours precedence, validation, resets, plan invalidation and saved restarts | Active |
 | UI-016 | Inclusive recurring-commitment bounds, actual-occurrence overlap and version 3 restart | Active |
+
+UI-021 verifies issue #48 through the existing one-time commitment commands.
+It configures a date's study window, generates an empty plan, adds an unavailable
+period and checks plan invalidation. Restart confirms the period and hours are
+saved; deletion clears another plan, and a further restart confirms release and
+that IDs are not reused. These process checks do not claim to verify task
+relocation: fixed-time `EarliestDeadlinePlannerTest` acceptance tests cover
+reallocation around a newly blocked study session, deletion restoring time,
+partial and fully blocked deadline capacity, and a real saved/reloaded block
+with date-specific hours. `ScheduleServiceTest` checks BUSY projection, frozen
+old plans and the absence of the one-time block the following week.
+Existing UI-018 covers malformed inputs, conflicts and rejected-addition IDs.
 
 UI-015 asserts reset confirmations name the restored source and its endpoints.
 UI-016 adds nonoverlapping semester series at the same weekly time, rejects a
@@ -186,6 +199,38 @@ dependent scenarios; ready active cases must run even if another component is
 unfinished. Exit 0 means active scenarios passed, exit 1 means FAILED, and
 exit 2 means BLOCKED. A planned or diagnostic scaffold case is never a pass.
 
+## Planned multi-date unavailability (issue #48)
+
+The separate `test/ui-unavailable-ranges.planned.json` file holds proposed
+exact inputs and outputs. It is excluded from the main release fixture, which
+requires every maintained release case to be active. No range command is
+currently parsed. Service, parser, dispatcher and renderer skeletons throw
+explicitly and are not feature passes. New command-record tests cover only
+their implemented transport/reference contracts.
+
+| ID | Proposed acceptance coverage | Status |
+| --- | --- | --- |
+| UI-022 | Continuous three-date expansion, confirmation, invalidation and restart | Planned |
+| UI-023 | Daily inclusive windows, confirmation, restart and independent deletion | Planned |
+| UI-024 | Invalid ordering, alignment, overnight windows, syntax and retained retry IDs | Planned |
+| UI-025 | Conflict on a later continuous segment rejects the whole batch | Planned |
+| UI-026 | Conflict on a later daily window rejects the whole batch | Planned |
+| UI-027 | Midnight-exclusive and same-day continuous ends, adjacency and leap-day daily expansion | Planned |
+
+Run the separate file using
+`node .agents/skills/test-ui/scripts/run-ui-tests.mjs --fixtures test/ui-unavailable-ranges.planned.json`.
+With all six cases planned it executes none and returns exit 2 (BLOCKED: no
+active scenarios), not success. Activate cases as their dependencies are
+implemented and move verified cases to the main fixture. Existing 21 active
+scenarios must continue passing throughout integration.
+
+The Developer Guide's handoff contains the corresponding owner-specific JUnit
+matrix, including injected save failure, whole-batch rollback and ID exhaustion.
+Two active planner tests supply the expected dated records manually through
+the existing one-time API to verify allocation/projection compatibility for
+continuous and daily representations. They do not call or certify the new
+batch skeletons. Exact range-command parsing, creation, confirmation and
+transaction acceptance remain unexecuted until the owners implement them.
 ## Planned issue #40 console acceptance
 
 Progress grammar, candidate transactions and exact work are implemented, but
@@ -211,6 +256,8 @@ After Printing and Save integrate the documented contract, add and activate:
 
 | ID | Coverage | Status |
 | --- | --- | --- |
+| UI-028 | Set/show/reset policy, invalid values, save/restart and plan invalidation/rollback | Planned; grammar, settings persistence and confirmations pending |
+| UI-029 | Cross-task limits, commitments below/at/2x/3x limit, fixed breaks and BREAK rows | Planned; configured console planner and rendering pending |
 | UI-024 | Set/show/reset policy, invalid values, save/restart and plan invalidation/rollback | Planned; grammar, settings persistence and confirmations pending |
 | UI-025 | Cross-task limits, commitments below/at/2x/3x limit, fixed breaks and BREAK rows | Planned; configured console planner and rendering pending |
 

@@ -108,6 +108,14 @@ public final class CommandDispatcher {
         LocalDateTime now = LocalDateTime.now(clock);
         LOGGER.log(Level.FINE, "Command time captured");
         String output = switch (command) {
+            // @@author GabrielYuSP
+            // TODO(ernestgoh-god): implement both range routes with one save before publication and output.
+            case Command.AddContinuousBlock ignored -> throw new UnsupportedOperationException(
+                    "Continuous unavailable dispatch is not implemented yet.");
+            case Command.AddDailyBlocks ignored -> throw new UnsupportedOperationException(
+                    "Daily unavailable dispatch is not implemented yet.");
+            // @@author
+            // @@author ka-how
             case Command.Help ignored -> renderer.help();
             case Command.SetHours hours -> changeHours(hours.target(), state.snapshot().studyHours()
                     .withWindow(hours.target(), new StudyWindow(hours.start(), hours.end())), state);

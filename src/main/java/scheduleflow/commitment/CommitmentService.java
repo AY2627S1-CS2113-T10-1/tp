@@ -2,6 +2,7 @@ package scheduleflow.commitment;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -30,6 +31,45 @@ public final class CommitmentService {
      */
     public CommitmentService() {
     }
+
+    // @@author GabrielYuSP
+    /**
+     * Reserves the atomic continuous-interval addition contract for issue #48.
+     * The implementation must split at midnight, omit empty segments and return one candidate
+     * containing dated one-time commitments. It must not save, publish or consume live IDs.
+     *
+     * @param state immutable source snapshot to preserve on rejection
+     * @param name description shared by the generated commitments
+     * @param start inclusive aligned local start, in years 0001 through 9999
+     * @param end exclusive aligned local end strictly after start, in years 0001 through 9999
+     * @return complete candidate with chronological IDs once implemented
+     * @throws UnsupportedOperationException until the Commitment owner implements this operation
+     */
+    public Snapshot addContinuousBlock(Snapshot state, String name, LocalDateTime start, LocalDateTime end) {
+        // TODO(Darren50): implement CommitmentService.addContinuousBlock using atomic one-time additions.
+        throw new UnsupportedOperationException("Continuous unavailable periods are not implemented yet.");
+    }
+
+    /**
+     * Reserves the atomic daily-window addition contract for issue #48.
+     * The implementation must create one dated commitment per inclusive date, validate the
+     * whole request and return one candidate without saving or changing live state.
+     *
+     * @param state immutable source snapshot to preserve on rejection
+     * @param name description shared by the generated commitments
+     * @param firstDate inclusive first date in years 0001 through 9999
+     * @param lastDate inclusive last date on or after firstDate, in years 0001 through 9999
+     * @param start aligned local start of each daily interval
+     * @param end aligned local end strictly after start on the same day
+     * @return complete candidate with chronological IDs once implemented
+     * @throws UnsupportedOperationException until the Commitment owner implements this operation
+     */
+    public Snapshot addDailyBlocks(Snapshot state, String name, LocalDate firstDate, LocalDate lastDate,
+            LocalTime start, LocalTime end) {
+        // TODO(Darren50): implement CommitmentService.addDailyBlocks using atomic one-time additions.
+        throw new UnsupportedOperationException("Daily unavailable periods are not implemented yet.");
+    }
+    // @@author
 
     //@@author Darren50
     /**

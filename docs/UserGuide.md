@@ -31,6 +31,7 @@ Study hours default to **08:00–22:00 every day**, including weekends. You can 
 - [Study hours](#study-hours)
 - [Study plans](#study-plans)
   - [Generating a plan](#generating-a-plan)
+  - [Marking a study period unavailable](#marking-a-study-period-unavailable)
   - [Planning hours and date range](#planning-hours-and-date-range)
   - [Unallocated work](#unallocated-work)
 - [Viewing the schedule](#viewing-the-schedule)
@@ -625,6 +626,56 @@ No tasks to schedule.
 Even with no tasks, `plan` creates a current plan. You can then view commitments and free or unplanned periods using `schedule`.
 
 Each `plan` command replaces the previous plan. It does not change stored task durations or save a plan to disk. This allocator follows deadline order; it does not guarantee the fewest sessions or the greatest number of fully completed tasks.
+
+### Marking a study period unavailable
+
+Use a one-time commitment to block time on a particular date, including time
+that a previous plan assigned to a task:
+
+```text
+commitment add n/Unavailable on/2026-10-26 start/1000 d/60
+plan
+schedule 2026-10-26
+```
+
+Replace the example date with your chosen date within the current planning
+range. This blocks 10:00-11:00 on that date only. You can choose any descriptive
+name, such as `Appointment`; `Unavailable` has no special meaning. The period
+appears as `[BUSY]` with its commitment ID. Replanning moves task work into other
+eligible slots and reports unallocated minutes if it cannot all fit before the
+deadlines. Stored task estimates do not change.
+
+Adding the block saves automatically and clears the old plan; run `plan` again
+to apply it. The block survives restarting, but the generated plan does not.
+You can release it with `commitment delete CNUMBER`, using the ID shown by
+`commitment list`, then run `plan` again. Successful deletion also saves and
+clears the current plan.
+
+The existing one-time commitment rules apply: half-hour-aligned starts,
+positive durations divisible by 30, and an interval ending by midnight. A block
+may overlap planned task sessions, but it cannot overlap another commitment
+occurring on that date. Rejected additions preserve the existing plan and data.
+There is no separate `unavailable` command or command to select a session by ID.
+
+### Blocking multiple dates (planned)
+
+Two extensions are specified for implementation but are not accepted by the
+console yet:
+
+```text
+unavailable continuous n/Trip from/2026-10-26 1500 until/2026-10-28 1100
+unavailable daily n/Appointment from/2026-10-26 until/2026-10-28 start/1500 end/1700
+```
+
+Continuous mode will block every moment from the first date/time up to, but
+excluding, the last date/time. Daily mode will block only 15:00-17:00 on each
+included date, leaving other hours available. Each generated period will have
+its own commitment ID for independent editing/deletion. The full request will
+be rejected if any period conflicts with an existing commitment.
+
+For now, use the existing single-date `commitment add ... on/DATE` commands.
+The [Developer Guide handoff](DeveloperGuide.md#multi-date-unavailable-periods-implementation-handoff-planned)
+contains proposed outputs, owner responsibilities and acceptance tests.
 
 ### Session limits and breaks (planned console feature)
 

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Path;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -14,12 +15,16 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import scheduleflow.commitment.CommitmentService;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 import scheduleflow.model.TaskOccurrence;
 import scheduleflow.model.TaskPriority;
+import scheduleflow.storage.FileStorage;
+import scheduleflow.storage.StateCodec;
 import scheduleflow.task.TaskService;
 
 /**
@@ -247,6 +252,147 @@ class EarliestDeadlinePlannerTest {
                 UnallocatedReason.INSUFFICIENT_CAPACITY)), result.unallocated());
         assertEquals(availableMinutes + 30, source.tasks().getFirst().remainingMinutes());
     }
+
+    // @@author GabrielYuSP
+    @Test
+    void generate_unavailableStudyPeriod_replansAroundBlockAndDeletionRestoresTime() {
+        Snapshot original = snapshot(List.of(task(1, "Draft", MONDAY.atTime(12, 0), 90)), List.of());
+        Plan before = planner.generate(original, EARLY_MORNING);
+        CommitmentService commitments = new CommitmentService();
+        Snapshot blocked = commitments.add(original, "Unavailable", DayOfWeek.MONDAY,
+                LocalTime.of(8, 30), 60, MONDAY, MONDAY);
+
+        Plan after = planner.generate(blocked, EARLY_MORNING);
+
+        assertEquals(List.of(new StudySession(1, MONDAY.atTime(8, 0), MONDAY.atTime(8, 30)),
+                new StudySession(1, MONDAY.atTime(9, 30), MONDAY.atTime(10, 30))), after.sessions());
+        assertTrue(after.isComplete());
+        assertEquals(original.tasks(), blocked.tasks());
+        assertEquals(List.of(new StudySession(1, MONDAY.atTime(8, 0), MONDAY.atTime(9, 30))), before.sessions());
+        assertTrue(before.source().commitments().isEmpty());
+
+        Snapshot released = commitments.delete(blocked, 1);
+        Plan restored = planner.generate(released, EARLY_MORNING);
+        assertEquals(before.sessions(), restored.sessions());
+        assertTrue(restored.isComplete());
+        assertEquals(90, released.tasks().getFirst().remainingMinutes());
+        assertEquals(blocked.nextCommitmentId(), released.nextCommitmentId());
+    }
+
+    @Test
+    void generate_unavailablePeriodBeforeDeadline_preservesPartialWorkAndReportsRemainder() {
+        Task draft = task(1, "Draft", MONDAY.atTime(10, 0), 90);
+        Snapshot original = snapshot(List.of(draft), List.of());
+        Snapshot blocked = new CommitmentService().add(original, "Unavailable", DayOfWeek.MONDAY,
+                LocalTime.of(8, 30), 60, MONDAY, MONDAY);
+
+        Plan result = planner.generate(blocked, EARLY_MORNING);
+
+        assertEquals(List.of(new StudySession(1, MONDAY.atTime(8, 0), MONDAY.atTime(8, 30)),
+                new StudySession(1, MONDAY.atTime(9, 30), MONDAY.atTime(10, 0))), result.sessions());
+        assertEquals(List.of(new UnallocatedWork(1, "Draft", draft.deadline().orElseThrow(), 30,
+                UnallocatedReason.INSUFFICIENT_CAPACITY)), result.unallocated());
+        assertEquals(draft.remainingMinutes(), result.sessions().stream().mapToInt(StudySession::minutes).sum()
+                + result.unallocated().getFirst().minutes());
+        assertEquals(90, blocked.tasks().getFirst().remainingMinutes());
+    }
+
+    @Test
+    void generate_wholeDayUnavailable_reportsAllWorkWithoutMovingItPastDeadline() {
+        Task draft = task(1, "Draft", MONDAY.atTime(22, 0), 60);
+        Snapshot blocked = new CommitmentService().add(snapshot(List.of(draft), List.of()), "Unavailable",
+                DayOfWeek.MONDAY, LocalTime.MIDNIGHT, 1440, MONDAY, MONDAY);
+
+        Plan result = planner.generate(blocked, EARLY_MORNING);
+
+        assertTrue(result.sessions().isEmpty());
+        assertEquals(List.of(new UnallocatedWork(1, "Draft", draft.deadline().orElseThrow(), 60,
+                UnallocatedReason.INSUFFICIENT_CAPACITY)), result.unallocated());
+        assertEquals(60, blocked.tasks().getFirst().remainingMinutes());
+    }
+
+    @Test
+    void generate_savedUnavailablePeriod_respectsRestoredDateOverrideAndReleasesAfterDeletion(
+            @TempDir Path directory) throws Exception {
+        Snapshot original = snapshot(List.of(task(1, "Draft", MONDAY.atTime(11, 0), 90)), List.of());
+        Snapshot customHours = original.withStudyHours(original.studyHours()
+                .withWindow("monday", new StudyWindow(LocalTime.of(14, 0), LocalTime.of(16, 0)))
+                .withWindow(MONDAY.toString(), new StudyWindow(LocalTime.of(9, 0), LocalTime.of(11, 0))));
+        CommitmentService commitments = new CommitmentService();
+        Snapshot blocked = commitments.add(customHours, "Unavailable", DayOfWeek.MONDAY,
+                LocalTime.of(9, 30), 30, MONDAY, MONDAY);
+        Path file = directory.resolve("scheduleflow.txt");
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        storage.save(blocked);
+        Snapshot loaded = new FileStorage(file, new StateCodec()).load();
+
+        Plan result = planner.generate(loaded, EARLY_MORNING);
+
+        assertEquals(blocked, loaded);
+        assertEquals(List.of(new StudySession(1, MONDAY.atTime(9, 0), MONDAY.atTime(9, 30)),
+                new StudySession(1, MONDAY.atTime(10, 0), MONDAY.atTime(11, 0))), result.sessions());
+        assertTrue(result.isComplete());
+        storage.save(commitments.delete(loaded, 1));
+        Snapshot released = new FileStorage(file, new StateCodec()).load();
+        assertEquals(List.of(new StudySession(1, MONDAY.atTime(9, 0), MONDAY.atTime(10, 30))),
+                planner.generate(released, EARLY_MORNING).sessions());
+        assertEquals(customHours.studyHours(), released.studyHours());
+    }
+
+    @Test
+    void generate_continuousRangeSegments_blockIntermediateDaysAndRetainDeadlineRemainder() {
+        LocalDate first = LocalDate.of(2026, 10, 26);
+        Task draft = task(1, "Draft", first.plusDays(2).atTime(12, 0), 180);
+        CommitmentService commitments = new CommitmentService();
+        Snapshot source = commitments.add(snapshot(List.of(draft), List.of()), "Trip", first.getDayOfWeek(),
+                LocalTime.of(15, 0), 540, first, first);
+        source = commitments.add(source, "Trip", first.plusDays(1).getDayOfWeek(), LocalTime.MIDNIGHT,
+                1440, first.plusDays(1), first.plusDays(1));
+        source = commitments.add(source, "Trip", first.plusDays(2).getDayOfWeek(), LocalTime.MIDNIGHT,
+                660, first.plusDays(2), first.plusDays(2));
+
+        Plan result = planner.generate(source, first.atTime(14, 0));
+
+        assertEquals(List.of(new StudySession(1, first.atTime(14, 0), first.atTime(15, 0)),
+                new StudySession(1, first.plusDays(2).atTime(11, 0), first.plusDays(2).atTime(12, 0))),
+                result.sessions());
+        assertEquals(List.of(new UnallocatedWork(1, "Draft", draft.deadline().orElseThrow(), 60,
+                UnallocatedReason.INSUFFICIENT_CAPACITY)), result.unallocated());
+        assertEquals(List.of(new ScheduleEntry(first.plusDays(1).atTime(8, 0),
+                first.plusDays(1).atTime(22, 0), SlotKind.BUSY, "C2", "Trip")),
+                new ScheduleService().forDate(result, first.plusDays(1)).entries());
+        assertEquals(180, result.source().tasks().getFirst().remainingMinutes());
+    }
+
+    @Test
+    void generate_dailyRangeSegments_preserveStudyGapsOnEveryIncludedDate() {
+        LocalDate first = LocalDate.of(2026, 10, 26);
+        Snapshot source = snapshot(List.of(task(1, "Draft", first.plusDays(2).atTime(22, 0), 1500)), List.of());
+        CommitmentService commitments = new CommitmentService();
+        for (LocalDate date : List.of(first, first.plusDays(1), first.plusDays(2))) {
+            source = commitments.add(source, "Rest", date.getDayOfWeek(), LocalTime.of(15, 0), 120, date, date);
+        }
+
+        Plan result = planner.generate(source, first.atTime(14, 0));
+
+        assertEquals(List.of(new StudySession(1, first.atTime(14, 0), first.atTime(15, 0)),
+                new StudySession(1, first.atTime(17, 0), first.atTime(22, 0)),
+                new StudySession(1, first.plusDays(1).atTime(8, 0), first.plusDays(1).atTime(15, 0)),
+                new StudySession(1, first.plusDays(1).atTime(17, 0), first.plusDays(1).atTime(22, 0)),
+                new StudySession(1, first.plusDays(2).atTime(8, 0), first.plusDays(2).atTime(15, 0))),
+                result.sessions());
+        assertTrue(result.isComplete());
+        assertEquals(1500, result.sessions().stream().mapToInt(StudySession::minutes).sum());
+        ScheduleService schedules = new ScheduleService();
+        for (LocalDate date : List.of(first, first.plusDays(1), first.plusDays(2))) {
+            List<ScheduleEntry> busy = schedules.forDate(result, date).entries().stream()
+                    .filter(entry -> entry.kind() == SlotKind.BUSY).toList();
+            assertEquals(1, busy.size());
+            assertEquals(date.atTime(15, 0), busy.getFirst().start());
+            assertEquals(date.atTime(17, 0), busy.getFirst().end());
+        }
+    }
+    // @@author
 
     // @@author nickpatt
     @Test

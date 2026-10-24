@@ -14,6 +14,31 @@ import scheduleflow.task.TaskEdit;
  */
 public sealed interface Command {
     // @@author GabrielYuSP
+    /** Carries an inclusive start and exclusive end for a continuous unavailable interval. */
+    record AddContinuousBlock(String name, LocalDateTime start, LocalDateTime end) implements Command {
+        /** Requires transport references; the commitment service will validate values and ordering. */
+        public AddContinuousBlock {
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(start, "start");
+            Objects.requireNonNull(end, "end");
+        }
+    }
+
+    /** Carries a same-day window repeated over an inclusive range of dates. */
+    record AddDailyBlocks(String name, LocalDate firstDate, LocalDate lastDate,
+            LocalTime start, LocalTime end) implements Command {
+        /** Requires transport references while leaving domain validation to the commitment service. */
+        public AddDailyBlocks {
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(firstDate, "firstDate");
+            Objects.requireNonNull(lastDate, "lastDate");
+            Objects.requireNonNull(start, "start");
+            Objects.requireNonNull(end, "end");
+        }
+    }
+    // @@author
+
+    // @@author GabrielYuSP
     /** Requests replacement of one recurring weekday or date-specific window. */
     record SetHours(String target, LocalTime start, LocalTime end) implements Command {
         /** Requires transport values; domain validation happens during execution. */
