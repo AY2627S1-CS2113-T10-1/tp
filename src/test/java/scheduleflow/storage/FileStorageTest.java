@@ -26,6 +26,7 @@ import org.junit.jupiter.api.parallel.Isolated;
 import scheduleflow.commitment.CommitmentService;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
+import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 import scheduleflow.task.TaskService;
 
@@ -37,6 +38,36 @@ import scheduleflow.task.TaskService;
 class FileStorageTest {
     @TempDir
     private Path directory;
+
+    // @@author nickpatt
+    @Test
+    void saveAndLoad_lifecycleCandidates_preservesExactStateAndReadOnlyMigration() throws Exception {
+        Path file = directory.resolve("lifecycle.txt");
+        String legacy = "SCHEDULEFLOW|1\r\nNEXT|4|2\r\nTASK|3|2000-01-01T09:00|60|Old|task\r\n"
+                + "COMMITMENT|1|MONDAY|10:00|30|Class";
+        Files.writeString(file, legacy);
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        Snapshot source = storage.load();
+        assertEquals(legacy, Files.readString(file));
+        source = source.withStudyHours(source.studyHours().withWindow("monday",
+                new StudyWindow(LocalTime.of(9, 0), LocalTime.of(11, 0))));
+        TaskService tasks = new TaskService();
+        Snapshot progressed = tasks.recordWork(source, 3, 15);
+        Snapshot mixed = tasks.addWithoutDeadline(progressed, "Undated|name", 45);
+        Snapshot completed = tasks.complete(mixed, 3);
+        for (Snapshot candidate : List.of(progressed, mixed, completed, tasks.reopen(completed, 3, 1))) {
+            storage.save(candidate);
+            byte[] bytes = Files.readAllBytes(file);
+            assertEquals(candidate, new FileStorage(file, new StateCodec()).load());
+            assertArrayEquals(bytes, Files.readAllBytes(file));
+            assertTrue(Files.readString(file).startsWith("SCHEDULEFLOW|2\n"));
+        }
+        assertEquals(60, source.tasks().getFirst().remainingMinutes());
+        assertEquals(4, source.nextTaskId());
+        assertEquals(5, completed.nextTaskId());
+        assertEquals(2, completed.nextCommitmentId());
+    }
+    // @@author ernestgoh-god
 
     @Test
     void constructor_nullDependencies_rejectsWithoutCreatingData() {

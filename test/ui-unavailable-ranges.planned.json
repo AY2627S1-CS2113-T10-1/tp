@@ -2,7 +2,7 @@
   "version": 1,
   "cases": [
     {
-      "id": "UI-020", "aim": "Continuous range creates midnight-split dated commitments atomically and survives restart",
+      "id": "UI-022", "aim": "Continuous range creates midnight-split dated commitments atomically and survives restart",
       "status": "planned", "setup": "Empty isolated store; no tasks; IDs begin at C1",
       "sessions": [
         { "startup": "", "steps": [
@@ -18,7 +18,7 @@
       ]
     },
     {
-      "id": "UI-021", "aim": "Daily range creates one window on each inclusive date with independent deletion",
+      "id": "UI-023", "aim": "Daily range creates one window on each inclusive date with independent deletion",
       "status": "planned", "setup": "Empty isolated store; no tasks; IDs begin at C1",
       "sessions": [
         { "startup": "", "steps": [
@@ -35,7 +35,7 @@
       ]
     },
     {
-      "id": "UI-022", "aim": "Invalid ranges, daily windows and syntax reject without creating any records or consuming IDs",
+      "id": "UI-024", "aim": "Invalid ranges, daily windows and syntax reject without creating any records or consuming IDs",
       "status": "planned", "setup": "Empty isolated store; no tasks; IDs begin at C1",
       "sessions": [{ "startup": "", "steps": [
         { "input": "unavailable continuous n/Trip from/2026-10-26 1500 until/2026-10-26 1500", "output": "Error: Unavailable interval end must be after its start." },
@@ -54,7 +54,7 @@
       ] }]
     },
     {
-      "id": "UI-023", "aim": "A conflict on a later continuous segment rejects the entire batch and retains retry IDs",
+      "id": "UI-025", "aim": "A conflict on a later continuous segment rejects the entire batch and retains retry IDs",
       "status": "planned", "setup": "Empty isolated store; a conflicting commitment on the intermediate date",
       "sessions": [{ "startup": "", "steps": [
         { "input": "commitment add n/Busy on/2026-10-27 start/1000 d/60", "output": "Added C1: Busy | One-time on 2026-10-27 (Tuesday) 10:00 - 11:00 (60 min)" },
@@ -65,7 +65,7 @@
       ] }]
     },
     {
-      "id": "UI-024", "aim": "A conflict on a later daily window rejects all windows and retains retry IDs",
+      "id": "UI-026", "aim": "A conflict on a later daily window rejects all windows and retains retry IDs",
       "status": "planned", "setup": "Empty isolated store; a conflicting commitment on the middle date",
       "sessions": [{ "startup": "", "steps": [
         { "input": "commitment add n/Busy on/2026-10-27 start/1600 d/30", "output": "Added C1: Busy | One-time on 2026-10-27 (Tuesday) 16:00 - 16:30 (30 min)" },
@@ -76,7 +76,7 @@
       ] }]
     },
     {
-      "id": "UI-025", "aim": "Midnight-exclusive and same-day continuous ends omit empty segments; daily ranges include leap day",
+      "id": "UI-027", "aim": "Midnight-exclusive and same-day continuous ends omit empty segments; daily ranges include leap day",
       "status": "planned", "setup": "Empty isolated store; no tasks; IDs begin at C1",
       "sessions": [{ "startup": "", "steps": [
         { "input": "unavailable continuous n/Late from/2026-10-26 2300 until/2026-10-27 0000", "output": "Blocked 1 unavailable period.\nC1 | 2026-10-26 | 23:00 - 24:00 | Late\nSaved unavailable periods. Run plan to regenerate." },

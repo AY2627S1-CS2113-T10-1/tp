@@ -89,7 +89,8 @@ Enter each command on one line. In syntax examples, uppercase placeholders such 
 | Task/commitment times | Four digits in 24-hour `HHmm` format, from `0000` to `2359` | `0930`, `1800` |
 | Study hours | `HH:mm`, on half-hour boundaries; start before end within the same day | `09:00`, `22:30` |
 | Deadlines | Date and time separated by a space; any minute is allowed | `2026-10-06 2359` |
-| Durations | Positive whole minutes, divisible by 30; no sign or leading zeroes | `30`, `90`, `180` |
+| Task durations | Positive whole minutes; no sign or leading zeroes | `1`, `45`, `180` |
+| Commitment durations | Positive whole minutes divisible by 30; no sign or leading zeroes | `30`, `90`, `180` |
 | Commitment starts | Must be on the hour or half hour | `1000`, `1030` |
 | Commitment weekdays | Exactly `MON`, `TUE`, `WED`, `THU`, `FRI`, `SAT`, or `SUN` | `MON` |
 | Study-hours weekdays | Full lowercase weekday names | `tuesday` |
@@ -105,37 +106,68 @@ Missing required fields, repeated, unknown, reordered, or extra fields are rejec
 Impossible dates such as `2026-02-30` are rejected rather than adjusted to another
 date. Parsing keeps `schedule today` as a request for today's schedule; its date
 will be resolved when the command executes. Checks such as a future deadline,
-duration divisibility and whether an ID exists belong to domain validation
+commitment duration divisibility and whether an ID exists belong to domain validation
 after parsing.
 
 Examples below are independent unless a sequence is explicitly described. Use existing IDs and suitable future dates in your own session. List spacing and explanatory error wording may vary; identifiers, values, and behaviour follow the rules described in this guide.
 
 ## Tasks
 
-Task name/deadline editing is implemented only as an internal Java service API.
-Console integration and edit-confirmation rendering are pending; no task-edit
-command is supported yet. The existing add, list and delete commands below are
-unchanged. Deadline removal and progress tracking are not supported.
+Task name/deadline editing, deadline clearing, whole-minute progress, revised
+remaining estimates, completion/reopening and adding without a deadline are
+implemented as internal Java service APIs. The working Task console commands
+are add (with required deadline), list, delete and `task remaining`. The parser
+and dispatcher also recognize the two progress forms below, but their
+confirmation is awaiting Printing. They cannot yet save progress. Other task
+lifecycle confirmations are unwired throwing skeletons.
+
+The domain retains completed records with zero remaining, preserves IDs and
+requires positive work to reopen them. Session percentage progress credits the
+floor of session minutes times percentage / 100; no timer subtracts work.
+These operations cannot yet be completed from the console. Loaded undated tasks
+display `No deadline`; loaded completed tasks remain listed with `0 min` and
+receive no planning sessions or unallocated rows. No separate status/completed
+list rendering or priority commands are available yet.
 
 ### Recording duration (tasks and commitments)
 
 Enter duration when adding a task or commitment using `d/MINUTES`; there is no
 separate duration command or timer. For example, `d/90` records 90 minutes.
-Both types require positive multiples of 30: `d/30` and `d/90` are valid,
-while `d/0` and `d/45` are rejected, not rounded.
+Tasks accept positive whole minutes, including `d/1` and `d/45`. Commitments
+still require positive multiples of 30, so commitment `d/45` is rejected.
+Both additions reject `d/0`.
 
 For a task, duration is the estimated remaining work, which may be split into
 several sessions. For a commitment, it is the length of each weekly occurrence
 from its start time, and that occurrence must not cross midnight. Planning
 does not reduce either stored value. Saving and loading preserve both values.
 
-Every stored task represents unfinished work. Its duration is your estimate of the work still required. Generating a plan or letting time pass does not reduce that estimate.
+A task's duration is the exact remaining-work estimate; zero in restored data
+means retained completion. Generating a plan or letting time pass does not
+reduce that estimate. Slot capacity rounds up: 45 minutes needs 60 minutes of
+schedule space, but remains 45 minutes of actual work. If only 30 minutes fits,
+the unallocated work is 15 minutes (requiring another 30-minute slot).
 
-> **Planned issue #40 command:** The parser recognizes `task progress T1 done/30`
-> and `task progress T1 session/60 percent/50`, but the application does not
-> execute them yet. Use the existing task commands until progress dispatch and
-> its response are integrated. A percentage describes work completed during the
-> reported session; it is not a percentage of the whole task.
+> **Issue #40 in progress:** `task progress T1 done/30` reports 30 whole minutes
+> of work, while `task progress T1 session/60 percent/50` reports 50% of a
+> 60-minute session (30 minutes credited). A percentage describes that session,
+> not the whole task. Until the printing confirmation is implemented, the
+> application responds `Error: Task progress is awaiting printing.` and leaves
+> saved data, the live task and any generated plan unchanged.
+
+To revise a task's remaining-work estimate without recording completed work, use:
+
+```text
+scheduleflow> task remaining T1 remaining/90
+Remaining time for T1: CS2113 draft | 90 min
+```
+
+Use an existing task ID and a positive whole-minute estimate; `remaining/45`
+is accepted. A changed estimate saves automatically and clears the current
+plan; run `plan` again to reflect it. Repeating the same value
+reports the stored estimate without saving or clearing the plan. Unknown IDs,
+invalid values, attempts to revise a completed task and failed saves leave
+saved data and the current plan unchanged.
 
 ### Adding a task
 
@@ -145,7 +177,7 @@ Every stored task represents unfinished work. Its duration is your estimate of t
 task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES
 ```
 
-The deadline must be strictly later than the current local date and time and no later than midnight at the start of the same calendar date next year. The duration must be a positive multiple of 30 minutes. Deadlines do not need to fall on a half-hour boundary.
+The deadline must be strictly later than the current local date and time and no later than midnight at the start of the same calendar date next year. The task duration must be positive whole minutes. Deadlines do not need to fall on a half-hour boundary.
 
 ```text
 scheduleflow> task add n/CS2113 draft due/2026-10-20 1800 d/180
@@ -489,7 +521,12 @@ of ScheduleFlow; older versions cannot read the new format.
 plan
 ```
 
-ScheduleFlow allocates tasks by earliest deadline first. Tasks with equal deadlines are ordered by numeric ID: for example, `T2` comes before `T10`.
+ScheduleFlow excludes completed tasks and allocates dated tasks by earliest
+deadline first, with stored priority (HIGH, NORMAL, LOW) breaking deadline ties,
+then numeric ID. All console-created tasks default to NORMAL, so `T2` still
+comes before `T10` at an equal deadline. Loaded undated tasks follow all dated
+tasks, by priority and ID, within the same horizon. Priority operations are not
+yet available at the console.
 
 Each task fills the earliest available 30-minute slots that end at or before its deadline. Work may split around commitments or across days. Adjacent slots for the same task on the same day are displayed as one session. Sessions never overlap commitments or other sessions.
 
@@ -561,6 +598,18 @@ For now, use the existing single-date `commitment add ... on/DATE` commands.
 The [Developer Guide handoff](DeveloperGuide.md#multi-date-unavailable-periods-implementation-handoff-planned)
 contains proposed outputs, owner responsibilities and acceptance tests.
 
+### Session limits and breaks (planned console feature)
+
+Issue #55's planning algorithm supports a continuous-work limit counting both
+study tasks and commitments. Once the limit is reached, further study waits
+for a fixed consecutive break. Commitments remain fixed even if they exceed
+the limit; a longer commitment does not increase the required break duration.
+
+This feature is currently available only through the Java planning API.
+Settings commands, saving those settings and break-row display are awaiting
+integration. The console's existing `plan` command does not enforce these
+limits yet; there is no supported command to configure them.
+
 ### Planning hours and date range
 
 Study windows default to **08:00–22:00 every local calendar day**, including weekends.
@@ -610,6 +659,12 @@ The task still has a stored duration of 90 minutes. Only 30 minutes were allocat
 | `insufficient time before deadline` | Too few eligible slots remain before the deadline. Any slots that do fit are retained. |
 
 The totals cover the whole plan. Unallocated tasks appear in deadline order, then numeric ID order. Slots must fit in full: a deadline of 08:59 permits an 08:00–08:30 session but not an 08:30–09:00 session.
+
+Summary scheduled/unallocated totals count exact work, excluding padded capacity.
+Schedule rows still show reserved interval durations. Undated remainder rows say
+`No deadline` and `insufficient available study time`, never `deadline passed` or
+`outside planning horizon`. They follow dated rows; priority breaks equal
+deadline ties before numeric ID. Completed overdue tasks contribute no remainder.
 
 ## Viewing the schedule
 
@@ -713,9 +768,20 @@ Goodbye for now!
 ## Saving and restoring data
 
 The application loads saved data before showing its first prompt and saves
-each successful task, commitment or study-hours change automatically.
+each successful task, commitment or study-hours change automatically, including
+changed remaining-work estimates.
 
 Tasks, commitments, study hours and the next ID counters are saved automatically after each successful change and restored at startup. No manual save or load command is needed.
+
+New saves use version 2, 3 or 4 depending on whether commitments have date
+bounds or skipped occurrences. Each version retains exact task minutes,
+completion, optional deadlines and priorities through `TASK2` rows, together
+with custom study hours. Existing version 1 and earlier study-hours version 2
+files still load unchanged; loading does not rewrite them. The next successful
+change writes the extended format. Older application versions cannot read its
+new `TASK2` rows. See the
+[Developer Guide](DeveloperGuide.md#basic-saving-and-loading) for the precise
+layout. Templates and plans are not included in this change.
 
 - **Location:** `data/scheduleflow.txt`, relative to the folder from which you launch the application. Launch from the same folder to use the same data.
 - **First launch:** If the file is absent, the app starts empty. The first successful change creates the saved data.
@@ -732,19 +798,19 @@ To back up your data, close the app and copy `data/scheduleflow.txt`. To transfe
 
 ### What if my work does not fit before its deadline?
 
-Run `plan` and review the unallocated minutes and reasons. The app retains every session that fits. You can correct an estimate or deadline by deleting the task and adding a replacement, or remove a commitment if that time has become available. Run `plan` again after changes.
+Run `plan` and review the unallocated minutes and reasons. The app retains every session that fits. Revise an estimate with `task remaining`, delete and re-add a task to change its deadline, or remove a commitment if that time has become available. Run `plan` again after changes.
 
 ### How do I mark work as complete or correct an entry?
 
 Delete completed tasks using `task delete TNUMBER`. Correct commitments with
 `commitment edit CNUMBER` and one or more fields; the ID is preserved. To correct
-a task, delete it and add a replacement with the correct details and a new ID.
-Task editing and completion commands are not supported yet. For partially
-completed work, replace the task with your revised remaining-work estimate.
+a task's name or deadline, delete it and add a replacement with the correct
+details and a new ID. Task completion commands are not supported yet. For
+partially completed work, use `task remaining` with your revised estimate.
 
 ### Why did my schedule disappear?
 
-A successful task or commitment addition, deletion, commitment edit or
+A successful task or commitment addition, deletion, remaining-work revision, commitment edit or
 occurrence skip, or a study-hours set or reset, clears the current plan. Plans
 also disappear when the application restarts. Run `plan` to generate another one.
 
@@ -760,7 +826,9 @@ New task deadlines must fall within the rolling calendar-year limit at the time 
 
 Check the command's field order, case, prefixes, date, time, duration, and ID. Syntax errors display `Error: MESSAGE` followed by `Expected: USAGE`. Value errors, unknown IDs, and save errors display one `Error: MESSAGE` line. Rejected operations preserve saved data and the current plan.
 
-For example, use `task delete T1`, not `task delete 1`; use duration `60`, not `45` or `060`; and start a commitment at `1030`, not `1015`.
+For example, use `task delete T1`, not `task delete 1`; use commitment duration
+`60`, not `45` or `060`; and start a commitment at `1030`, not `1015`.
+Task duration `45` is valid, but task duration `060` is not.
 
 ### What should I do if the application cannot load my data?
 
@@ -779,6 +847,7 @@ these storage logs do not include your task names or saved file contents.
 | Add a task | `task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES` |
 | List tasks | `task list` |
 | Delete a task | `task delete TNUMBER` |
+| Revise a task's remaining time | `task remaining TNUMBER remaining/MINUTES` |
 | Add a weekly commitment | `commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD]` |
 | Add a one-time commitment | `commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES` |
 | List commitments | `commitment list` |

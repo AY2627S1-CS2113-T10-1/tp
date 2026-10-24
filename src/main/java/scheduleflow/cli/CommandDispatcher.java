@@ -26,6 +26,8 @@ import scheduleflow.task.TaskService;
  * Routes parsed commands and owns the candidate, save, commit, response transaction order.
  */
 public final class CommandDispatcher {
+    // TODO(Printing): implement issue #55 settings transactions and construct the planner with StudyPolicy.
+    // Save settings before publication/invalidation; keep the old settings and plan on save failure.
     /**
      * Records command stages and save boundaries without including record names.
      */
@@ -117,10 +119,9 @@ public final class CommandDispatcher {
             case Command.ListTasks ignored -> renderer.tasks(tasks.list(state.snapshot()));
             case Command.DeleteTask delete -> deleteTask(delete.id(), state);
             // @@author ernestgoh-god
-            case Command.RecordTaskWork ignored -> throw new ValidationException(
-                    "Task progress is awaiting task-service integration.");
-            case Command.RecordTaskSession ignored -> throw new ValidationException(
-                    "Task progress is awaiting task-service integration.");
+            case Command.RecordTaskWork work -> recordTaskWork(work, state);
+            case Command.RecordTaskSession session -> recordTaskSession(session, state);
+            case Command.ReviseTaskRemaining revise -> reviseTaskRemaining(revise, state);
             // @@author ka-how
             case Command.AddCommitment add -> addCommitment(add, state);
             case Command.EditCommitment edit -> editCommitment(edit, state);
@@ -180,6 +181,97 @@ public final class CommandDispatcher {
         saveAndCommit(candidate, state);
         return renderer.taskDeleted(removed);
     }
+
+    // @@author ernestgoh-god
+    /**
+     * Prepares a whole-minute progress candidate without changing the live snapshot.
+     *
+     * @param command task ID and reported completed minutes
+     * @param state live snapshot and temporary plan
+     * @return confirmation once Printing supplies it
+     * @throws StorageException if saving a changed candidate fails
+     */
+    private String recordTaskWork(Command.RecordTaskWork command, AppState state) throws StorageException {
+        Snapshot original = state.snapshot();
+        Snapshot candidate = tasks.recordWork(original, command.id(), command.doneMinutes());
+        return publishTaskProgress(command.id(), original, candidate, state);
+    }
+
+    /**
+     * Prepares the service's rounded session credit without duplicating its arithmetic in the CLI.
+     *
+     * @param command task ID, session minutes and percentage of work completed
+     * @param state live snapshot and temporary plan
+     * @return confirmation once Printing supplies it
+     * @throws StorageException if saving a changed candidate fails
+     */
+    private String recordTaskSession(Command.RecordTaskSession command, AppState state) throws StorageException {
+        Snapshot original = state.snapshot();
+        Snapshot candidate = tasks.recordSessionProgress(original, command.id(), command.sessionMinutes(),
+                command.percent());
+        return publishTaskProgress(command.id(), original, candidate, state);
+    }
+
+    /**
+     * Prepares the actual credited amount for Printing before saving and publishing any change.
+     * An unfinished renderer leaves the command recoverable and the saved/live data untouched.
+     *
+     * @param taskId validated task ID
+     * @param original source snapshot
+     * @param candidate validated candidate or original instance for zero credited work
+     * @param state live state to publish after a successful save
+     * @return progress confirmation once Printing supplies it
+     * @throws StorageException if saving a changed candidate fails
+     */
+    private String publishTaskProgress(int taskId, Snapshot original, Snapshot candidate, AppState state)
+            throws StorageException {
+        Task previous = original.tasks().stream().filter(task -> task.id() == taskId).findFirst()
+                .orElseThrow(() -> new IllegalStateException("Validated progress is missing its original task."));
+        Task revised = candidate.tasks().stream().filter(task -> task.id() == taskId).findFirst()
+                .orElseThrow(() -> new IllegalStateException("Validated progress is missing its revised task."));
+        int creditedMinutes = previous.remainingMinutes() - revised.remainingMinutes();
+        LOGGER.log(Level.FINE, "Preparing task progress confirmation");
+        String confirmation;
+        try {
+            confirmation = Objects.requireNonNull(renderer.taskProgressUpdated(revised, creditedMinutes),
+                    "task progress confirmation");
+        } catch (UnsupportedOperationException exception) {
+            if (!"Task progress rendering is not implemented yet.".equals(exception.getMessage())) {
+                throw exception;
+            }
+            LOGGER.log(Level.FINE, "Task progress confirmation is still pending");
+            throw new ValidationException("Task progress is awaiting printing.");
+        }
+        if (candidate != original) {
+            saveAndCommit(candidate, state);
+        }
+        return confirmation;
+    }
+
+    /**
+     * Validates a revised estimate and prepares its response before any save or publication.
+     *
+     * @param command task ID and replacement remaining minutes
+     * @param state live snapshot and temporary plan
+     * @return confirmation for the validated estimate, including an unchanged estimate
+     * @throws StorageException if the candidate cannot be saved
+     * @throws ValidationException if the task or estimate is invalid
+     */
+    private String reviseTaskRemaining(Command.ReviseTaskRemaining command, AppState state) throws StorageException {
+        LOGGER.log(Level.FINE, "Validating task remaining-work revision");
+        Snapshot original = state.snapshot();
+        Snapshot candidate = tasks.reviseRemaining(original, command.id(), command.remainingMinutes());
+        Task revised = candidate.tasks().stream().filter(task -> task.id() == command.id())
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Validated revision is missing its target."));
+        String confirmation = Objects.requireNonNull(renderer.taskRemainingUpdated(revised),
+                "task remaining confirmation");
+        if (candidate != original) {
+            saveAndCommit(candidate, state);
+        }
+        return confirmation;
+    }
+    // @@author ka-how
 
     /**
      * Saves a validated weekly series before clearing the temporary plan or announcing success.

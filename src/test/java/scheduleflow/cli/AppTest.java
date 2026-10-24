@@ -216,11 +216,10 @@ class AppTest {
     void run_domainErrors_printOneErrorAndContinueWithoutSuccess() {
         FakeStorage storage = new FakeStorage(Snapshot.empty());
         Result result = run("task add n/Past due/2026-09-21 0700 d/30\n"
-                + "task add n/Bad due/2026-09-22 1800 d/45\n"
                 + "commitment add n/Bad day/MON start/1015 d/30\n"
                 + "task delete T9\ncommitment delete C9\ntask list\nexit\n", storage);
         assertEquals(0, result.status());
-        assertEquals(5, result.output().split("Error: ", -1).length - 1);
+        assertEquals(4, result.output().split("Error: ", -1).length - 1);
         assertFalse(result.output().contains("Expected:"));
         assertFalse(result.output().contains("Added "));
         assertFalse(result.output().contains("Deleted "));
@@ -228,6 +227,20 @@ class AppTest {
         assertTrue(result.output().contains("No tasks found."));
         assertEquals(0, storage.saveCalls);
     }
+
+    // @@author nickpatt
+    @Test
+    void run_task45_acceptsExactWorkAndReservesWholeSlots() {
+        FakeStorage storage = new FakeStorage(Snapshot.empty());
+        Result result = run("task add n/Draft due/2026-09-22 1800 d/45\nplan\nschedule today\nexit\n", storage);
+        assertEquals(0, result.status());
+        assertFalse(result.output().contains("Error:"));
+        assertTrue(result.output().contains("Due: 2026-09-22 18:00 | Duration: 45 min"));
+        assertTrue(result.output().contains("08:00 - 09:00 | [TASK] T1: Draft (60 min)"));
+        assertEquals(45, storage.saved.tasks().getFirst().remainingMinutes());
+        assertEquals(1, storage.saveCalls);
+    }
+    // @@author ka-how
 
     @Test
     void run_saveFailure_preservesPlanAndRetriesSameIdWithoutFalseSuccess() {

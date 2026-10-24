@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
@@ -42,6 +43,35 @@ class TextRendererTest {
     private static final LocalDateTime NOW = DATE.atTime(7, 0);
     private final TextRenderer renderer = new TextRenderer();
 
+    // @@author nickpatt
+    @Test
+    void existingTaskOutput_absentDeadlineAndExactMinutes_usesExplicitAbsence() {
+        Task task = Task.withoutDeadline(1, "Draft", 45);
+        assertOutput("Added T1: Draft\nDue: No deadline | Duration: 45 min", renderer.taskAdded(task));
+        assertOutput("=== Actionable Tasks ===\nID | Name | Duration | Deadline"
+                + "\nT1 | Draft | 45 min | No deadline\nTotal: 1 task(s).", renderer.tasks(List.of(task)));
+        UnallocatedWork work = new UnallocatedWork(1, "Draft", Optional.empty(), 15, 30,
+                UnallocatedReason.INSUFFICIENT_CAPACITY);
+        Plan plan = new Plan(NOW, TimeRules.horizonEnd(NOW), new Snapshot(List.of(task), List.of(), 2, 1),
+                List.of(new StudySession(1, DATE.atTime(8, 0), DATE.atTime(8, 30))), List.of(work));
+        String remainder = "T1: Draft | Unallocated: 15 min | Reason: insufficient available study time"
+                + " | No deadline";
+        assertOutput("Study plan generated with unallocated work.\nScheduled: 30 min | Unallocated: 15 min\n"
+                + remainder, renderer.plan(plan));
+        assertTrue(renderer.schedule(new ScheduleService().forDate(plan, DATE)).endsWith(remainder));
+    }
+
+    @Test
+    void existingPlanSummary_paddedSession_totalsExactWorkInsteadOfCapacity() {
+        Task task = new Task(1, "Draft", DEADLINE, 45);
+        Task overdue = new Task(2, "Old", NOW, 1);
+        Plan plan = new EarliestDeadlinePlanner().generate(
+                new Snapshot(List.of(task, overdue), List.of(), 3, 1), NOW);
+        assertOutput("Study plan generated with unallocated work.\nScheduled: 45 min | Unallocated: 1 min"
+                + "\nT2: Old | Unallocated: 1 min | Reason: deadline passed", renderer.plan(plan));
+    }
+    // @@author ka-how
+
     //@@author Darren50
     @Test
     void commitmentEdited_reportsStoredFieldsAndMidnight() {
@@ -58,6 +88,10 @@ class TextRendererTest {
     void publicMethods_nullInputs_rejectWithArgumentNames() {
         assertEquals("task", assertThrows(NullPointerException.class, () -> renderer.taskAdded(null)).getMessage());
         assertEquals("task", assertThrows(NullPointerException.class, () -> renderer.taskDeleted(null)).getMessage());
+        // @@author ernestgoh-god
+        assertEquals("task", assertThrows(NullPointerException.class,
+                () -> renderer.taskRemainingUpdated(null)).getMessage());
+        // @@author ka-how
         assertEquals("tasks", assertThrows(NullPointerException.class, () -> renderer.tasks(null)).getMessage());
         assertEquals("commitment",
                 assertThrows(NullPointerException.class, () -> renderer.commitmentAdded(null)).getMessage());
@@ -93,7 +127,11 @@ class TextRendererTest {
         String output = renderer.help();
         assertTrue(output.startsWith("=== ScheduleFlow Command Help ===\n"));
         List<String> formats = List.of("help", "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES", "task list",
-                "task delete TNUMBER", "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
+                "task delete TNUMBER",
+                // @@author ernestgoh-god
+                "task remaining TNUMBER remaining/MINUTES",
+                // @@author ka-how
+                "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
                         + " [from/YYYY-MM-DD until/YYYY-MM-DD]",
                 "commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES", "commitment list",
                 "commitment delete CNUMBER", "commitment skip CNUMBER on/YYYY-MM-DD",
@@ -118,6 +156,15 @@ class TextRendererTest {
                 renderer.taskAdded(task));
         assertOutput("Deleted task T10: " + LONG_NAME, renderer.taskDeleted(task));
     }
+
+    // @@author ernestgoh-god
+    @Test
+    void taskRemainingUpdated_stableIdAndUnicodeName_reportsExactEstimate() {
+        Task task = new Task(10, LONG_NAME, DEADLINE, 90);
+        assertOutput("Remaining time for T10: " + LONG_NAME + " | 90 min", renderer.taskRemainingUpdated(task));
+        assertEquals(90, task.remainingMinutes());
+    }
+    // @@author ka-how
 
     @Test
     void tasks_empty_returnsExactMessage() {
@@ -454,7 +501,7 @@ class TextRendererTest {
      * Retains task metadata while selecting its remaining minutes and reason.
      */
     private UnallocatedWork createWork(Task task, int minutes, UnallocatedReason reason) {
-        return new UnallocatedWork(task.id(), task.name(), task.deadline(), minutes, reason);
+        return new UnallocatedWork(task.id(), task.name(), task.deadline().orElseThrow(), minutes, reason);
     }
 
     /**

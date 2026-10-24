@@ -2,7 +2,7 @@
   "version": 1,
   "cases": [
     {
-      "id": "UI-019",
+      "id": "UI-021",
       "aim": "Unavailable study periods reuse one-time commitments with plan invalidation, restart and release",
       "status": "active",
       "setup": "No data file; a date-specific study window and one unavailable period",
@@ -26,6 +26,37 @@
           { "input": "commitment list", "output": "No commitments found." },
           { "input": "hours 2026-10-26", "output": "Study hours for 2026-10-26: 09:00 - 12:00" },
           { "input": "commitment add n/Unavailable again on/2026-10-26 start/1000 d/60", "output": "Added C2: Unavailable again | One-time on 2026-10-26 (Monday) 10:00 - 11:00 (60 min)" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
+      "id": "UI-019", "aim": "Revise remaining task time, reject invalid values, invalidate a plan and persist across restarts",
+      "status": "active", "setup": "One overdue saved task; no dependence on the current date",
+      "requiredComponents": ["CommandParser.parse", "TaskService.reviseRemaining",
+        "CommandDispatcher.execute", "TextRenderer.taskRemainingUpdated", "FileStorage.save", "FileStorage.load"],
+      "files": {
+        "data/scheduleflow.txt": "SCHEDULEFLOW|1\nNEXT|3|1\nTASK|2|2000-01-01T09:00|30|Draft\n"
+      },
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "plan", "output": "Study plan generated with unallocated work.\nScheduled: 0 min | Unallocated: 30 min\nT2: Draft | Unallocated: 30 min | Reason: deadline passed" },
+          { "input": "task remaining T2 remaining/45", "output": "Remaining time for T2: Draft | 45 min" },
+          { "input": "task remaining T9 remaining/90", "output": "Error: Unknown task ID: T9" },
+          { "input": "task remaining T2 remaining/90", "output": "Remaining time for T2: Draft | 90 min" },
+          { "input": "schedule today", "output": "No current plan. Run plan to generate one." },
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 90 min | 2000-01-01 09:00\nTotal: 1 task(s)." },
+          { "input": "plan", "output": "Study plan generated with unallocated work.\nScheduled: 0 min | Unallocated: 90 min\nT2: Draft | Unallocated: 90 min | Reason: deadline passed" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 90 min | 2000-01-01 09:00\nTotal: 1 task(s)." },
+          { "input": "task remaining T2 remaining/30", "output": "Remaining time for T2: Draft | 30 min" },
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 30 min | 2000-01-01 09:00\nTotal: 1 task(s)." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 30 min | 2000-01-01 09:00\nTotal: 1 task(s)." },
           { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
         ] }
       ]
@@ -398,6 +429,25 @@
         { "input": "plan", "output": "Study plan generated with unallocated work.\nScheduled: 0 min | Unallocated: 4294967280 min\nT1: First | Unallocated: 2147483640 min | Reason: deadline passed\nT2: Second | Unallocated: 2147483640 min | Reason: deadline passed" },
         { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
       ] }]
+    },
+    {
+      "id": "UI-020", "aim": "Extended saved tasks retain absence and completion, exact work and restart",
+      "status": "active", "setup": "Extended version 2 store; existing commands only, no lifecycle CLI",
+      "files": { "data/scheduleflow.txt": "SCHEDULEFLOW|2\nNEXT|4|1\nTASK2|1|NONE|45|NORMAL|Undated|draft\nTASK2|2|2000-01-01T09:00|0|NORMAL|Completed\nTASK2|3|2000-01-01T09:00|1|NORMAL|Old\nHOURS|monday|09:00|10:00\n" },
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT1 | Undated|draft | 45 min | No deadline\nT2 | Completed | 0 min | 2000-01-01 09:00\nT3 | Old | 1 min | 2000-01-01 09:00\nTotal: 3 task(s)." },
+          { "input": "plan", "output": "Study plan generated with unallocated work.\nScheduled: 45 min | Unallocated: 1 min\nT3: Old | Unallocated: 1 min | Reason: deadline passed" },
+          { "input": "task delete T3", "output": "Deleted task T3: Old" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT1 | Undated|draft | 45 min | No deadline\nT2 | Completed | 0 min | 2000-01-01 09:00\nTotal: 2 task(s)." },
+          { "input": "hours monday", "output": "Study hours for monday: 09:00 - 10:00" },
+          { "input": "plan", "output": "Study plan generated successfully! Type 'schedule today' to view your sessions." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
     }
   ]
 }

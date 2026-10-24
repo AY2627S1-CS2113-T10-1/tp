@@ -19,6 +19,8 @@ import java.util.regex.Pattern;
  * Parses the complete case-sensitive command grammar without inspecting application state.
  */
 public final class CommandParser {
+    // TODO(Printing): implement issue #55 settings commands after agreeing on set/show/reset grammar.
+    // Transport integer minutes; StudyPolicy owns positive half-hour duration validation.
     /**
      * Records recognition and syntax-checking stages without logging raw command text.
      */
@@ -28,6 +30,7 @@ public final class CommandParser {
     private static final String TASK_ADD_USAGE = "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES";
     private static final String TASK_DELETE_USAGE = "task delete TNUMBER";
     // @@author ernestgoh-god
+    private static final String TASK_REMAINING_USAGE = "task remaining TNUMBER remaining/MINUTES";
     private static final String TASK_PROGRESS_USAGE =
             "task progress TNUMBER done/MINUTES OR task progress TNUMBER session/MINUTES percent/PERCENT";
     //@@author Darren50
@@ -85,6 +88,9 @@ public final class CommandParser {
     private static final Pattern TASK_PROGRESS_SESSION_PATTERN = Pattern.compile(
             "task +progress +T(?<id>" + POSITIVE_INT_TOKEN + ") +session/(?<session>"
                     + POSITIVE_INT_TOKEN + ") +percent/(?<percent>0|" + POSITIVE_INT_TOKEN + ")");
+    private static final Pattern TASK_REMAINING_PATTERN = Pattern.compile(
+            "task +remaining +T(?<id>" + POSITIVE_INT_TOKEN + ") +remaining/(?<minutes>"
+                    + POSITIVE_INT_TOKEN + ")");
     // @@author ka-how
     private static final Pattern COMMITMENT_DELETE_PATTERN = Pattern.compile(
             "commitment +delete +C(?<id>" + POSITIVE_INT_TOKEN + ")");
@@ -162,6 +168,7 @@ public final class CommandParser {
                         match(TASK_DELETE_PATTERN, input, usage).group("id")));
                 // @@author ernestgoh-god
                 case "task progress" -> parseTaskProgress(input);
+                case "task remaining" -> parseTaskRemaining(input);
                 // @@author ka-how
                 case "commitment add" -> parseAddCommitment(input);
                 case "commitment edit" -> parseEditCommitment(input);
@@ -211,6 +218,7 @@ public final class CommandParser {
             case "task delete" -> TASK_DELETE_USAGE;
             // @@author ernestgoh-god
             case "task progress" -> TASK_PROGRESS_USAGE;
+            case "task remaining" -> TASK_REMAINING_USAGE;
             // @@author ka-how
             case "commitment add" -> COMMITMENT_ADD_USAGE;
             case "commitment edit" -> COMMITMENT_EDIT_USAGE;
@@ -264,6 +272,13 @@ public final class CommandParser {
                     Integer.parseInt(session.group("session")), percent);
         }
         throw new ParseException("Invalid command format or missing fields", TASK_PROGRESS_USAGE);
+    }
+
+    /** Parses a replacement estimate without applying task-state or duration rules. */
+    private Command.ReviseTaskRemaining parseTaskRemaining(String input) throws ParseException {
+        Matcher fields = match(TASK_REMAINING_PATTERN, input, TASK_REMAINING_USAGE);
+        return new Command.ReviseTaskRemaining(Integer.parseInt(fields.group("id")),
+                Integer.parseInt(fields.group("minutes")));
     }
     // @@author ka-how
 
