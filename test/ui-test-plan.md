@@ -1,9 +1,9 @@
 # ScheduleFlow UI test plan
 
-Issue #40 progress grammar has parser-level JUnit coverage. Packaged progress
-acceptance remains planned until task-service integration, dispatcher
-transactions and Printing's confirmation are implemented. Existing active
-scenarios continue to exercise the unchanged console commands.
+Issue #40 progress grammar, service candidates and dispatcher transactions have
+JUnit coverage. Packaged progress acceptance remains planned until Printing's
+confirmation is implemented. The current command reports a recoverable pending
+message without changing live state, saved data or the plan.
 
 Issue #41 remaining-work parsing, service candidates, renderer output,
 saved-candidate reload, planning demand, successful dispatch, no-op behavior and
@@ -12,7 +12,7 @@ exact output, invalid values, plan invalidation, replanning and saved data after
 two restarts. Save failure is covered by an isolated dispatcher fake because
 process-level fault injection is unavailable.
 
-All nineteen maintained process scenarios are active. They exercise the packaged
+All twenty maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -86,10 +86,23 @@ timeouts and expected output; Java 25 and isolated workspace data were retained.
 
 ## Active packaged scenarios
 
-Task name/deadline edit API cases are covered by deterministic JUnit tests only.
-They are not process-active until task-edit CLI wiring and rendering are integrated;
-the new renderer method is an unwired skeleton, not acceptance coverage. All current
-active fixture expectations remain unchanged.
+Task edit, deadline clear/absence, progress/session percentages, revised remaining,
+completion and reopening APIs have deterministic JUnit coverage. The two progress
+forms have parser and dispatcher tests, but `taskProgressUpdated` is still a
+throwing Printing skeleton. Dispatcher tests assert that a pending confirmation
+does not save or change live state or the current plan. UI acceptance for issue
+#40 remains blocked until Printing implements the confirmation and the cases
+can assert successful save, restart and plan invalidation. Other Task lifecycle
+commands and confirmations remain deferred.
+
+Compatibility checks cover optional deadlines in existing add/list/remainder
+output, exact plan work totals (not rounded capacity), 45-minute work versus
+60-minute reservation, partial 30/15 allocation, completed-task exclusion, long
+arithmetic, custom hours, identity no-ops and legacy/v2-v4 save round trips.
+Tasks now accept positive whole-minute additions; commitments retain the positive
+30-minute rule, including UI-006's rejected commitment `d/45`. All existing
+slot-aligned fixture responses remain unchanged. Restored-data UI-020 is
+active because existing list/plan/delete/restart commands need no new wiring.
 
 | ID | Coverage | Status |
 | --- | --- | --- |
@@ -112,6 +125,7 @@ active fixture expectations remain unchanged.
 | UI-014 | Partial commitment edits, unchanged IDs, rejection, plan invalidation and Unicode restart | Active |
 | UI-015 | Study hours precedence, validation, resets, plan invalidation and saved restarts | Active |
 | UI-016 | Inclusive recurring-commitment bounds, actual-occurrence overlap and version 3 restart | Active |
+| UI-020 | Extended saved tasks: absent deadlines, completed overdue exclusion, exact work and restart | Active |
 
 UI-015 asserts reset confirmations name the restored source and its endpoints.
 UI-016 adds nonoverlapping semester series at the same weekly time, rejects a
@@ -172,8 +186,8 @@ After Printing and Save integrate the documented contract, add and activate:
 
 | ID | Coverage | Status |
 | --- | --- | --- |
-| UI-016 | Set/show/reset policy, invalid values, save/restart and plan invalidation/rollback | Planned; grammar, settings persistence and confirmations pending |
-| UI-017 | Cross-task limits, commitments below/at/2x/3x limit, fixed breaks and BREAK rows | Planned; configured console planner and rendering pending |
+| UI-020 | Set/show/reset policy, invalid values, save/restart and plan invalidation/rollback | Planned; grammar, settings persistence and confirmations pending |
+| UI-021 | Cross-task limits, commitments below/at/2x/3x limit, fixed breaks and BREAK rows | Planned; configured console planner and rendering pending |
 
 Use fixed-clock dispatcher JUnit tests for exact schedule times. Packaged
 acceptance must keep isolated saved data and deterministic output; an expected

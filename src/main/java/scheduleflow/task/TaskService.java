@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import scheduleflow.common.ValidationException;
@@ -41,7 +42,7 @@ public final class TaskService {
      * @param state immutable source snapshot
      * @param name task description, normalized by the task constructor
      * @param deadline local deadline with minute precision and a year from 0001 to 9999
-     * @param minutes whole remaining-work estimate, a positive multiple of 30
+     * @param minutes positive whole remaining-work minutes
      * @param now local command time captured by the caller, including seconds and nanoseconds
      * @return a new snapshot with the task appended and the task counter incremented once
      * @throws NullPointerException if state or now is null
@@ -57,6 +58,7 @@ public final class TaskService {
                 throw new ValidationException("No more task IDs are available.");
             }
             Task task = new Task(state.nextTaskId(), name, deadline, minutes);
+            requirePositiveRemaining(minutes);
             LOGGER.log(Level.FINE, "Task fields validated; checking deadline range");
             if (!deadline.isAfter(now)) {
                 throw new ValidationException("Deadline must be in the future.");
@@ -96,7 +98,7 @@ public final class TaskService {
      * @param now captured local command time, including seconds and nanoseconds
      * @return a validated candidate, or the original snapshot instance if no value effectively changes
      * @throws NullPointerException if state, edit or now is null
-     * @throws ValidationException if the edit is empty, clears a deadline, has invalid fields or an unknown ID
+     * @throws ValidationException if the edit is empty, clears and replaces a deadline, or has invalid fields/ID
      */
     public Snapshot edit(Snapshot state, int taskId, TaskEdit edit, LocalDateTime now) {
         Objects.requireNonNull(state, "state");
@@ -104,21 +106,22 @@ public final class TaskService {
         Objects.requireNonNull(now, "now");
         LOGGER.log(Level.FINE, "Starting task edit");
         try {
-            if (edit.clearDeadline()) {
-                throw new ValidationException("Clearing a task deadline is not supported yet.");
+            if (edit.clearDeadline() && edit.deadline().isPresent()) {
+                throw new ValidationException("Cannot clear and replace a deadline together.");
             }
-            if (edit.name().isEmpty() && edit.deadline().isEmpty()) {
+            if (edit.name().isEmpty() && edit.deadline().isEmpty() && !edit.clearDeadline()) {
                 throw new ValidationException("Supply at least one task field to edit.");
             }
             Task original = state.tasks().stream().filter(task -> task.id() == taskId).findFirst()
                     .orElseThrow(() -> new ValidationException("Unknown task ID: T" + taskId));
             Task replacement = new Task(original.id(), edit.name().orElse(original.name()),
-                    edit.deadline().orElse(original.deadline()), original.remainingMinutes());
-            if (!replacement.deadline().equals(original.deadline())) {
-                if (!replacement.deadline().isAfter(now)) {
+                    edit.clearDeadline() ? Optional.empty() : edit.deadline().or(() -> original.deadline()),
+                    original.remainingMinutes(), original.priority());
+            if (!replacement.deadline().equals(original.deadline()) && replacement.deadline().isPresent()) {
+                if (!replacement.deadline().get().isAfter(now)) {
                     throw new ValidationException("Deadline must be in the future.");
                 }
-                if (replacement.deadline().isAfter(TimeRules.horizonEnd(now))) {
+                if (replacement.deadline().get().isAfter(TimeRules.horizonEnd(now))) {
                     throw new ValidationException("Deadline must be within the rolling one-year horizon.");
                 }
             }
@@ -150,45 +153,116 @@ public final class TaskService {
         }
     }
 
-    // @@author ernestgoh-god
     /**
-     * Replaces one task's estimate without treating the difference as completed work.
-     * The current task model requires positive 30-minute multiples and has no completed state.
-     *
-     * @param state immutable source snapshot
-     * @param taskId numeric suffix of an existing task identifier
-     * @param remaining new remaining-work estimate in positive 30-minute multiples
-     * @return a replacement candidate, or the original instance when the estimate is unchanged
+     * Adds positive whole-minute work without inventing a deadline or reading a clock.
      * @throws NullPointerException if state is null
-     * @throws ValidationException if the task is unknown or the estimate is invalid
+     * @throws ValidationException if fields are invalid or the task counter is exhausted
+     */
+    public Snapshot addWithoutDeadline(Snapshot state, String name, int minutes) {
+        Objects.requireNonNull(state, "state");
+        requirePositiveRemaining(minutes);
+        if (state.nextTaskId() == Integer.MAX_VALUE) {
+            throw new ValidationException("No more task IDs are available.");
+        }
+        List<Task> tasks = new ArrayList<>(state.tasks());
+        tasks.add(Task.withoutDeadline(state.nextTaskId(), name, minutes));
+        return new Snapshot(tasks, state.commitments(), state.nextTaskId() + 1,
+                state.nextCommitmentId(), state.studyHours());
+    }
+
+    /**
+     * Subtracts reported work from an active task; zero credit returns the identical source snapshot.
+     * @throws NullPointerException if state is null
+     * @throws ValidationException if the task is unknown/completed or done is outside [0, remaining]
+     */
+    public Snapshot recordWork(Snapshot state, int taskId, int done) {
+        Task task = findTask(state, taskId);
+        if (task.remainingMinutes() == 0) {
+            throw new ValidationException("Reopen the completed task before recording work.");
+        }
+        if (done < 0 || done > task.remainingMinutes()) {
+            throw new ValidationException("Reported work must be between zero and the remaining estimate.");
+        }
+        return replaceRemaining(state, task, task.remainingMinutes() - done);
+    }
+
+    /**
+     * Credits floor(sessionMinutes * percentage / 100) using overflow-safe long arithmetic.
+     * Returns the identical source when rounding gives zero, but still rejects completed tasks.
+     * @throws NullPointerException if state is null
+     * @throws ValidationException if session/percentage, task status/ID or credited work is invalid
+     */
+    public Snapshot recordSessionProgress(Snapshot state, int taskId, int sessionMinutes, int percentage) {
+        Objects.requireNonNull(state, "state");
+        if (sessionMinutes <= 0 || percentage < 0 || percentage > 100) {
+            throw new ValidationException("Session minutes must be positive and percentage must be from 0 to 100.");
+        }
+        int done = (int) ((long) sessionMinutes * percentage / 100);
+        return recordWork(state, taskId, done);
+    }
+
+    /**
+     * Replaces an active task's estimate with positive minutes, allowing increases without recording work.
+     * Returns the identical source for an unchanged estimate.
+     * @throws NullPointerException if state is null
+     * @throws ValidationException if the task is unknown/completed or remaining is nonpositive
      */
     public Snapshot reviseRemaining(Snapshot state, int taskId, int remaining) {
+        Task task = findTask(state, taskId);
+        requirePositiveRemaining(remaining);
+        if (task.remainingMinutes() == 0) {
+            throw new ValidationException("Reopen the completed task before revising remaining work.");
+        }
+        return replaceRemaining(state, task, remaining);
+    }
+
+    /**
+     * Retains a task with zero remaining work; completing an already-completed task is an identity no-op.
+     * @throws NullPointerException if state is null
+     * @throws ValidationException if the task is unknown
+     */
+    public Snapshot complete(Snapshot state, int taskId) {
+        return replaceRemaining(state, findTask(state, taskId), 0);
+    }
+
+    /**
+     * Reopens only a completed task with an explicit positive estimate, preserving even overdue deadlines.
+     * @throws NullPointerException if state is null
+     * @throws ValidationException if the task is unknown/active or positiveRemaining is nonpositive
+     */
+    public Snapshot reopen(Snapshot state, int taskId, int positiveRemaining) {
+        Task task = findTask(state, taskId);
+        requirePositiveRemaining(positiveRemaining);
+        if (task.remainingMinutes() != 0) {
+            throw new ValidationException("Only completed tasks can be reopened.");
+        }
+        return replaceRemaining(state, task, positiveRemaining);
+    }
+
+    /** Resolves a stored task without changing its source snapshot. */
+    private Task findTask(Snapshot state, int taskId) {
         Objects.requireNonNull(state, "state");
-        LOGGER.log(Level.FINE, "Starting task remaining-work revision");
-        try {
-            Task original = state.tasks().stream().filter(task -> task.id() == taskId).findFirst()
-                    .orElseThrow(() -> new ValidationException("Unknown task ID: T" + taskId));
-            Task revised = new Task(original.id(), original.name(), original.deadline(), remaining);
-            if (revised.equals(original)) {
-                LOGGER.log(Level.FINE, "Task estimate unchanged; source snapshot returned");
-                return state;
-            }
-            List<Task> revisedTasks = new ArrayList<>(state.tasks());
-            revisedTasks.set(revisedTasks.indexOf(original), revised);
-            Snapshot candidate = new Snapshot(revisedTasks, state.commitments(), state.nextTaskId(),
-                    state.nextCommitmentId(), state.studyHours());
-            assert candidate.tasks().size() == state.tasks().size()
-                    && candidate.tasks().stream().filter(task -> task.id() != taskId).toList()
-                            .equals(state.tasks().stream().filter(task -> task.id() != taskId).toList())
-                    : "Revision must replace only the selected task";
-            LOGGER.log(Level.FINE, "Task revision candidate created; not yet saved or published");
-            return candidate;
-        } catch (ValidationException exception) {
-            LOGGER.log(Level.FINE, "Task remaining-work revision rejected; source snapshot unchanged");
-            throw exception;
+        return state.tasks().stream().filter(task -> task.id() == taskId).findFirst()
+                .orElseThrow(() -> new ValidationException("Unknown task ID: T" + taskId));
+    }
+
+    /** Requires a positive estimate for creation, revision or explicit reopening. */
+    private void requirePositiveRemaining(int minutes) {
+        if (minutes <= 0) {
+            throw new ValidationException("Remaining minutes must be positive.");
         }
     }
-    // @@author nickpatt
+
+    /** Replaces just the estimate at its stored position, preserving metadata, settings and counters. */
+    private Snapshot replaceRemaining(Snapshot state, Task task, int remaining) {
+        if (task.remainingMinutes() == remaining) {
+            return state;
+        }
+        List<Task> tasks = new ArrayList<>(state.tasks());
+        tasks.set(tasks.indexOf(task), new Task(task.id(), task.name(), task.deadline(), remaining, task.priority()));
+        return new Snapshot(tasks, state.commitments(), state.nextTaskId(),
+                state.nextCommitmentId(), state.studyHours());
+    }
 
     /**
      * Removes a known task from a candidate while preserving both counters.

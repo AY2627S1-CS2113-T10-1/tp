@@ -7,11 +7,11 @@ import java.util.Optional;
 
 /**
  * Carries immutable partial task details; omitted values retain their stored values.
- * Field validation belongs to {@link TaskService#edit}; clearing a deadline is not supported yet.
+ * Field validation belongs to {@link TaskService#edit}; clearing and replacing a deadline are mutually exclusive.
  *
  * @param name replacement name, or empty to retain the name
  * @param deadline replacement deadline, or empty to retain the deadline
- * @param clearDeadline reserved request to remove the deadline, currently rejected by the service
+ * @param clearDeadline explicit request to remove the deadline
  */
 public record TaskEdit(Optional<String> name, Optional<LocalDateTime> deadline, boolean clearDeadline) {
     /**

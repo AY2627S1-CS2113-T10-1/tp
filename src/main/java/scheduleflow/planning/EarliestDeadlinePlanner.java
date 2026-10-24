@@ -11,7 +11,8 @@ import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
 
 /**
- * Allocates the earliest free slots in deadline and numeric task ID order.
+ * Allocates exact task work in chronological slots, ordered by deadline, priority and ID.
+ * An optional policy reserves breaks after continuous task and commitment work.
  */
 public final class EarliestDeadlinePlanner implements Planner {
     /** Holds an opt-in policy until Printing and Save integrate user-configurable settings. */
@@ -40,8 +41,14 @@ public final class EarliestDeadlinePlanner implements Planner {
         Objects.requireNonNull(now, "now");
 
         LocalDateTime horizonEnd = TimeRules.horizonEnd(now);
-        List<Task> tasks = new ArrayList<>(state.tasks());
-        tasks.sort(Comparator.comparing(Task::deadline).thenComparingInt(Task::id));
+        // @@author nickpatt
+        List<Task> tasks = new ArrayList<>(state.tasks().stream()
+                .filter(task -> task.remainingMinutes() > 0).toList());
+        tasks.sort(Comparator.comparing((Task task) -> task.deadline().isEmpty())
+                .thenComparing((left, right) -> left.deadline().isPresent() && right.deadline().isPresent()
+                        ? left.deadline().get().compareTo(right.deadline().get()) : 0)
+                .thenComparing(Task::priority).thenComparingInt(Task::id));
+        // @@author
         List<PendingTask> pending = tasks.stream().map(task -> new PendingTask(task, now, horizonEnd)).toList();
         List<Slot> slots = createSlots(state, now, horizonEnd, pending);
         List<UnallocatedWork> unallocated = new ArrayList<>();
@@ -91,7 +98,10 @@ public final class EarliestDeadlinePlanner implements Planner {
         PendingTask next = eligible ? nextTask(pending, start.plusMinutes(TimeRules.SLOT_MINUTES)) : null;
         if (next != null && !workClock.needsBreak()) {
             slot.taskId = next.task.id();
-            next.remainingMinutes -= TimeRules.SLOT_MINUTES;
+            // @@author nickpatt
+            slot.workMinutes = Math.min(next.remainingMinutes, TimeRules.SLOT_MINUTES);
+            next.remainingMinutes -= slot.workMinutes;
+            // @@author
             workClock.work();
         } else {
             slot.reservedBreak = next != null && workClock.needsBreak();
@@ -104,7 +114,7 @@ public final class EarliestDeadlinePlanner implements Planner {
     private static PendingTask nextTask(List<PendingTask> pending, LocalDateTime slotEnd) {
         for (PendingTask work : pending) {
             if (work.reason == UnallocatedReason.INSUFFICIENT_CAPACITY && work.remainingMinutes > 0
-                    && !slotEnd.isAfter(work.task.deadline())) {
+                    && (work.task.deadline().isEmpty() || !slotEnd.isAfter(work.task.deadline().orElseThrow()))) {
                 return work;
             }
         }
@@ -133,7 +143,11 @@ public final class EarliestDeadlinePlanner implements Planner {
      */
     private static void addUnallocated(Task task, int minutes, UnallocatedReason reason,
             List<UnallocatedWork> unallocated) {
-        unallocated.add(new UnallocatedWork(task.id(), task.name(), task.deadline(), minutes, reason));
+        // @@author nickpatt
+        long capacity = ((long) minutes + TimeRules.SLOT_MINUTES - 1)
+                / TimeRules.SLOT_MINUTES * TimeRules.SLOT_MINUTES;
+        unallocated.add(new UnallocatedWork(task.id(), task.name(), task.deadline(), minutes, capacity, reason));
+        // @@author
     }
 
     /**
@@ -152,6 +166,9 @@ public final class EarliestDeadlinePlanner implements Planner {
             LocalDateTime sessionStart = first.start;
             LocalDateTime sessionEnd = sessionStart.plusMinutes(TimeRules.SLOT_MINUTES);
             int taskId = first.taskId;
+            // @@author nickpatt
+            int workMinutes = first.workMinutes;
+            // @@author
             index++;
             while (index < slots.size()) {
                 Slot next = slots.get(index);
@@ -160,9 +177,14 @@ public final class EarliestDeadlinePlanner implements Planner {
                     break;
                 }
                 sessionEnd = sessionEnd.plusMinutes(TimeRules.SLOT_MINUTES);
+                // @@author nickpatt
+                workMinutes += next.workMinutes;
+                // @@author
                 index++;
             }
-            sessions.add(new StudySession(taskId, sessionStart, sessionEnd));
+            // @@author nickpatt
+            sessions.add(new StudySession(taskId, sessionStart, sessionEnd, workMinutes));
+            // @@author
         }
         return sessions;
     }
@@ -189,6 +211,10 @@ public final class EarliestDeadlinePlanner implements Planner {
     private static final class Slot {
         private final LocalDateTime start;
         private int taskId;
+        // @@author nickpatt
+        /** Exact work credited to this reserved slot, excluding padding. */
+        private int workMinutes;
+        // @@author
         private boolean reservedBreak;
 
         /** Creates an unassigned slot at an aligned local time. */
@@ -207,9 +233,9 @@ public final class EarliestDeadlinePlanner implements Planner {
         private PendingTask(Task task, LocalDateTime now, LocalDateTime horizonEnd) {
             this.task = task;
             remainingMinutes = task.remainingMinutes();
-            if (!task.deadline().isAfter(now)) {
+            if (task.deadline().isPresent() && !task.deadline().orElseThrow().isAfter(now)) {
                 reason = UnallocatedReason.DEADLINE_PASSED;
-            } else if (task.deadline().isAfter(horizonEnd)) {
+            } else if (task.deadline().isPresent() && task.deadline().orElseThrow().isAfter(horizonEnd)) {
                 reason = UnallocatedReason.OUTSIDE_HORIZON;
             } else {
                 reason = UnallocatedReason.INSUFFICIENT_CAPACITY;

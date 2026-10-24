@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Objects;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Snapshot;
+import scheduleflow.model.TaskPriority;
 
 /**
  * Holds a frozen planning result and its exact immutable source data.
@@ -41,8 +42,15 @@ public record Plan(LocalDateTime generatedAt, LocalDateTime horizonEnd, Snapshot
         }
         requireSorted(breaks, Comparator.comparing(ScheduleEntry::start));
         requireSorted(sessions, Comparator.comparing(StudySession::start).thenComparingInt(StudySession::taskId));
-        requireSorted(unallocated,
-                Comparator.comparing(UnallocatedWork::deadline).thenComparingInt(UnallocatedWork::taskId));
+        // @@author nickpatt
+        Snapshot frozenSource = source;
+        requireSorted(unallocated, Comparator.comparing((UnallocatedWork work) -> work.deadline().isEmpty())
+                .thenComparing((left, right) -> left.deadline().isPresent() && right.deadline().isPresent()
+                        ? left.deadline().get().compareTo(right.deadline().get()) : 0)
+                .thenComparing(work -> frozenSource.tasks().stream().filter(task -> task.id() == work.taskId())
+                        .map(task -> task.priority()).findFirst().orElse(TaskPriority.NORMAL))
+                .thenComparingInt(UnallocatedWork::taskId));
+        // @@author
     }
 
     /**
