@@ -4,17 +4,21 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import scheduleflow.common.InputRules;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
+import scheduleflow.planning.TimeRules;
 
 /**
  * Creates weekly commitment candidates without saving or changing live state.
@@ -25,6 +29,11 @@ public final class CommitmentService {
      * Candidate creation is not a claim that data has been saved or published.
      */
     private static final Logger LOGGER = Logger.getLogger(CommitmentService.class.getName());
+    //@@author Darren50
+    private static final int MINUTES_PER_HOUR = 60;
+    private static final int MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR;
+    private static final int MAX_SUPPORTED_YEAR = 9999;
+    //@@author
 
     /**
      * Creates the CommitmentService dependencies without performing I/O.
@@ -32,28 +41,53 @@ public final class CommitmentService {
     public CommitmentService() {
     }
 
-    // @@author GabrielYuSP
+    //@@author Darren50
     /**
-     * Reserves the atomic continuous-interval addition contract for issue #48.
-     * The implementation must split at midnight, omit empty segments and return one candidate
-     * containing dated one-time commitments. It must not save, publish or consume live IDs.
+     * Blocks one continuous interval by splitting it at midnight into dated one-time commitments.
+     * Adds every segment or none, so a rejected request leaves the source unchanged and consumes no IDs.
+     * The candidate is not saved or published; the caller saves it before changing live state.
      *
      * @param state immutable source snapshot to preserve on rejection
      * @param name description shared by the generated commitments
      * @param start inclusive aligned local start, in years 0001 through 9999
      * @param end exclusive aligned local end strictly after start, in years 0001 through 9999
-     * @return complete candidate with chronological IDs once implemented
-     * @throws UnsupportedOperationException until the Commitment owner implements this operation
+     * @return candidate with one commitment per covered date, assigned consecutive IDs in date order
+     * @throws NullPointerException if state, start or end is null
+     * @throws ValidationException if a field is invalid, IDs are insufficient or any segment overlaps
      */
     public Snapshot addContinuousBlock(Snapshot state, String name, LocalDateTime start, LocalDateTime end) {
-        // TODO(Darren50): implement CommitmentService.addContinuousBlock using atomic one-time additions.
-        throw new UnsupportedOperationException("Continuous unavailable periods are not implemented yet.");
+        Objects.requireNonNull(state, "state");
+        Objects.requireNonNull(start, "start");
+        Objects.requireNonNull(end, "end");
+        LOGGER.fine("Starting continuous unavailable addition");
+        try {
+            String normalized = InputRules.normalizeName(name);
+            requireSupportedYear(start.toLocalDate());
+            requireSupportedYear(end.toLocalDate());
+            requireAligned(start.toLocalTime());
+            requireAligned(end.toLocalTime());
+            if (!end.isAfter(start)) {
+                throw new ValidationException("Unavailable interval end must be after its start.");
+            }
+            LocalDate firstDate = start.toLocalDate();
+            LocalDate lastDate = end.toLocalDate();
+            // An exclusive end at midnight covers nothing on its own date, so that date gets no segment.
+            boolean endsAtMidnight = end.toLocalTime().equals(LocalTime.MIDNIGHT);
+            long count = ChronoUnit.DAYS.between(firstDate, lastDate) + (endsAtMidnight ? 0 : 1);
+            return appendDatedBlocks(state, normalized, firstDate, count, date -> {
+                LocalTime from = date.equals(firstDate) ? start.toLocalTime() : LocalTime.MIDNIGHT;
+                int toMinute = date.equals(lastDate) ? minuteOfDay(end.toLocalTime()) : MINUTES_PER_DAY;
+                return new DailyInterval(from, toMinute - minuteOfDay(from));
+            });
+        } catch (ValidationException exception) {
+            LOGGER.fine("Unavailable addition rejected; source snapshot unchanged");
+            throw exception;
+        }
     }
 
     /**
-     * Reserves the atomic daily-window addition contract for issue #48.
-     * The implementation must create one dated commitment per inclusive date, validate the
-     * whole request and return one candidate without saving or changing live state.
+     * Blocks the same same-day window on every date of an inclusive range using one-time commitments.
+     * Adds every date's commitment or none, so a rejected request leaves the source unchanged.
      *
      * @param state immutable source snapshot to preserve on rejection
      * @param name description shared by the generated commitments
@@ -61,15 +95,117 @@ public final class CommitmentService {
      * @param lastDate inclusive last date on or after firstDate, in years 0001 through 9999
      * @param start aligned local start of each daily interval
      * @param end aligned local end strictly after start on the same day
-     * @return complete candidate with chronological IDs once implemented
-     * @throws UnsupportedOperationException until the Commitment owner implements this operation
+     * @return candidate with one commitment per date, assigned consecutive IDs in date order
+     * @throws NullPointerException if state, either date or either time is null
+     * @throws ValidationException if a field is invalid, IDs are insufficient or any date overlaps
      */
     public Snapshot addDailyBlocks(Snapshot state, String name, LocalDate firstDate, LocalDate lastDate,
             LocalTime start, LocalTime end) {
-        // TODO(Darren50): implement CommitmentService.addDailyBlocks using atomic one-time additions.
-        throw new UnsupportedOperationException("Daily unavailable periods are not implemented yet.");
+        Objects.requireNonNull(state, "state");
+        Objects.requireNonNull(firstDate, "firstDate");
+        Objects.requireNonNull(lastDate, "lastDate");
+        Objects.requireNonNull(start, "start");
+        Objects.requireNonNull(end, "end");
+        LOGGER.fine("Starting daily unavailable addition");
+        try {
+            String normalized = InputRules.normalizeName(name);
+            requireSupportedYear(firstDate);
+            requireSupportedYear(lastDate);
+            requireAligned(start);
+            requireAligned(end);
+            if (firstDate.isAfter(lastDate)) {
+                throw new ValidationException("Unavailable date range must start on or before its end.");
+            }
+            if (!start.isBefore(end)) {
+                throw new ValidationException("Daily unavailable start must be before end on the same day.");
+            }
+            DailyInterval window = new DailyInterval(start, minuteOfDay(end) - minuteOfDay(start));
+            long count = ChronoUnit.DAYS.between(firstDate, lastDate) + 1;
+            return appendDatedBlocks(state, normalized, firstDate, count, date -> window);
+        } catch (ValidationException exception) {
+            LOGGER.fine("Unavailable addition rejected; source snapshot unchanged");
+            throw exception;
+        }
     }
-    // @@author
+
+    /**
+     * Describes the part of one calendar date blocked by an unavailable request.
+     *
+     * @param start inclusive start time on that date
+     * @param minutes positive length ending no later than midnight
+     */
+    private record DailyInterval(LocalTime start, int minutes) {
+    }
+
+    /**
+     * Creates one dated commitment for each of {@code count} consecutive dates and appends them together.
+     * Checks ID capacity before creating any record, and checks each date's overlap against stored
+     * commitments in date order, so the first conflicting date determines the error message.
+     *
+     * @param state immutable source snapshot
+     * @param name normalized shared description
+     * @param firstDate first generated date
+     * @param count number of consecutive dates to block, at least one
+     * @param intervalOn blocked interval for each generated date
+     * @return candidate with all generated commitments appended and the counter advanced by {@code count}
+     * @throws ValidationException if too few IDs remain or any generated commitment overlaps
+     */
+    private Snapshot appendDatedBlocks(Snapshot state, String name, LocalDate firstDate, long count,
+            Function<LocalDate, DailyInterval> intervalOn) {
+        assert count >= 1 : "A validated unavailable request must cover at least one date";
+        // The final assignable ID is MAX_VALUE - 1 because the counter itself must still fit in an int.
+        if (count > (long) Integer.MAX_VALUE - state.nextCommitmentId()) {
+            throw new ValidationException("Commitment IDs are exhausted.");
+        }
+        List<Commitment> commitments = new ArrayList<>(state.commitments());
+        int nextId = state.nextCommitmentId();
+        LocalDate date = firstDate;
+        for (long index = 0; index < count; index++) {
+            if (index > 0) {
+                // Stepping only between generated dates never moves past the last supported date.
+                date = date.plusDays(1);
+            }
+            DailyInterval interval = intervalOn.apply(date);
+            Commitment block = new Commitment(nextId++, name, date.getDayOfWeek(), interval.start(),
+                    interval.minutes(), date, date);
+            rejectOverlaps(block, state.commitments());
+            commitments.add(block);
+        }
+        LOGGER.fine("Unavailable segments validated; creating addition candidate");
+        Snapshot candidate = state.withCommitments(commitments, nextId);
+        assert candidate.commitments().size() == state.commitments().size() + count
+                && candidate.tasks().equals(state.tasks()) && candidate.nextTaskId() == state.nextTaskId()
+                && candidate.studyHours().equals(state.studyHours())
+                : "Unavailable addition must append only the generated commitments";
+        LOGGER.fine("Unavailable addition candidate created; not yet saved or published");
+        return candidate;
+    }
+
+    /**
+     * Rejects dates outside the four-digit years supported by commands and saved data.
+     */
+    private static void requireSupportedYear(LocalDate date) {
+        if (date.getYear() < 1 || date.getYear() > MAX_SUPPORTED_YEAR) {
+            throw new ValidationException("Commitment dates must use years 0001 to 9999.");
+        }
+    }
+
+    /**
+     * Requires a whole half-hour boundary, including zero seconds and nanoseconds from Java callers.
+     */
+    private static void requireAligned(LocalTime time) {
+        if (time.getSecond() != 0 || time.getNano() != 0 || time.getMinute() % TimeRules.SLOT_MINUTES != 0) {
+            throw new ValidationException("Unavailable times must be on half-hour boundaries.");
+        }
+    }
+
+    /**
+     * Converts a validated time to minutes after midnight.
+     */
+    private static int minuteOfDay(LocalTime time) {
+        return time.getHour() * MINUTES_PER_HOUR + time.getMinute();
+    }
+    //@@author
 
     //@@author Darren50
     /**
