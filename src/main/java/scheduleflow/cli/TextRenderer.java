@@ -53,7 +53,7 @@ public final class TextRenderer {
     /**
      * Reserves the confirmation for recorded task progress.
      *
-     * @param task persisted task after progress
+     * @param task validated candidate task after progress, before persistence
      * @param creditedMinutes whole minutes credited, including percentage rounding
      * @return confirmation text once Printing implements this method
      * @throws UnsupportedOperationException until Printing supplies the response
@@ -118,9 +118,55 @@ public final class TextRenderer {
     public String taskAdded(Task task) {
         Objects.requireNonNull(task, "task");
         LOGGER.log(Level.FINE, "Formatting task addition response");
-        return finish("Added " + task.displayId() + ": " + task.name() + "\nDue: " + DATE_TIME.format(task.deadline())
+        // @@author nickpatt
+        return finish("Added " + task.displayId() + ": " + task.name() + "\nDue: "
+                + task.deadline().map(DATE_TIME::format).orElse("No deadline")
                 + " | Duration: " + task.remainingMinutes() + " min");
+        // @@author ka-how
     }
+
+    // @@author nickpatt
+    /**
+     * Reserves formatting of a successfully saved task edit; not implemented or connected to the CLI.
+     * The planned response will use the stored ID, name, deadline and estimate without mutation or I/O.
+     *
+     * @param task successfully saved edited task
+     * @return planned edit confirmation without a trailing newline
+     * @throws UnsupportedOperationException always, until task edit rendering is implemented
+     */
+    public String taskEdited(Task task) {
+        // TODO(Tasks): implement TextRenderer.taskEdited
+        throw new UnsupportedOperationException("Task edit rendering is not implemented yet.");
+    }
+
+    /**
+     * Reserves an unwired completion confirmation.
+     * @throws UnsupportedOperationException always, pending Task rendering
+     */
+    public String taskCompleted(Task task) {
+        // TODO(Tasks): implement TextRenderer.taskCompleted
+        throw new UnsupportedOperationException("Task completion rendering is not implemented yet.");
+    }
+
+    /**
+     * Reserves an unwired reopening confirmation.
+     * @throws UnsupportedOperationException always, pending Task rendering
+     */
+    public String taskReopened(Task task) {
+        // TODO(Tasks): implement TextRenderer.taskReopened
+        throw new UnsupportedOperationException("Task reopening rendering is not implemented yet.");
+    }
+
+    /**
+     * Reserves an unwired revised-estimate confirmation.
+     * @throws UnsupportedOperationException always, pending Task rendering
+     */
+    public String taskRemainingUpdated(Task task) {
+        // TODO(Tasks): implement TextRenderer.taskRemainingUpdated
+        throw new UnsupportedOperationException("Task remaining-work rendering is not implemented yet.");
+    }
+    // @@author
+    // @@author ka-how
 
     /**
      * Formats the removed task.
@@ -151,8 +197,10 @@ public final class TextRenderer {
         StringJoiner lines = new StringJoiner("\n");
         lines.add("=== Actionable Tasks ===").add("ID | Name | Duration | Deadline");
         for (Task task : tasks) {
+            // @@author nickpatt
             lines.add(task.displayId() + " | " + task.name() + " | " + task.remainingMinutes()
-                    + " min | " + DATE_TIME.format(task.deadline()));
+                    + " min | " + task.deadline().map(DATE_TIME::format).orElse("No deadline"));
+            // @@author ka-how
         }
         return finish(lines.add("Total: " + tasks.size() + " task(s).").toString());
     }
@@ -250,7 +298,9 @@ public final class TextRenderer {
         if (plan.isComplete()) {
             return finish("Study plan generated successfully! Type 'schedule today' to view your sessions.");
         }
-        long scheduled = plan.sessions().stream().mapToLong(StudySession::minutes).sum();
+        // @@author nickpatt
+        long scheduled = plan.sessions().stream().mapToLong(StudySession::workMinutes).sum();
+        // @@author ka-how
         long unallocated = plan.unallocated().stream().mapToLong(UnallocatedWork::minutes).sum();
         StringJoiner lines = new StringJoiner("\n");
         lines.add("Study plan generated with unallocated work.");
@@ -381,10 +431,15 @@ public final class TextRenderer {
             String reason = switch (work.reason()) {
                 case DEADLINE_PASSED -> "deadline passed";
                 case OUTSIDE_HORIZON -> "outside planning horizon";
-                case INSUFFICIENT_CAPACITY -> "insufficient time before deadline";
+                // @@author nickpatt
+                case INSUFFICIENT_CAPACITY -> work.deadline().isEmpty()
+                        ? "insufficient available study time" : "insufficient time before deadline";
+                        // @@author ka-how
             };
+            // @@author nickpatt
             lines.add("T" + work.taskId() + ": " + work.taskName() + " | Unallocated: " + work.minutes()
-                    + " min | Reason: " + reason);
+                    + " min | Reason: " + reason + (work.deadline().isEmpty() ? " | No deadline" : ""));
+            // @@author ka-how
         }
     }
 

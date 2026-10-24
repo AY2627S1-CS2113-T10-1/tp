@@ -9,15 +9,18 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import scheduleflow.common.InputRules;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.StudyHours;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskPriority;
 
 /**
  * Converts snapshots to and from the versioned text format without accessing saved files.
@@ -30,7 +33,7 @@ public final class StateCodec {
     private static final Logger LOGGER = Logger.getLogger(StateCodec.class.getName());
 
     /**
-     * Identifies the legacy format used when no custom study hours are present.
+     * Identifies the readable legacy format, which supplies default study hours and task priorities.
      */
     private static final String HEADER = "SCHEDULEFLOW|1";
     // @@author
@@ -43,7 +46,7 @@ public final class StateCodec {
 
     // @@author ernestgoh-god
     /**
-     * Encodes a complete snapshot, using version 2 when custom study hours are present.
+     * Encodes a complete snapshot as version 2, retaining the existing study-hours rows.
      * Stores names last so names containing pipes do not need escaping.
      *
      * @param state validated immutable snapshot to encode in its existing list order
@@ -53,12 +56,17 @@ public final class StateCodec {
     public String encode(Snapshot state) {
         Objects.requireNonNull(state, "state");
         LOGGER.log(Level.FINE, "Starting snapshot encoding");
-        StringBuilder text = new StringBuilder(state.studyHours().windows().isEmpty()
-                ? HEADER : "SCHEDULEFLOW|2").append('\n');
+        // @@author nickpatt
+        StringBuilder text = new StringBuilder("SCHEDULEFLOW|2").append('\n');
+        // @@author ernestgoh-god
         text.append("NEXT|").append(state.nextTaskId()).append('|').append(state.nextCommitmentId()).append('\n');
         for (Task task : state.tasks()) {
-            text.append("TASK|").append(task.id()).append('|').append(task.deadline()).append('|')
-                    .append(task.remainingMinutes()).append('|').append(task.name()).append('\n');
+            // @@author nickpatt
+            text.append("TASK2|").append(task.id()).append('|')
+                    .append(task.deadline().map(LocalDateTime::toString).orElse("NONE")).append('|')
+                    .append(task.remainingMinutes()).append('|').append(task.priority()).append('|')
+                    .append(task.name()).append('\n');
+            // @@author ernestgoh-god
         }
         for (Commitment commitment : state.commitments()) {
             text.append("COMMITMENT|").append(commitment.id()).append('|').append(commitment.day()).append('|')
@@ -104,6 +112,13 @@ public final class StateCodec {
                 String line = lines.get(i);
                 if (lines.getFirst().equals("SCHEDULEFLOW|2") && line.startsWith("HOURS|")) {
                     decodeHours(line, windows);
+                } else if (lines.getFirst().equals("SCHEDULEFLOW|2") && line.startsWith("TASK2|")) {
+                    // @@author nickpatt
+                    String[] fields = splitFields(line, 6);
+                    tasks.add(new Task(Integer.parseInt(fields[1]), fields[5], fields[2].equals("NONE")
+                            ? Optional.empty() : Optional.of(LocalDateTime.parse(fields[2])),
+                            Integer.parseInt(fields[3]), TaskPriority.valueOf(fields[4])));
+                    // @@author ernestgoh-god
                 } else {
                     decodeRecord(line, tasks, commitments);
                 }
@@ -151,6 +166,10 @@ public final class StateCodec {
     private void decodeRecord(String line, List<Task> tasks, List<Commitment> commitments) throws StorageException {
         if (line.startsWith("TASK|")) {
             String[] fields = splitFields(line, 5);
+            // @@author nickpatt
+            // Legacy TASK rows retain their original positive half-hour contract, including old v2 hours files.
+            InputRules.requireDuration(Integer.parseInt(fields[3]));
+            // @@author ernestgoh-god
             tasks.add(new Task(Integer.parseInt(fields[1]), fields[4],
                     LocalDateTime.parse(fields[2]), Integer.parseInt(fields[3])));
         } else if (line.startsWith("COMMITMENT|")) {

@@ -7,11 +7,13 @@ import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskPriority;
 
 // @@author ernestgoh-god
 /**
@@ -48,7 +50,7 @@ class StateCodecTest {
 
     @Test
     void encode_emptySnapshot_writesHeaderAndCounters() {
-        assertEquals("SCHEDULEFLOW|1\nNEXT|1|1\n", codec.encode(Snapshot.empty()));
+        assertEquals("SCHEDULEFLOW|2\nNEXT|1|1\n", codec.encode(Snapshot.empty()));
     }
 
     @Test
@@ -56,7 +58,7 @@ class StateCodecTest {
         Snapshot snapshot = new Snapshot(
                 List.of(new Task(3, "复习 | café", LocalDateTime.of(2000, 1, 2, 9, 0), 60)),
                 List.of(new Commitment(2, "Class", DayOfWeek.MONDAY, LocalTime.of(10, 30), 90)), 8, 5);
-        String text = "SCHEDULEFLOW|1\nNEXT|8|5\nTASK|3|2000-01-02T09:00|60|复习 | café\n"
+        String text = "SCHEDULEFLOW|2\nNEXT|8|5\nTASK2|3|2000-01-02T09:00|60|NORMAL|复习 | café\n"
                 + "COMMITMENT|2|MONDAY|10:30|90|Class\n";
         assertEquals(text, codec.encode(snapshot));
         assertEquals(snapshot, codec.decode(text));
@@ -92,6 +94,58 @@ class StateCodecTest {
             assertThrows(StorageException.class, () -> codec.decode("SCHEDULEFLOW|1\nNEXT|3|3\n" + record));
         }
     }
+
+    // @@author nickpatt
+    @Test
+    void decode_legacyVersions_preservesValuesDefaultsAndPipes() throws StorageException {
+        for (int version : new int[] {1, 2}) {
+            String legacy = "SCHEDULEFLOW|" + version + "\nNEXT|8|5\n"
+                    + "TASK|3|2000-01-02T09:00|60|Read|NORMAL|literal\n"
+                    + "COMMITMENT|2|MONDAY|10:30|90|Class\n";
+            Snapshot decoded = codec.decode(legacy);
+            assertEquals(List.of(new Task(3, "Read|NORMAL|literal", LocalDateTime.of(2000, 1, 2, 9, 0), 60)),
+                    decoded.tasks());
+            assertEquals(Snapshot.empty().studyHours(), decoded.studyHours());
+            assertEquals(decoded, codec.decode(codec.encode(decoded)));
+        }
+        Snapshot oldHours = codec.decode("SCHEDULEFLOW|2\nNEXT|2|1\nTASK|1|2000-01-02T09:00|30|Old\n"
+                + "HOURS|monday|09:00|10:00\n");
+        assertEquals(new StudyWindow(LocalTime.of(9, 0), LocalTime.of(10, 0)),
+                oldHours.studyHours().forTarget("monday"));
+        assertEquals(oldHours, codec.decode(codec.encode(oldHours)));
+    }
+
+    @Test
+    void encodeAndDecode_extendedTasks_roundTripsExactStateAndHours() throws StorageException {
+        Snapshot state = new Snapshot(List.of(Task.withoutDeadline(3, "Complete|kept", 0),
+                new Task(1, "Minute", Optional.of(LocalDateTime.of(2000, 1, 2, 9, 0)), 1, TaskPriority.HIGH),
+                new Task(2, "Large", Optional.empty(), Integer.MAX_VALUE, TaskPriority.LOW)),
+                List.of(), Integer.MAX_VALUE, 7);
+        state = state.withStudyHours(state.studyHours().withWindow("monday",
+                new StudyWindow(LocalTime.of(9, 0), LocalTime.of(10, 0))));
+        assertEquals("SCHEDULEFLOW|2\nNEXT|2147483647|7\nTASK2|3|NONE|0|NORMAL|Complete|kept\n"
+                + "TASK2|1|2000-01-02T09:00|1|HIGH|Minute\nTASK2|2|NONE|2147483647|LOW|Large\n"
+                + "HOURS|monday|09:00|10:00\n", codec.encode(state));
+        assertEquals(state, codec.decode(codec.encode(state)));
+    }
+
+    @Test
+    void decode_corruptExtendedTasks_rejectsWholeState() {
+        for (String row : List.of("TASK2|1|NONE|-1|NORMAL|A", "TASK2|1|NONE|2147483648|NORMAL|A",
+                "TASK2|1|NONE|0|UNKNOWN|A", "TASK2|1|NONE|0||A", "TASK2|1|NONE|0|NORMAL|",
+                "TASK2|1|NONE|1|NORMAL", "TASK2|1|null|1|NORMAL|A", "TASK2|1||1|NORMAL|A",
+                "TASK2|1|2000-02-30T09:00|1|NORMAL|A", "TASK2|1|2000-01-02T09:00:01|1|NORMAL|A",
+                "TASK2|1|0000-01-02T09:00|1|NORMAL|A", "TASK2|3|NONE|1|NORMAL|A",
+                "TASK2|1|NONE|1|NORMAL|Bad/name")) {
+            assertThrows(StorageException.class,
+                    () -> codec.decode("SCHEDULEFLOW|2\nNEXT|3|1\n" + row), row);
+        }
+        assertThrows(StorageException.class,
+                () -> codec.decode("SCHEDULEFLOW|1\nNEXT|2|1\nTASK2|1|NONE|0|NORMAL|A"));
+        assertThrows(StorageException.class,
+                () -> codec.decode("SCHEDULEFLOW|2\nNEXT|2|1\nTASK|1|2000-01-01T09:00|0|A"));
+    }
+    // @@author ernestgoh-god
 
     @Test
     void decode_duplicateIdsBadCountersOrOverlaps_rejects() {

@@ -203,7 +203,7 @@ class CommandDispatcherTest {
         CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
         List<Command> invalid = List.of(new Command.AddTask("Past", NOW, 30),
                 new Command.AddTask("Too late", TimeRules.horizonEnd(NOW).plusMinutes(1), 30),
-                new Command.AddTask("Bad duration", NOW.plusDays(1), 45),
+                new Command.AddTask("Bad duration", NOW.plusDays(1), 0),
                 new Command.AddCommitment("Unaligned", DayOfWeek.MONDAY, LocalTime.of(10, 15), 30),
                 new Command.AddCommitment("Overlap", DayOfWeek.MONDAY, LocalTime.of(10, 30), 30),
                 new Command.AddCommitment("Too long", DayOfWeek.MONDAY, LocalTime.of(23, 30), 60),
@@ -247,7 +247,7 @@ class CommandDispatcherTest {
         FakeStorage storage = new FakeStorage(state.snapshot());
         Command.AddTask command = new Command.AddTask("Boundary", TimeRules.horizonEnd(NOW), 30);
         dispatcher(storage, CLOCK).execute(command, state);
-        assertEquals(command.deadline(), state.snapshot().tasks().getFirst().deadline());
+        assertEquals(command.deadline(), state.snapshot().tasks().getFirst().deadline().orElseThrow());
     }
 
     @Test
@@ -386,7 +386,7 @@ class CommandDispatcherTest {
     @Test
     void execute_loadedTasks_preservesNumericIdsAndReportsPastAndOutsideHorizon() throws Exception {
         Task ten = new Task(10, "Ten", NOW.plusDays(1), 30);
-        Task two = new Task(2, "Two", ten.deadline(), 30);
+        Task two = new Task(2, "Two", ten.deadline().orElseThrow(), 30);
         Task overdue = new Task(1, "Overdue", NOW.minusDays(1), 60);
         Task outside = new Task(11, "Outside", TimeRules.horizonEnd(NOW).plusDays(1), 90);
         Snapshot snapshot = new Snapshot(List.of(ten, two, overdue, outside), List.of(), 12, 1);
@@ -401,6 +401,46 @@ class CommandDispatcherTest {
         assertTrue(tasks.indexOf("T2 |") < tasks.indexOf("T10 |"));
         assertSame(snapshot, state.snapshot());
     }
+
+    // @@author ernestgoh-god
+    @Test
+    void execute_progressCommands_awaitPrintingWithoutSavingOrInvalidatingPlan() throws Exception {
+        Snapshot original = populatedSnapshot();
+        AppState state = new AppState(original);
+        Plan plan = new EarliestDeadlinePlanner().generate(original, NOW);
+        state.replacePlan(plan);
+        FakeStorage storage = new FakeStorage(original);
+        CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
+        CommandParser parser = new CommandParser();
+        for (String input : List.of("task progress T2 done/15", "task progress T2 done/30",
+                "task progress T2 session/60 percent/50", "task progress T2 session/1 percent/1")) {
+            ValidationException failure = assertThrows(ValidationException.class,
+                    () -> dispatcher.execute(parser.parse(input), state));
+            assertEquals("Task progress is awaiting printing.", failure.getMessage());
+            assertSame(original, state.snapshot());
+            assertSame(original, storage.saved);
+            assertSame(plan, state.currentPlan().orElseThrow());
+            assertEquals(0, storage.saveCalls);
+        }
+    }
+
+    @Test
+    void execute_invalidProgress_rejectsBeforeSavingOrChangingLiveState() {
+        Snapshot original = populatedSnapshot();
+        AppState state = new AppState(original);
+        Plan plan = new EarliestDeadlinePlanner().generate(original, NOW);
+        state.replacePlan(plan);
+        FakeStorage storage = new FakeStorage(original);
+        CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
+        for (Command command : List.of(new Command.RecordTaskWork(99, 1),
+                new Command.RecordTaskWork(2, 31), new Command.RecordTaskSession(2, 60, 100))) {
+            assertThrows(ValidationException.class, () -> dispatcher.execute(command, state));
+            assertSame(original, state.snapshot());
+            assertSame(plan, state.currentPlan().orElseThrow());
+            assertEquals(0, storage.saveCalls);
+        }
+    }
+    // @@author ka-how
 
     //@@author Darren50
     @Test
