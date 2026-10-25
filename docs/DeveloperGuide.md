@@ -605,8 +605,8 @@ commands, generation and persistence. PR #84 is merged: exact work, optional
 deadlines, stored priorities and domain completion/reopening coexist with
 recurrence in the unified model and v5 codec. Issue #40 console progress is
 connected through the existing parser and dispatcher with its implemented
-Printing confirmation. Reopening commands and deadline
-clearing, undated addition, priority operations and search are not wired console
+Printing confirmation. Issue #56 connects reopening through `task reopen`.
+Deadline clearing, undated addition, priority operations and search are not wired console
 features. Do not restore throwing Task edit/recurrence renderers or discard the
 existing commitment/hours formats.
 
@@ -657,17 +657,16 @@ no-ops preserve the snapshot and plan. Negative renderer credit is programmer
 misuse and raises `IllegalArgumentException`; task validation stays in TaskService.
 `taskCompleted(Task)` prints `Completed TNUMBER: NAME` and `taskReopened(Task)`
 prints `Reopened TNUMBER: NAME | Remaining: N min` for validated lifecycle
-results. The completion formatter is connected to `task complete`; the reopening
-formatter remains an internal API for the separate #56 command.
+results. The completion and reopening formatters are connected to `task complete`
+and `task reopen` respectively.
 `taskEdited(Task)` is wired for issue #39's concrete-deadline/name edits.
 `taskRemainingUpdated(Task)` formats issue #41's active remaining-time command.
-Weekly recurrence commands and completion are implemented; reopening remains
-unavailable at the console.
+Weekly recurrence commands, completion and reopening are implemented at the console.
 Existing renderer compatibility changes only display `No deadline` in add/list
 output and undated remainder rows, use an undated capacity-shortfall reason, and
 sum exact session work in plan summaries. Existing schedule interval durations
 still show reserved wall-clock capacity, not exact credited work; slot-aligned
-output remains unchanged. No separate completion/status list is implemented.
+output remains unchanged. `task list completed` provides the completed-only view.
 
 Deterministic JUnit covers progress boundaries, overflow-safe floor arithmetic,
 all identity no-ops, invalid/unknown/null inputs, completion/reopening, metadata,
@@ -680,7 +679,8 @@ and partial credit, completion, maximum credit, Unicode, null inputs and framing
 Dispatcher tests cover successful progress publication, exact rounded credit,
 replanning, no-ops, save failure and retry. UI-030 verifies both progress forms,
 invalid requests, plan invalidation and retained completion across two restarts.
-Completion is connected through `task complete`; reopening remains deferred under #56.
+Completion is connected through `task complete`; reopening is connected through
+`task reopen` with the transaction and acceptance coverage described below.
 
 ### Completion and completed-task view (issues #52 and #65)
 
@@ -698,7 +698,37 @@ Nickhil's completion model/service and Ka How's completion formatter retain thei
 authorship. Scoped Ernest tags cover the new parser, wiring and completed view.
 JUnit covers grammar boundaries, exact list text, save ordering, failed retries,
 plan exclusion and no-ops. UI-033 covers completion, validation and saved restart.
-Issue #56 reopening remains separate; no reopening command is introduced here.
+Issue #56 adds the separate reopening command described below.
+
+### Reopening completed tasks (issue #56)
+
+`Command.ReopenTask(id, remainingMinutes)` transports
+`task reopen TNUMBER remaining/MINUTES`. The parser requires positive decimal
+32-bit integer tokens with no signs or leading zeroes, matches the full input
+and reports that command's usage for malformed fields or overflow. It does not
+inspect task state. `TaskService.reopen` already implements the domain behavior:
+only completed tasks accept an explicit positive estimate, because completion
+retains zero work rather than a previous estimate to restore.
+
+The dispatcher uses that existing service and `TextRenderer.taskReopened` without
+changing their signatures or the storage format. It prepares the confirmation,
+saves the candidate once, then publishes it and invalidates the current plan.
+Validation or save failure preserves the original snapshot, counters and saved
+and live plans. Reopening preserves the task's stored position, name, priority,
+optional deadline and occurrence provenance, as well as unrelated records,
+templates, cursors, settings and all counters, including exhausted counters.
+Overdue and undated completed records can be reopened without inventing a deadline.
+The next `plan` includes the restored work under the existing allocation rules;
+overdue work remains unallocated. The completed-only view excludes reopened tasks.
+
+Parser JUnit tests cover spacing, exact minutes, integer boundaries, malformed
+fields, case, overflow and usage hints. Dispatcher tests cover save-before-publication,
+failed-save rollback and retry, rejection without saving, metadata preservation,
+boundary estimates, completed-view exclusion and fixed-clock replanning of
+45 work minutes into 60 minutes of capacity. Existing lifecycle and renderer
+tests remain applicable. UI-034 checks exact packaged responses, rejected requests
+preserving a frozen plan, successful invalidation, overdue planning totals,
+progress after reopening and two saved restarts with isolated data.
 
 ### Basic saving and loading
 

@@ -19,6 +19,7 @@ Study hours default to **08:00–22:00 every day**, including weekends. You can 
   - [Adding a task](#adding-a-task)
   - [Recording progress](#recording-progress)
   - [Completing and viewing completed tasks](#completing-and-viewing-completed-tasks)
+  - [Reopening a completed task](#reopening-a-completed-task)
   - [Editing a task](#editing-a-task)
   - [Weekly recurring tasks](#weekly-recurring-tasks)
   - [Listing tasks](#listing-tasks)
@@ -121,8 +122,9 @@ Examples below are independent unless a sequence is explicitly described. Use ex
 Task addition, editing, deletion and weekly recurring templates are available at
 the console. You can revise a task's remaining-work estimate with `task remaining`.
 You can record completed work with either form of `task progress`, mark a task
-complete with `task complete`, and view completed records with `task list completed`.
-Deadline clearing, reopening and adding without a deadline are implemented as
+complete with `task complete`, reopen it with `task reopen`, and view completed
+records with `task list completed`.
+Deadline clearing and adding without a deadline are implemented as
 internal Java service APIs, but have no console commands.
 Console addition still requires a deadline, and editing accepts only a name and/or
 concrete deadline. Progress saves changed estimates and retains a completed
@@ -131,7 +133,7 @@ record when its remaining work reaches zero.
 The domain retains completed records with zero remaining, preserves IDs and
 requires positive work to reopen them. Session percentage progress credits the
 floor of session minutes times percentage / 100; no timer subtracts work.
-Explicit reopening is not yet available from the console. Loaded undated tasks
+Use `task reopen TNUMBER remaining/MINUTES` to restore unfinished work. Loaded undated tasks
 display `No deadline`; loaded completed tasks remain listed with `0 min` and
 receive no planning sessions or unallocated rows. The completed-only list is
 available through `task list completed`; priority commands remain unavailable.
@@ -201,8 +203,8 @@ plan. Unknown IDs, overreported work, invalid input and failed saves preserve
 the existing data and plan. Saved progress survives restarting.
 
 Crediting all remaining work retains the task with `0 min`; further progress
-is rejected until it is reopened through the Java API. There is no console
-reopening command yet. Progress also works on generated recurring-task
+is rejected until it is reopened with `task reopen TNUMBER remaining/MINUTES`.
+Progress also works on generated recurring-task
 occurrences without changing their template or original release date.
 
 ### Adding a task
@@ -332,7 +334,7 @@ daily/monthly recurrence are not supported.
 Generated tasks use the same exact remaining-work and lifecycle model as ordinary
 tasks. Their estimates can be revised with `task remaining`, and completed work
 can be recorded with `task progress`; both preserve their provenance. Explicit
-completion is available through `task complete`; reopening remains an internal Java API.
+completion and reopening are available through `task complete` and `task reopen`.
 
 ### Completing and viewing completed tasks
 
@@ -355,8 +357,36 @@ Total: 1 task(s).
 `task list completed` shows only completed tasks, sorted by numeric ID. It prints
 `No completed tasks found.` when empty. `task list` continues to show all stored
 tasks. Both lists preserve data and the current plan. Names, deadlines, priorities
-and recurring-task provenance survive completion and restart. Reopening a task
-is tracked separately in issue #56 and has no console command yet.
+and recurring-task provenance survive completion and restart.
+
+### Reopening a completed task
+
+```text
+task reopen TNUMBER remaining/MINUTES
+```
+
+If you marked a task complete by mistake, reopen it with an explicit estimate
+of the work still needed. Use a positive whole number of minutes, including
+`1` or `45`, without signs or leading zeroes. Completion stores zero minutes,
+so reopening does not guess or restore an earlier estimate.
+
+```text
+scheduleflow> task reopen T1 remaining/45
+Reopened T1: CS2113 draft | Remaining: 45 min
+```
+
+Only an existing completed task can be reopened, whether completed through
+`task complete` or `task progress`. Its ID, name, deadline, priority and any
+recurring-task provenance are preserved. Reopening also works on loaded tasks
+with overdue or absent deadlines; it does not change their deadlines or templates.
+
+The change saves automatically and clears the current plan. Run `plan` again
+to account for the restored work; an overdue task's work is reported as
+unallocated until its deadline is revised. The reopened task no longer appears
+in `task list completed`, and its remaining estimate survives restarting.
+Unknown IDs, active tasks, invalid estimates and failed saves preserve the
+existing records and plan. To change an active task's estimate instead, use
+`task remaining TNUMBER remaining/MINUTES`.
 
 ### Deleting a task
 
@@ -971,13 +1001,15 @@ Delete completed tasks using `task delete TNUMBER`. Correct commitments with
 `commitment edit CNUMBER` and one or more fields; the ID is preserved. To correct
 a task's name or deadline, use `task edit TNUMBER` with `n/` and/or `due/`;
 the ID is preserved. Record completed work with `task progress`; crediting all
-remaining minutes retains the task at zero. Use `task complete` to mark a task complete directly. A reopening command is not supported yet. Use `task remaining` to correct an estimate
+remaining minutes retains the task at zero. Use `task complete` to mark a task
+complete directly, or `task reopen TNUMBER remaining/MINUTES` to undo completion
+with a positive remaining estimate. Use `task remaining` to correct an active task's estimate
 without recording completed work.
 
 ### Why did my schedule disappear?
 
 A successful task or commitment addition, deletion, task edit, template change,
-progress update, remaining-work revision, commitment edit or
+progress update, completion, reopening, remaining-work revision, commitment edit or
 occurrence skip, a study-hours set or reset, or a changed study policy clears the current plan. Plans
 remain available after restarting until a successful change invalidates them.
 Run `plan` to generate another one.
@@ -1024,6 +1056,7 @@ these storage logs do not include your task names or saved file contents.
 | View study policy | `policy show` |
 | Reset study policy | `policy reset` |
 | Complete a task | `task complete TNUMBER` |
+| Reopen a completed task | `task reopen TNUMBER remaining/MINUTES` |
 | View completed tasks | `task list completed` |
 | Record completed minutes | `task progress TNUMBER done/MINUTES` |
 | Record session progress | `task progress TNUMBER session/MINUTES percent/PERCENT` |

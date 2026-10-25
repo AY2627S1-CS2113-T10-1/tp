@@ -29,6 +29,7 @@ public final class CommandParser {
     private static final String HELP_USAGE = "Type help to see available commands";
     private static final String TASK_ADD_USAGE = "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES";
     private static final String TASK_DELETE_USAGE = "task delete TNUMBER";
+    private static final String TASK_REOPEN_USAGE = "task reopen TNUMBER remaining/MINUTES";
     // @@author ernestgoh-god
     private static final String TASK_LIST_USAGE = "task list OR task list completed";
     private static final String TASK_COMPLETE_USAGE = "task complete TNUMBER";
@@ -114,6 +115,9 @@ public final class CommandParser {
                     + DATE_RANGE_PATTERN);
     private static final Pattern TASK_DELETE_PATTERN = Pattern.compile(
             "task +delete +T(?<id>" + POSITIVE_INT_TOKEN + ")");
+    private static final Pattern TASK_REOPEN_PATTERN = Pattern.compile(
+            "task +reopen +T(?<id>" + POSITIVE_INT_TOKEN + ") +remaining/(?<minutes>"
+                    + POSITIVE_INT_TOKEN + ")");
     // @@author ernestgoh-god
     private static final Pattern TASK_COMPLETE_PATTERN = Pattern.compile(
             "task +complete +T(?<id>" + POSITIVE_INT_TOKEN + ")");
@@ -265,6 +269,7 @@ public final class CommandParser {
             Command result = switch (command) {
                 case "help" -> parseNoArguments(input, command, new Command.Help());
                 case "task add" -> parseAddTask(input);
+                case "task reopen" -> parseReopenTask(input);
                 // @@author ernestgoh-god
                 case "task list" -> parseTaskList(input);
                 case "task complete" -> new Command.CompleteTask(Integer.parseInt(
@@ -329,6 +334,7 @@ public final class CommandParser {
         return switch (command) {
             case "task add" -> TASK_ADD_USAGE;
             case "task delete" -> TASK_DELETE_USAGE;
+            case "task reopen" -> TASK_REOPEN_USAGE;
             // @@author ernestgoh-god
             case "task list" -> TASK_LIST_USAGE;
             case "task complete" -> TASK_COMPLETE_USAGE;
@@ -442,6 +448,13 @@ public final class CommandParser {
                 Integer.parseInt(fields.group("minutes")), Optional.ofNullable(until));
     }
     // @@author ka-how
+
+    /** Parses reopening without checking task existence or completion; those rules belong to TaskService. */
+    private Command.ReopenTask parseReopenTask(String input) throws ParseException {
+        Matcher fields = match(TASK_REOPEN_PATTERN, input, TASK_REOPEN_USAGE);
+        return new Command.ReopenTask(Integer.parseInt(fields.group("id")),
+                Integer.parseInt(fields.group("minutes")));
+    }
 
     // @@author ernestgoh-god
     /** Parses either progress form without applying task-state validation. */

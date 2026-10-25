@@ -13,7 +13,7 @@ exact output, invalid values, plan invalidation, replanning and saved data after
 two restarts. Save failure is covered by an isolated dispatcher fake because
 process-level fault injection is unavailable.
 
-All twenty-seven maintained process scenarios are active. They exercise the packaged
+All twenty-eight maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -113,8 +113,7 @@ completion and reopening APIs have deterministic JUnit coverage. The two progres
 forms have exact renderer output, dispatcher transaction tests and UI-030
 acceptance. Changed candidates save once before live publication; zero-credit
 no-ops preserve the plan without saving. Completion is connected and exercised
-by UI-033; reopening confirmations are unit-tested but the #56 command remains
-deferred.
+by UI-033; reopening is connected through `task reopen` and exercised by UI-034.
 
 Compatibility checks cover optional deadlines in existing add/list/remainder
 output, exact plan work totals (not rounded capacity), 45-minute work versus
@@ -143,6 +142,7 @@ optional/completed restored-data compatibility case and exact-minute restart che
 | UI-031 | Saved version 6 schedule survives restart and is invalidated by task deletion | Active |
 | UI-032 | Saved recurrence and exact work survive restart; progress invalidates the plan | Active |
 | UI-033 | Complete tasks, view only completed records, reject unknown IDs and retain completion across restart | Active |
+| UI-034 | Reopen completed tasks with exact estimates, preserve a plan on rejection, invalidate after saving, replan and retain work across two restarts | Active |
 | UI-008 | Truncated saved record stops startup with status 1 | Active |
 | UI-009 | Restored overdue/out-of-horizon tasks, numeric listing, deletion and restart | Active |
 | UI-010 | Exhausted task and commitment ID sequences reject additions without overflow | Active |
@@ -255,7 +255,8 @@ Progress grammar, candidate transactions, exact work and Printing output are
 implemented. UI-030 uses a restored overdue task to avoid live-date assumptions.
 It verifies direct credit, floor rounding for a session, zero credit, rejection
 of excess credit and unknown IDs, invalidation after changes and persisted
-partial/completed estimates. Completion is connected through `task complete`; reopening (#56) remains unwired.
+partial/completed estimates. Completion is connected through `task complete`;
+reopening (#56) is connected through `task reopen` and covered by UI-034.
 Save failure and unchanged-plan identity are checked with fixed-clock dispatcher
 JUnit tests rather than process fault injection.
 
@@ -321,3 +322,18 @@ rejects an unknown completion ID, completes the task, lists it, regenerates an
 empty plan and repeats completion. Restart retains the zero-work record.
 Deterministic dispatcher tests verify the no-op preserves plan identity and
 injected save failure preserves the old disk/source/plan before retry.
+
+## Issue #56 console acceptance
+
+UI-034 restores a completed overdue task and a fixed version 6 plan. It rejects
+an unknown ID, missing and zero estimates, and overflow, then verifies the
+original schedule remains accessible. Reopening with 45 minutes clears that
+plan and removes the task from the completed-only view; reopening an active
+task is rejected. A restart retains the exact estimate and absent plan.
+Replanning reports the restored overdue work, then progress credits it back to
+completion and reopening with one minute persists through another restart.
+Fixed-clock dispatcher JUnit tests verify actual eligible allocation, absent and
+overdue deadlines, priority and occurrence preservation, settings, counters,
+save ordering, and failed-save rollback/retry. Existing service and renderer
+tests cover their unchanged lifecycle contracts. Process tests do not inject
+filesystem failures; those remain covered at the storage and dispatcher boundaries.
