@@ -139,8 +139,8 @@ extensions; this branch remains independent of the #55 study-policy feature.
 
 **Status:** transport records, exact planned console fixtures and tests for the
 resulting commitment representation are supplied. The commitment service
-operations (step 1 below) are implemented and unit-tested. Parsing, dispatch
-and the confirmation renderer remain unwired throwing skeletons, so the two
+operations (step 1 below) and the confirmation renderer are implemented and
+unit-tested. Parsing and dispatch remain unwired throwing skeletons, so the two
 range commands are NOT yet usable from the console. The following grammar and
 output are the proposed implementation contract for the team.
 
@@ -222,11 +222,16 @@ avoid arithmetic past year 9999 when stepping dates.
    then publish/invalidate the old plan and format success. Never save or
    publish after validation failure. Save failure retains snapshot, counters,
    current plan and settings; retry starts from the same next ID.
-4. **Ka How (`ka-how`):** implement
-   `TextRenderer.unavailablePeriodsAdded(List<Commitment>)`, using newly added
-   chronological records only. Add the two command formats to help after they
-   work. Existing schedule output continues to show `[BUSY]` and the generated
-   IDs; no new label or allocation logic belongs in Printing.
+4. **Ka How (`ka-how`), renderer implemented:**
+   `TextRenderer.unavailablePeriodsAdded(List<Commitment>)` formats newly added
+   chronological records only. It preserves supplied order and prints the exact
+   singular/plural count, ID/date/time rows, midnight as `24:00` and regeneration
+   guidance. Null lists/elements, empty batches and weekly records are rejected.
+   `TextRendererTest` covers the continuous example, a daily service batch across
+   leap day, unrelated-record exclusion, Unicode and boundary years. Add the two
+   command formats to help after parsing and dispatch work. Existing schedule
+   output continues to show `[BUSY]` and the generated IDs; no new allocation
+   logic belongs in Printing.
 5. **Ernest, saving:** round-trip the whole batch through the existing version 3
    format (or version 4 if other records have skipped dates). No new schema is
    needed. Verify restart, one-save rollback/retry and preservation after task,
@@ -358,9 +363,11 @@ Integration handoff (ownership-marked comments are present at the relevant code)
   the configured planner constructor. Settings changes must save before publication
   and plan invalidation, preserving both settings and plan on failure. The existing
   injected planner remains unchanged until this integration is implemented.
-- **Printing/rendering:** implement the explicit throwing `BREAK` switch branch
-  in `TextRenderer.formatScheduleRow` (proposed row: `09:30 - 10:00 | [BREAK]`).
-  Keep output based on supplied intervals; the renderer must not allocate breaks.
+- **Printing/rendering, implemented:** `TextRenderer.formatScheduleRow` prints
+  supplied break intervals, for example `09:30 - 10:00 | [BREAK]`, without a
+  reference, name or duration suffix. It preserves boundaries and never allocates
+  breaks. Renderer tests exercise a configured planner through projection and
+  formatting, plus adjacent supplied break rows with cutoff notes and remainders.
 - **Save:** coordinate adding settings to `Snapshot`, codec versioning and legacy
   defaults. Ensure task, commitment and hours mutations preserve them. This change
   does not modify the snapshot or saved format; #68 plan persistence is separate.
@@ -371,7 +378,7 @@ pre-window commitments, cutoff rounding, overnight rest, deadline capacity,
 minute conservation, deterministic generation and frozen schedule projection.
 Record tests cover duration validation, anonymous break rows, immutable lists,
 ordering and the original plan constructor. #55 console acceptance remains
-planned until commands, persistence and rendering are integrated; existing
+planned until commands and persistence are integrated; existing
 active process scenarios exercise the no-argument planner.
 
 ### Configurable study hours
@@ -597,8 +604,9 @@ Fixed-clock JUnit tests cover materialization of currently eligible new tasks.
 The #39/#67 path is implemented end to end, including console editing, template
 commands, generation and persistence. PR #84 is merged: exact work, optional
 deadlines, stored priorities and domain completion/reopening coexist with
-recurrence in the unified model and v5 codec. Issue #40 console progress still
-awaits Printing and Ka How's confirmation. Completion/reopening, deadline
+recurrence in the unified model and v5 codec. Issue #40 console progress is
+connected through the existing parser and dispatcher with its implemented
+Printing confirmation. Completion/reopening commands, deadline
 clearing, undated addition, priority operations and search are not wired console
 features. Do not restore throwing Task edit/recurrence renderers or discard the
 existing commitment/hours formats.
@@ -638,15 +646,20 @@ progress even with zero credit, and require explicit reopening before revision.
 Every candidate preserves stored position, priority, optional deadline, occurrence
 provenance, unrelated records, recurrence definitions/cursors, all counters and
 custom study hours. No API saves, publishes, invalidates plans, reads a clock or replans.
-Callers honor no-op identity to avoid unnecessary saves/invalidation when
-Printing makes the progress CLI usable. New lifecycle methods add no diagnostics;
+Callers honor no-op identity to avoid unnecessary saves/invalidation.
+New lifecycle methods add no diagnostics;
 existing structural/edit diagnostics retain privacy protections.
 
-`taskProgressUpdated(Task,int)` remains a throwing Printing skeleton. The two
-progress forms are parsed and dispatched through the candidate service, but
-the renderer currently blocks publication before saving. `taskCompleted(Task)` and
-`taskReopened(Task)` remain unwired throwing skeletons. `taskEdited(Task)` is
-implemented and wired for issue #39's concrete-deadline/name edits.
+`taskProgressUpdated(Task,int)` reports the stable ID/name, actual credited
+minutes and resulting remaining estimate. It does not recompute percentages or
+claim an unchanged value was saved. Both progress forms use the existing
+candidate transaction: changed candidates save before publication; zero-credit
+no-ops preserve the snapshot and plan. Negative renderer credit is programmer
+misuse and raises `IllegalArgumentException`; task validation stays in TaskService.
+`taskCompleted(Task)` prints `Completed TNUMBER: NAME` and `taskReopened(Task)`
+prints `Reopened TNUMBER: NAME | Remaining: N min` for validated lifecycle
+results. These two formatters are unit-tested but have no console routes yet.
+`taskEdited(Task)` is wired for issue #39's concrete-deadline/name edits.
 `taskRemainingUpdated(Task)` formats issue #41's active remaining-time command.
 Weekly recurrence commands are also implemented; no completion/reopening console
 commands are available.
@@ -654,7 +667,7 @@ Existing renderer compatibility changes only display `No deadline` in add/list
 output and undated remainder rows, use an undated capacity-shortfall reason, and
 sum exact session work in plan summaries. Existing schedule interval durations
 still show reserved wall-clock capacity, not exact credited work; slot-aligned
-output remains unchanged. No new completion/status rendering is implemented.
+output remains unchanged. No separate completion/status list is implemented.
 
 Deterministic JUnit covers progress boundaries, overflow-safe floor arithmetic,
 all identity no-ops, invalid/unknown/null inputs, completion/reopening, metadata,
@@ -662,9 +675,12 @@ source immutability, exhausted counters and custom hours. Planner cases verify
 45/60 full and partial allocation, split padding, mixed optional deadlines and
 completed tasks, priority ties, deterministic results and long conservation.
 Codec/file tests cover explicit legacy migration, extended round trips, read-only
-loads and corruption. Renderer tests extend existing compatibility only, never
-claiming skeletons as acceptance. CLI progress and completion/reopening acceptance
-remain deferred; editing and recurrence have active packaged scenarios.
+loads and corruption. Renderer tests cover exact progress/lifecycle text, zero
+and partial credit, completion, maximum credit, Unicode, null inputs and framing.
+Dispatcher tests cover successful progress publication, exact rounded credit,
+replanning, no-ops, save failure and retry. UI-030 verifies both progress forms,
+invalid requests, plan invalidation and retained completion across two restarts.
+Completion/reopening commands remain deferred.
 
 ### Basic saving and loading
 
@@ -815,15 +831,13 @@ and `task progress TNUMBER session/MINUTES percent/PERCENT`. It returns
 The dispatcher uses the Task service to validate and calculate a candidate,
 then derives actual credited minutes from the old and new remaining estimates.
 It requests a Printing confirmation before saving or publishing the candidate.
-While `TextRenderer.taskProgressUpdated` remains a throwing skeleton, the known
-stub failure becomes a recoverable validation message and leaves disk, live
-state and the current plan untouched. Once Printing implements the confirmation,
-changed candidates will save before publication; zero-credit candidates avoid
-an unnecessary save or plan invalidation. Dispatcher tests cover both parsed
-forms and preservation while Printing is pending. Successful console acceptance
-and save-failure coverage remain pending the renderer implementation. Scoped
-Ernest author tags cover parser and dispatcher work and tests; Ka How owns the
-Printing skeleton and output.
+`TextRenderer.taskProgressUpdated` now supplies the confirmation, so changed
+candidates save before publication; zero-credit candidates avoid an unnecessary
+save or plan invalidation. Fixed-clock dispatcher tests cover actual credit,
+successful publication, no-ops, failed-save preservation and retry. UI-030 covers
+the existing parsed forms through the packaged application and saved restarts.
+Ernest's parser and dispatcher production code is unchanged; scoped author tags
+attribute the implemented renderer and updated acceptance tests to Ka How.
 
 Issue #41 parses `task remaining TNUMBER remaining/MINUTES` into
 `ReviseTaskRemaining` without reading state. The parser requires positive decimal
@@ -899,8 +913,10 @@ reuse it without filtering by the selected date.
 
 Schedules display `ScheduleView` metadata and entries in their supplied order.
 TASK minutes come from that row's endpoints, rather than the task's whole
-estimate. BUSY retains its reference and name; FREE and UNPLANNED have only their
-labels. Any UNPLANNED row adds the cutoff note. A nonempty remainder list adds a
+estimate. BUSY retains its reference and name; FREE, UNPLANNED and BREAK have
+only their labels. BREAK is renderable through the planning API; the default
+console planner still has no study-policy setting. Any UNPLANNED row adds the
+cutoff note. A nonempty remainder list adds a
 blank line and the whole-plan footer. The formatter never allocates, clips,
 merges, repairs or reorders schedule rows, and never recalculates generation
 time or date ranges. Range validation remains with `ScheduleService`; the

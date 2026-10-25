@@ -2,6 +2,42 @@
   "version": 1,
   "cases": [
     {
+      "id": "UI-030", "aim": "Record exact minute and session progress, retain completed tasks and persist across restarts",
+      "status": "active", "setup": "One overdue saved task; fixed outputs independent of the current date",
+      "requiredComponents": ["CommandParser.parse", "TaskService.recordWork", "TaskService.recordSessionProgress",
+        "CommandDispatcher.execute", "TextRenderer.taskProgressUpdated", "FileStorage.save", "FileStorage.load"],
+      "files": {
+        "data/scheduleflow.txt": "SCHEDULEFLOW|1\nNEXT|3|1\nTASK|2|2000-01-01T09:00|90|Draft\n"
+      },
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "plan", "output": "Study plan generated with unallocated work.\nScheduled: 0 min | Unallocated: 90 min\nT2: Draft | Unallocated: 90 min | Reason: deadline passed" },
+          { "input": "task progress T2 done/30", "output": "Recorded progress for T2: Draft | Credited: 30 min | Remaining: 60 min" },
+          { "input": "schedule today", "output": "No current plan. Run plan to generate one." },
+          { "input": "task progress T2 session/61 percent/25", "output": "Recorded progress for T2: Draft | Credited: 15 min | Remaining: 45 min" },
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 45 min | 2000-01-01 09:00\nTotal: 1 task(s)." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 45 min | 2000-01-01 09:00\nTotal: 1 task(s)." },
+          { "input": "plan", "output": "Study plan generated with unallocated work.\nScheduled: 0 min | Unallocated: 45 min\nT2: Draft | Unallocated: 45 min | Reason: deadline passed" },
+          { "input": "task progress T2 done/0", "output": "Recorded progress for T2: Draft | Credited: 0 min | Remaining: 45 min" },
+          { "input": "task progress T2 session/1 percent/1", "output": "Recorded progress for T2: Draft | Credited: 0 min | Remaining: 45 min" },
+          { "input": "task progress T2 done/46", "output": "Error: Reported work must be between zero and the remaining estimate." },
+          { "input": "task progress T9 done/1", "output": "Error: Unknown task ID: T9" },
+          { "input": "task progress T2 done/45", "output": "Recorded progress for T2: Draft | Credited: 45 min | Remaining: 0 min" },
+          { "input": "schedule today", "output": "No current plan. Run plan to generate one." },
+          { "input": "task progress T2 done/0", "output": "Error: Reopen the completed task before recording work." },
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 0 min | 2000-01-01 09:00\nTotal: 1 task(s)." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 0 min | 2000-01-01 09:00\nTotal: 1 task(s)." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
       "id": "UI-021",
       "aim": "Unavailable study periods reuse one-time commitments with plan invalidation, restart and release",
       "status": "active",

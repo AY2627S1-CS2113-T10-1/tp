@@ -1,9 +1,10 @@
 # ScheduleFlow UI test plan
 
-Issue #40 progress grammar, service candidates and dispatcher transactions have
-JUnit coverage. Packaged progress acceptance remains planned until Printing's
-confirmation is implemented. The current command reports a recoverable pending
-message without changing live state, saved data or the plan.
+Issue #40 progress grammar, service candidates, Printing confirmations and
+dispatcher transactions have JUnit coverage. UI-030 exercises both progress
+forms, exact rounded credit, zero credit, invalid requests, plan invalidation
+and retained completion across two saved restarts. Fixed-clock dispatcher
+tests verify no-op plan preservation and failed-save rollback/retry.
 
 Issue #41 remaining-work parsing, service candidates, renderer output,
 saved-candidate reload, planning demand, successful dispatch, no-op behavior and
@@ -12,7 +13,7 @@ exact output, invalid values, plan invalidation, replanning and saved data after
 two restarts. Save failure is covered by an isolated dispatcher fake because
 process-level fault injection is unavailable.
 
-All twenty-three maintained process scenarios are active. They exercise the packaged
+All twenty-two maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -86,25 +87,21 @@ timeouts and expected output; Java 25 and isolated workspace data were retained.
 
 ## Active packaged scenarios
 
-Task editing and weekly task recurrence now have parser/dispatcher/renderer
-implementations. UI-021 checks saved edits and rejection; UI-022 checks real template
-commands, definitions and R-counter persistence; UI-023 checks generated-task
-provenance/cursors through deletion, replanning and restart. Future additions use
-year 9999 outside the current horizon, and historical fixtures use year 2000, so
-exact results do not depend on a near-future deadline expiring. Actual eligible
-occurrence generation, original releases, rolling horizons, no-op edits, failures
-and retry IDs use fixed-clock JUnit tests. No production clock flag is introduced.
-The twenty inherited scenarios retain PR #84's expected outputs. Its domain
+Task editing and weekly task recurrence have parser/dispatcher/renderer
+implementations and fixed-clock JUnit coverage. The maintained process fixtures
+are listed below; their inputs use historical saved tasks or empty task lists
+to avoid near-future deadlines expiring. Eligible occurrence generation,
+original releases, rolling horizons, no-op edits, failures and retry IDs use
+fixed-clock JUnit tests. No production clock flag is introduced.
+The inherited scenarios retain their expected outputs. PR #84's domain
 lifecycle and exact-minute changes are merged and preserved alongside #39/#67.
 
 Task edit, deadline clear/absence, progress/session percentages, revised remaining,
 completion and reopening APIs have deterministic JUnit coverage. The two progress
-forms have parser and dispatcher tests, but `taskProgressUpdated` is still a
-throwing Printing skeleton. Dispatcher tests assert that a pending confirmation
-does not save or change live state or the current plan. UI acceptance for issue
-#40 remains blocked until Printing implements the confirmation and the cases
-can assert successful save, restart and plan invalidation. Other Task lifecycle
-commands and confirmations remain deferred.
+forms have exact renderer output, dispatcher transaction tests and UI-030
+acceptance. Changed candidates save once before live publication; zero-credit
+no-ops preserve the plan without saving. Completion/reopening confirmations are
+unit-tested, but their console commands remain deferred.
 
 Compatibility checks cover optional deadlines in existing add/list/remainder
 output, exact plan work totals (not rounded capacity), 45-minute work versus
@@ -117,11 +114,9 @@ optional/completed restored-data compatibility case and exact-minute restart che
 
 | ID | Coverage | Status |
 | --- | --- | --- |
-| UI-024 | Unavailable study period: custom hours, add/delete plan invalidation, restart and released interval | Active |
+| UI-030 | Minute/session progress, rounded and zero credit, invalid values, completion, plan invalidation and two saved restarts | Active |
+| UI-021 | Unavailable study period: custom hours, add/delete plan invalidation, restart and released interval | Active |
 | UI-020 | Restored optional/completed tasks, exact work and saved restart | Active |
-| UI-021 | Task edit, unchanged IDs, validation, plan invalidation and saved restart | Active |
-| UI-022 | Weekly template commands, bounded/unbounded definitions and stable R IDs across restarts | Active |
-| UI-023 | Version 5 occurrence history and no recreation after task deletion/replan/restart | Active |
 | UI-019 | Remaining-time revision, validation, plan invalidation and two saved restarts | Active |
 | UI-018 | One-time commitments: exact-date overlap, validation, restart, edit by date and deletion | Active |
 | UI-017 | One-date recurrence skips, validation, version 4 restart and released overlap | Active |
@@ -205,8 +200,10 @@ The separate `test/ui-unavailable-ranges.planned.json` file holds proposed
 exact inputs and outputs. It is excluded from the main release fixture, which
 requires every maintained release case to be active. No range command is
 currently parsed. The commitment service operations are implemented with
-JUnit coverage, but parser, dispatcher and renderer skeletons still throw
-explicitly, so no range case can run yet and none is a feature pass. New
+JUnit coverage. The batch renderer is implemented and tested for exact counts,
+new ID/date rows, leap day, Unicode, midnight, framing and invalid batches.
+Parser and dispatcher skeletons still throw explicitly, so no range case can
+run yet and none is a feature pass. New
 command-record tests cover only their implemented transport/reference contracts.
 
 | ID | Proposed acceptance coverage | Status |
@@ -222,7 +219,7 @@ Run the separate file using
 `node .agents/skills/test-ui/scripts/run-ui-tests.mjs --fixtures test/ui-unavailable-ranges.planned.json`.
 With all six cases planned it executes none and returns exit 2 (BLOCKED: no
 active scenarios), not success. Activate cases as their dependencies are
-implemented and move verified cases to the main fixture. Existing 21 active
+implemented and move verified cases to the main fixture. Existing 22 active
 scenarios must continue passing throughout integration.
 
 The Developer Guide's handoff contains the corresponding owner-specific JUnit
@@ -231,18 +228,22 @@ Two active planner tests supply the expected dated records manually through
 the existing one-time API to verify allocation/projection compatibility for
 continuous and daily representations. `CommitmentServiceTest` separately
 verifies the implemented batch creation, rollback and ID limits. Exact
-range-command parsing, confirmation and transaction acceptance remain
-unexecuted until the parser, dispatcher and renderer owners implement them.
-## Planned issue #40 console acceptance
+range-command parsing and transaction acceptance remain unexecuted until Ernest
+implements those routes. The planned fixtures retain their exact expectations.
 
-Progress grammar, candidate transactions and exact work are implemented, but
-successful console acceptance awaits Printing and Ka How's confirmation.
-Completion/reopening commands are not wired. Do not count the recoverable
-pending-progress response as a successful progress operation.
+## Issue #40 console acceptance
+
+Progress grammar, candidate transactions, exact work and Printing output are
+implemented. UI-030 uses a restored overdue task to avoid live-date assumptions.
+It verifies direct credit, floor rounding for a session, zero credit, rejection
+of excess credit and unknown IDs, invalidation after changes and persisted
+partial/completed estimates. Completion/reopening commands remain unwired.
+Save failure and unchanged-plan identity are checked with fixed-clock dispatcher
+JUnit tests rather than process fault injection.
 
 | ID | Coverage | Status |
 | --- | --- | --- |
-| UI-023 | Minute/session progress, exact credit, save/restart, plan invalidation and rollback | Planned; progress confirmation pending |
+| UI-030 | Minute/session progress, exact credit, save/restart and plan invalidation | Active |
 
 ## Planned issue #55 console acceptance
 
@@ -250,8 +251,9 @@ The continuous-work allocator and frozen BREAK projection have direct JUnit
 coverage in the planning package. They are enabled through the configured
 planner constructor only. The original console planner retains unrestricted
 allocation; existing active fixtures and their exact outputs remain applicable.
-The explicit BREAK renderer branch is an unwired throwing skeleton, not a
-feature pass. No #55 process case is ready to activate yet, and no speculative
+The BREAK renderer prints supplied intervals and has direct JUnit coverage,
+including a configured planner/projection example and preserved adjacent rows.
+No #55 process case is ready to activate yet, and no speculative
 command grammar or output has been added to `ui-scenarios.json`.
 
 After Printing and Save integrate the documented contract, add and activate:
@@ -259,9 +261,9 @@ After Printing and Save integrate the documented contract, add and activate:
 | ID | Coverage | Status |
 | --- | --- | --- |
 | UI-028 | Set/show/reset policy, invalid values, save/restart and plan invalidation/rollback | Planned; grammar, settings persistence and confirmations pending |
-| UI-029 | Cross-task limits, commitments below/at/2x/3x limit, fixed breaks and BREAK rows | Planned; configured console planner and rendering pending |
+| UI-029 | Cross-task limits, commitments below/at/2x/3x limit, fixed breaks and BREAK rows | Planned; configured console planner pending |
 | UI-024 | Set/show/reset policy, invalid values, save/restart and plan invalidation/rollback | Planned; grammar, settings persistence and confirmations pending |
-| UI-025 | Cross-task limits, commitments below/at/2x/3x limit, fixed breaks and BREAK rows | Planned; configured console planner and rendering pending |
+| UI-025 | Cross-task limits, commitments below/at/2x/3x limit, fixed breaks and BREAK rows | Planned; configured console planner pending |
 
 Use fixed-clock dispatcher JUnit tests for exact schedule times. Packaged
 acceptance must keep isolated saved data and deterministic output; an expected

@@ -16,6 +16,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import scheduleflow.commitment.CommitmentService;
@@ -657,21 +658,54 @@ class CommandDispatcherTest {
         assertSame(snapshot, state.snapshot());
     }
 
-    // @@author ernestgoh-god
+    // @@author ka-how
     @Test
-    void execute_progressCommands_awaitPrintingWithoutSavingOrInvalidatingPlan() throws Exception {
+    void execute_progressCommands_saveBeforePublicationAndInvalidatePlan() throws Exception {
+        Map<Command, Integer> expectedCredits = Map.of(new Command.RecordTaskWork(2, 15), 15,
+                new Command.RecordTaskWork(2, 30), 30, new Command.RecordTaskSession(2, 61, 25), 15,
+                new Command.RecordTaskSession(2, 60, 50), 30);
+        for (var entry : expectedCredits.entrySet()) {
+            Command command = entry.getKey();
+            int credited = entry.getValue();
+            Snapshot original = populatedSnapshot();
+            AppState state = new AppState(original);
+            Plan plan = new EarliestDeadlinePlanner().generate(original, NOW);
+            state.replacePlan(plan);
+            FakeStorage storage = new FakeStorage(original);
+            storage.beforeSave = () -> {
+                assertSame(original, state.snapshot());
+                assertSame(plan, state.currentPlan().orElseThrow());
+            };
+            String output = dispatcher(storage, CLOCK).execute(command, state).output();
+            assertEquals("Recorded progress for T2: Existing | Credited: " + credited
+                    + " min | Remaining: " + (30 - credited) + " min", output);
+            assertEquals(1, storage.saveCalls);
+            assertSame(storage.saved, state.snapshot());
+            assertTrue(state.currentPlan().isEmpty());
+            assertEquals(30, original.tasks().getFirst().remainingMinutes());
+            assertEquals(30 - credited, state.snapshot().tasks().getFirst().remainingMinutes());
+            assertEquals(original.commitments(), state.snapshot().commitments());
+            assertEquals(original.studyHours(), state.snapshot().studyHours());
+            assertEquals(original.nextTaskId(), state.snapshot().nextTaskId());
+            assertEquals(original.nextCommitmentId(), state.snapshot().nextCommitmentId());
+            dispatcher(storage, CLOCK).execute(new Command.GeneratePlan(), state);
+            assertEquals(30 - credited, state.currentPlan().orElseThrow().sessions().stream()
+                    .mapToInt(StudySession::workMinutes).sum());
+        }
+    }
+
+    @Test
+    void execute_zeroProgress_preservesPlanAndAvoidsSaving() throws Exception {
         Snapshot original = populatedSnapshot();
         AppState state = new AppState(original);
         Plan plan = new EarliestDeadlinePlanner().generate(original, NOW);
         state.replacePlan(plan);
         FakeStorage storage = new FakeStorage(original);
         CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
-        CommandParser parser = new CommandParser();
-        for (String input : List.of("task progress T2 done/15", "task progress T2 done/30",
-                "task progress T2 session/60 percent/50", "task progress T2 session/1 percent/1")) {
-            ValidationException failure = assertThrows(ValidationException.class,
-                    () -> dispatcher.execute(parser.parse(input), state));
-            assertEquals("Task progress is awaiting printing.", failure.getMessage());
+        for (Command command : List.of(new Command.RecordTaskWork(2, 0),
+                new Command.RecordTaskSession(2, 60, 0), new Command.RecordTaskSession(2, 1, 1))) {
+            assertEquals("Recorded progress for T2: Existing | Credited: 0 min | Remaining: 30 min",
+                    dispatcher.execute(command, state).output());
             assertSame(original, state.snapshot());
             assertSame(original, storage.saved);
             assertSame(plan, state.currentPlan().orElseThrow());
@@ -679,6 +713,33 @@ class CommandDispatcherTest {
         }
     }
 
+    @Test
+    void execute_progressSaveFailure_preservesStateAndPlanThenRetriesOnce() throws Exception {
+        for (Command command : List.of(new Command.RecordTaskWork(2, 15),
+                new Command.RecordTaskSession(2, 61, 25))) {
+            Snapshot original = populatedSnapshot();
+            AppState state = new AppState(original);
+            Plan plan = new EarliestDeadlinePlanner().generate(original, NOW);
+            state.replacePlan(plan);
+            FakeStorage storage = new FakeStorage(original);
+            storage.failSave = true;
+            CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
+            assertThrows(StorageException.class, () -> dispatcher.execute(command, state));
+            assertSame(original, state.snapshot());
+            assertSame(original, storage.saved);
+            assertSame(plan, state.currentPlan().orElseThrow());
+            assertEquals(15, storage.attempted.tasks().getFirst().remainingMinutes());
+            storage.failSave = false;
+            assertEquals("Recorded progress for T2: Existing | Credited: 15 min | Remaining: 15 min",
+                    dispatcher.execute(command, state).output());
+            assertEquals(2, storage.saveCalls);
+            assertSame(storage.saved, state.snapshot());
+            assertEquals(15, state.snapshot().tasks().getFirst().remainingMinutes());
+            assertTrue(state.currentPlan().isEmpty());
+        }
+    }
+
+    // @@author ernestgoh-god
     @Test
     void execute_invalidProgress_rejectsBeforeSavingOrChangingLiveState() {
         Snapshot original = populatedSnapshot();
