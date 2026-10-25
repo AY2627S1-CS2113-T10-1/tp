@@ -2,6 +2,44 @@
   "version": 1,
   "cases": [
     {
+      "id": "UI-034",
+      "aim": "Reopen completed tasks, retain plans on rejection and persist restored work across restarts",
+      "status": "active",
+      "setup": "Completed overdue task and fixed saved plan; isolated data and deterministic responses",
+      "requiredComponents": ["CommandParser.parse", "TaskService.reopen", "CommandDispatcher.execute",
+        "TextRenderer.taskReopened", "FileStorage.save", "FileStorage.load"],
+      "files": {
+        "data/scheduleflow.txt": "SCHEDULEFLOW|6\nNEXT|3|1|1\nTASK2|2|2000-01-01T09:00|0|NORMAL|Draft\nPLAN|2026-10-24T07:00|2027-10-24T00:00|0|0|0\n"
+      },
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "task reopen T9 remaining/45", "output": "Error: Unknown task ID: T9" },
+          { "input": "task reopen T2", "output": "Error: Invalid command format or missing fields\nExpected: task reopen TNUMBER remaining/MINUTES" },
+          { "input": "task reopen T2 remaining/0", "output": "Error: Invalid command format or missing fields\nExpected: task reopen TNUMBER remaining/MINUTES" },
+          { "input": "task reopen T2 remaining/2147483648", "output": "Error: Number must fit in a positive 32-bit integer\nExpected: task reopen TNUMBER remaining/MINUTES" },
+          { "input": "schedule 2026-10-24", "output": "=== Schedule for Saturday (2026-10-24) ===\nGenerated at: 2026-10-24 07:00\n08:00 - 22:00 | [FREE]" },
+          { "input": "task reopen T2 remaining/45", "output": "Reopened T2: Draft | Remaining: 45 min" },
+          { "input": "schedule 2026-10-24", "output": "No current plan. Run plan to generate one." },
+          { "input": "task list completed", "output": "No completed tasks found." },
+          { "input": "task reopen T2 remaining/60", "output": "Error: Only completed tasks can be reopened." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 45 min | 2000-01-01 09:00\nTotal: 1 task(s)." },
+          { "input": "schedule today", "output": "No current plan. Run plan to generate one." },
+          { "input": "plan", "output": "Study plan generated with unallocated work.\nScheduled: 0 min | Unallocated: 45 min\nT2: Draft | Unallocated: 45 min | Reason: deadline passed" },
+          { "input": "task progress T2 done/45", "output": "Recorded progress for T2: Draft | Credited: 45 min | Remaining: 0 min" },
+          { "input": "task reopen T2 remaining/1", "output": "Reopened T2: Draft | Remaining: 1 min" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "task list", "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 1 min | 2000-01-01 09:00\nTotal: 1 task(s)." },
+          { "input": "task list completed", "output": "No completed tasks found." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
+    },
+    {
       "id": "UI-028",
       "aim": "Study policy settings validate, retain no-ops and survive set/reset restarts",
       "status": "active",

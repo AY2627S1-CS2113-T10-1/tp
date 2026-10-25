@@ -132,6 +132,7 @@ public final class CommandDispatcher {
                     new StudyPolicy(settings.maxContinuousMinutes(), settings.breakMinutes())), state);
             case Command.ResetStudyPolicy ignored -> changePolicy(Optional.empty(), state);
             // @@author ka-how
+            case Command.ReopenTask reopen -> reopenTask(reopen, state);
             case Command.DeleteTask delete -> deleteTask(delete.id(), state);
             // @@author nickpatt
             case Command.EditTask edit -> editTask(edit, state, now);
@@ -200,6 +201,25 @@ public final class CommandDispatcher {
                 .orElseThrow(() -> new IllegalStateException("Validated task deletion has no original record."));
         saveAndCommit(candidate, state);
         return renderer.taskDeleted(removed);
+    }
+
+    /**
+     * Reopens a completed task through the existing service, saving before publication and plan invalidation.
+     *
+     * @param command existing task ID and explicit positive remaining-work estimate
+     * @param state live snapshot and plan, preserved if validation or saving fails
+     * @return confirmation for the successfully saved reopened task
+     * @throws StorageException if the candidate cannot be saved
+     * @throws ValidationException if the task is unknown, active or the estimate is nonpositive
+     */
+    private String reopenTask(Command.ReopenTask command, AppState state) throws StorageException {
+        LOGGER.log(Level.FINE, "Preparing task reopening");
+        Snapshot candidate = tasks.reopen(state.snapshot(), command.id(), command.remainingMinutes());
+        Task reopened = candidate.tasks().stream().filter(task -> task.id() == command.id()).findFirst()
+                .orElseThrow(() -> new IllegalStateException("Validated reopening is missing its target."));
+        String confirmation = renderer.taskReopened(reopened);
+        saveAndCommit(candidate, state);
+        return confirmation;
     }
 
     // @@author ernestgoh-god

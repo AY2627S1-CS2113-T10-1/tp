@@ -38,6 +38,29 @@ class CommandParserTest {
     // @@author ka-how
     private final CommandParser parser = new CommandParser();
 
+    @Test
+    void parse_reopen_acceptsExactMinutesSpacingAndIntegerBoundaries() throws ParseException {
+        assertEquals(new Command.ReopenTask(1, 1), parser.parse("task reopen T1 remaining/1"));
+        assertEquals(new Command.ReopenTask(2, 45), parser.parse(" task  reopen  T2  remaining/45 "));
+        assertEquals(new Command.ReopenTask(Integer.MAX_VALUE, Integer.MAX_VALUE),
+                parser.parse("task reopen T2147483647 remaining/2147483647"));
+    }
+
+    @Test
+    void parse_reopen_rejectsMalformedFieldsAndOverflowWithUsage() {
+        String usage = "task reopen TNUMBER remaining/MINUTES";
+        for (String suffix : List.of("", "T1", "1 remaining/45", "C1 remaining/45", "t1 remaining/45",
+                "T0 remaining/45", "T01 remaining/45", "T-1 remaining/45", "T2147483648 remaining/45",
+                "T1 remaining/0", "T1 remaining/-1", "T1 remaining/+1", "T1 remaining/01",
+                "T1 remaining/1.5", "T1 remaining/2147483648", "T1 remaining/４５",
+                "remaining/45 T1", "T1 d/45", "T1 remaining/45 remaining/60", "T1 remaining/45 extra",
+                "T1\tremaining/45")) {
+            assertRejected("task reopen " + suffix, usage);
+        }
+        assertRejected("task Reopen T1 remaining/45", HELP_USAGE);
+        assertRejected("Task reopen T1 remaining/45", HELP_USAGE);
+    }
+
     // @@author ernestgoh-god
     @Test
     void parse_policy_preservesDurationsAndRejectsMalformedOrOverflowingFields() throws ParseException {

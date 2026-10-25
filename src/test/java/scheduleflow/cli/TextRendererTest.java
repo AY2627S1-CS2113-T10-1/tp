@@ -292,6 +292,7 @@ class TextRendererTest {
                 "task complete TNUMBER", "task list completed",
                 "policy set max/MINUTES break/MINUTES", "policy show", "policy reset",
                 // @@author ka-how
+                "task reopen TNUMBER remaining/MINUTES",
                 "task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]",
                 "task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES every/WEEKLY [until/YYYY-MM-DD]",
                 "task recur list", "task recur delete RNUMBER",

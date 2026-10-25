@@ -38,6 +38,8 @@ class ContractsTest {
         assertEquals(" unnormalized ", command.name());
         assertEquals(45, command.minutes());
         assertEquals(0, new Command.DeleteTask(0).id());
+        assertEquals(0, new Command.ReopenTask(0, -1).id());
+        assertEquals(-1, new Command.ReopenTask(0, -1).remainingMinutes());
         assertThrows(NullPointerException.class, () -> new Command.AddTask(null, command.deadline(), 30));
         assertThrows(NullPointerException.class, () -> new Command.ScheduleDate(null));
         // @@author ernestgoh-god
@@ -47,7 +49,7 @@ class ContractsTest {
         // @@author
         // @@author nickpatt
         // @@author ernestgoh-god
-        assertEquals(30, Command.class.getPermittedSubclasses().length);
+        assertEquals(31, Command.class.getPermittedSubclasses().length);
         // @@author ka-how
         // @@author ka-how
         // @@author ernestgoh-god

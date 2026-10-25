@@ -117,6 +117,10 @@ public sealed interface Command {
     }
     // @@author ka-how
 
+    /** Carries an explicit positive remaining-work estimate for reopening a completed task. */
+    record ReopenTask(int id, int remainingMinutes) implements Command {
+    }
+
     /**
      * Carries the numeric suffix of a task ID.
      */

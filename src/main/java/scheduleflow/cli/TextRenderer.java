@@ -130,6 +130,7 @@ public final class TextRenderer {
                 "policy show - View the current study policy.",
                 "policy reset - Restore unrestricted planning.",
                 // @@author ka-how
+                "task reopen TNUMBER remaining/MINUTES - Reopen a completed task; run plan again.",
                 // @@author nickpatt
                 "task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm] - Edit at least one field; run plan again.",
                 "task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES every/WEEKLY [until/YYYY-MM-DD]"

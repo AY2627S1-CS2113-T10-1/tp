@@ -24,7 +24,11 @@ import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
+import scheduleflow.model.StudyHours;
+import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskOccurrence;
+import scheduleflow.model.TaskPriority;
 import scheduleflow.planning.EarliestDeadlinePlanner;
 import scheduleflow.planning.Plan;
 import scheduleflow.planning.Planner;
@@ -44,6 +48,116 @@ class CommandDispatcherTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 9, 21, 7, 0);
     private static final Clock CLOCK = Clock.fixed(NOW.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
     private final TextRenderer renderer = new TextRenderer();
+
+    @Test
+    void execute_reopen_savesBeforePublicationAndPreservesPlanOnFailedSaveUntilRetry() throws Exception {
+        Snapshot original = new TaskService().complete(populatedSnapshot(), 2);
+        AppState state = new AppState(original);
+        Plan prior = new EarliestDeadlinePlanner().generate(original, NOW);
+        state.replacePlan(prior);
+        FakeStorage storage = new FakeStorage(original);
+        storage.savedPlan = Optional.of(prior);
+        storage.beforeSave = () -> {
+            assertSame(original, state.snapshot());
+            assertSame(prior, state.currentPlan().orElseThrow());
+        };
+        CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
+        Command.ReopenTask command = new Command.ReopenTask(2, 45);
+        storage.failSave = true;
+        assertThrows(StorageException.class, () -> dispatcher.execute(command, state));
+        assertEquals(45, storage.attempted.tasks().getFirst().remainingMinutes());
+        assertSame(original, state.snapshot());
+        assertSame(prior, state.currentPlan().orElseThrow());
+        assertSame(original, storage.saved);
+        assertEquals(Optional.of(prior), storage.savedPlan);
+
+        storage.failSave = false;
+        CommandResponse response = dispatcher.execute(command, state);
+        assertEquals("Reopened T2: Existing | Remaining: 45 min", response.output());
+        assertFalse(response.shouldExit());
+        assertEquals(new TaskService().reopen(original, 2, 45), state.snapshot());
+        assertSame(state.snapshot(), storage.saved);
+        assertTrue(state.currentPlan().isEmpty());
+        assertTrue(storage.savedPlan.isEmpty());
+        assertEquals(2, storage.saveCalls);
+        assertEquals(0, original.tasks().getFirst().remainingMinutes());
+    }
+
+    @Test
+    void execute_reopen_preservesMetadataSettingsStoredOrderAndExhaustedCounters() throws Exception {
+        Task other = new Task(8, "Unrelated", NOW.plusDays(2), 15);
+        LocalDateTime first = NOW.plusDays(1);
+        RecurringTask template = new RecurringTask(2, "Weekly", first, Optional.empty(), 60, Optional.of(first));
+        List<Task> completed = List.of(
+                new Task(2, "Overdue", Optional.of(NOW.minusDays(1)), 0, TaskPriority.HIGH),
+                new Task(2, "Undated", Optional.empty(), 0, TaskPriority.LOW),
+                new Task(2, "Occurrence", Optional.of(first), 0, TaskPriority.HIGH,
+                        Optional.of(new TaskOccurrence(2, first))));
+        for (Task target : completed) {
+            Snapshot original = new Snapshot(List.of(other, target), populatedSnapshot().commitments(),
+                    Integer.MAX_VALUE, Integer.MAX_VALUE,
+                    new StudyHours(Map.of("monday", new StudyWindow(LocalTime.of(9, 0), LocalTime.of(18, 0)))),
+                    List.of(template), Integer.MAX_VALUE, Optional.of(new StudyPolicy(60, 30)));
+            for (int minutes : new int[] {1, 45, Integer.MAX_VALUE}) {
+                AppState state = new AppState(original);
+                FakeStorage storage = new FakeStorage(original);
+                assertEquals("Reopened T2: " + target.name() + " | Remaining: " + minutes + " min",
+                        dispatcher(storage, CLOCK).execute(new Command.ReopenTask(2, minutes), state).output());
+                Task expected = new Task(target.id(), target.name(), target.deadline(), minutes,
+                        target.priority(), target.occurrence());
+                assertEquals(new Snapshot(List.of(other, expected), original.commitments(), original.nextTaskId(),
+                        original.nextCommitmentId(), original.studyHours(), original.recurringTasks(),
+                        original.nextRecurringTaskId(), original.studyPolicy()), state.snapshot());
+                assertSame(state.snapshot(), storage.saved);
+                assertEquals(1, storage.saveCalls);
+                assertEquals(0, target.remainingMinutes());
+            }
+        }
+    }
+
+    @Test
+    void execute_invalidReopen_rejectsWithoutSavingOrInvalidatingPlan() throws Exception {
+        Snapshot original = new Snapshot(List.of(new Task(2, "Done", NOW, 0),
+                new Task(3, "Active", NOW.plusDays(1), 30)), List.of(), 4, 1);
+        AppState state = new AppState(original);
+        Plan prior = new EarliestDeadlinePlanner().generate(original, NOW);
+        state.replacePlan(prior);
+        FakeStorage storage = new FakeStorage(original);
+        storage.savedPlan = Optional.of(prior);
+        CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
+        for (Command.ReopenTask command : List.of(new Command.ReopenTask(2, 0), new Command.ReopenTask(2, -1),
+                new Command.ReopenTask(2, Integer.MIN_VALUE), new Command.ReopenTask(0, 45),
+                new Command.ReopenTask(99, 45), new Command.ReopenTask(3, 45))) {
+            assertThrows(ValidationException.class, () -> dispatcher.execute(command, state));
+            assertSame(original, state.snapshot());
+            assertSame(prior, state.currentPlan().orElseThrow());
+            assertSame(original, storage.saved);
+            assertEquals(Optional.of(prior), storage.savedPlan);
+            assertEquals(0, storage.saveCalls);
+        }
+    }
+
+    @Test
+    void execute_reopenAndReplan_includesExactWorkAndRemovesTaskFromCompletedView() throws Exception {
+        Snapshot original = new Snapshot(List.of(new Task(2, "Draft", NOW.plusHours(3), 0)), List.of(), 3, 1);
+        AppState state = new AppState(original);
+        FakeStorage storage = new FakeStorage(original);
+        CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
+        dispatcher.execute(new Command.GeneratePlan(), state);
+        assertTrue(state.currentPlan().orElseThrow().sessions().isEmpty());
+        dispatcher.execute(new Command.ReopenTask(2, 45), state);
+        assertEquals("No completed tasks found.",
+                dispatcher.execute(new Command.ListCompletedTasks(), state).output());
+        dispatcher.execute(new Command.GeneratePlan(), state);
+        Plan regenerated = state.currentPlan().orElseThrow();
+        assertEquals(List.of(new StudySession(2, NOW.withHour(8), NOW.withHour(9), 45)), regenerated.sessions());
+        assertTrue(regenerated.unallocated().isEmpty());
+        assertEquals(45, state.snapshot().tasks().getFirst().remainingMinutes());
+        assertEquals("Only completed tasks can be reopened.", assertThrows(ValidationException.class,
+                () -> dispatcher.execute(new Command.ReopenTask(2, 60), state)).getMessage());
+        assertSame(regenerated, state.currentPlan().orElseThrow());
+        assertEquals(1, storage.saveCalls);
+    }
 
     // @@author ernestgoh-god
     @Test
