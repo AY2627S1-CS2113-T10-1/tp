@@ -194,7 +194,7 @@ dependent scenarios; ready active cases must run even if another component is
 unfinished. Exit 0 means active scenarios passed, exit 1 means FAILED, and
 exit 2 means BLOCKED. A planned or diagnostic scaffold case is never a pass.
 
-## Planned multi-date unavailability (issue #48)
+## Planned multi-date unavailability (follow-up to issue #48)
 
 The separate `test/ui-unavailable-ranges.planned.json` file holds proposed
 exact inputs and outputs. It is excluded from the main release fixture, which

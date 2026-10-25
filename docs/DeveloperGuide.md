@@ -303,9 +303,10 @@ Owners must add these deterministic JUnit cases alongside their implementation:
 | Gabriel / `ScheduleServiceTest` | Project first/intermediate/final continuous dates and daily windows; clip to configured hours, omit out-of-range occurrences, retain frozen old plans and permit study at exclusive ends |
 
 Run the affected JUnit tests, Java 25 build/Checkstyle and active console cases
-after each integration. Keep #48 open while either range operation is still a
-skeleton. Partial PRs should use `Refs #48`; close it only after the agreed
-range behaviour and its acceptance cases are implemented and verified.
+after each integration. Issue #48 is closed for the working single-date blocking
+workflow. Track the unfinished multi-date commands as follow-up work and keep
+their console cases planned until dispatch and acceptance tests pass. Partial
+PRs may reference #48 for context without using a closing keyword.
 
 ### Exact work and slot capacity
 
