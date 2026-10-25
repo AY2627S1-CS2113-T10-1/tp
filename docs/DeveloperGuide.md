@@ -613,7 +613,7 @@ commands, generation and persistence. PR #84 is merged: exact work, optional
 deadlines, stored priorities and domain completion/reopening coexist with
 recurrence in the unified model and v5 codec. Issue #40 console progress is
 connected through the existing parser and dispatcher with its implemented
-Printing confirmation. Completion/reopening commands, deadline
+Printing confirmation. Reopening commands and deadline
 clearing, undated addition, priority operations and search are not wired console
 features. Do not restore throwing Task edit/recurrence renderers or discard the
 existing commitment/hours formats.
@@ -687,7 +687,25 @@ and partial credit, completion, maximum credit, Unicode, null inputs and framing
 Dispatcher tests cover successful progress publication, exact rounded credit,
 replanning, no-ops, save failure and retry. UI-030 verifies both progress forms,
 invalid requests, plan invalidation and retained completion across two restarts.
-Completion/reopening commands remain deferred.
+Completion is connected through `task complete`; reopening remains deferred under #56.
+
+### Completion and completed-task view (issues #52 and #65)
+
+`Command.CompleteTask` and `ListCompletedTasks` add exact, case-sensitive grammar
+for `task complete TNUMBER` and `task list completed`. Parsing validates the ID
+shape and overflow; `TaskService.complete` retains domain validation and returns
+an immutable zero-work candidate. The dispatcher formats the existing
+`TextRenderer.taskCompleted` confirmation, saves a changed candidate, then
+publishes it. Repeated completion returns the same source and does not save or
+invalidate a plan. Failed saves preserve the snapshot and its saved plan.
+
+The completed view filters the service's numeric-ID list and shares row formatting
+with the original full list. No data or plan changes occur during listing.
+Nickhil's completion model/service and Ka How's completion formatter retain their
+authorship. Scoped Ernest tags cover the new parser, wiring and completed view.
+JUnit covers grammar boundaries, exact list text, save ordering, failed retries,
+plan exclusion and no-ops. UI-033 covers completion, validation and saved restart.
+Issue #56 reopening remains separate; no reopening command is introduced here.
 
 ### Basic saving and loading
 

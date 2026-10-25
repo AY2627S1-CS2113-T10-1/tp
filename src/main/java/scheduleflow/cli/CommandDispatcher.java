@@ -124,6 +124,11 @@ public final class CommandDispatcher {
                     state.snapshot().studyHours().forTarget(hours.target()));
             case Command.AddTask add -> addTask(add, state, now);
             case Command.ListTasks ignored -> renderer.tasks(tasks.list(state.snapshot()));
+            // @@author ernestgoh-god
+            case Command.ListCompletedTasks ignored -> renderer.completedTasks(tasks.list(state.snapshot()).stream()
+                    .filter(task -> task.remainingMinutes() == 0).toList());
+            case Command.CompleteTask complete -> completeTask(complete.id(), state);
+            // @@author ka-how
             case Command.DeleteTask delete -> deleteTask(delete.id(), state);
             // @@author nickpatt
             case Command.EditTask edit -> editTask(edit, state, now);
@@ -193,6 +198,21 @@ public final class CommandDispatcher {
         saveAndCommit(candidate, state);
         return renderer.taskDeleted(removed);
     }
+
+    // @@author ernestgoh-god
+    /** Saves changed completion before publication; repeated completion preserves disk and the current plan. */
+    private String completeTask(int id, AppState state) throws StorageException {
+        LOGGER.log(Level.FINE, "Preparing task completion");
+        Snapshot original = state.snapshot();
+        Snapshot candidate = tasks.complete(original, id);
+        Task completed = candidate.tasks().stream().filter(task -> task.id() == id).findFirst().orElseThrow();
+        String output = renderer.taskCompleted(completed);
+        if (candidate != original) {
+            saveAndCommit(candidate, state);
+        }
+        return output;
+    }
+    // @@author ka-how
 
     // @@author nickpatt
     /** Saves changed details before publication; normalized no-ops preserve both disk and current plan. */

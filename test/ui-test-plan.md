@@ -13,7 +13,7 @@ exact output, invalid values, plan invalidation, replanning and saved data after
 two restarts. Save failure is covered by an isolated dispatcher fake because
 process-level fault injection is unavailable.
 
-All twenty-four maintained process scenarios are active. They exercise the packaged
+All twenty-five maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -141,6 +141,7 @@ optional/completed restored-data compatibility case and exact-minute restart che
 | UI-007 | Unicode save/restart and plan invalidation after deletion | Active |
 | UI-031 | Saved version 6 schedule survives restart and is invalidated by task deletion | Active |
 | UI-032 | Saved recurrence and exact work survive restart; progress invalidates the plan | Active |
+| UI-033 | Complete tasks, view only completed records, reject unknown IDs and retain completion across restart | Active |
 | UI-008 | Truncated saved record stops startup with status 1 | Active |
 | UI-009 | Restored overdue/out-of-horizon tasks, numeric listing, deletion and restart | Active |
 | UI-010 | Exhausted task and commitment ID sequences reject additions without overflow | Active |
@@ -253,7 +254,7 @@ Progress grammar, candidate transactions, exact work and Printing output are
 implemented. UI-030 uses a restored overdue task to avoid live-date assumptions.
 It verifies direct credit, floor rounding for a session, zero credit, rejection
 of excess credit and unknown IDs, invalidation after changes and persisted
-partial/completed estimates. Completion/reopening commands remain unwired.
+partial/completed estimates. Completion is connected through `task complete`; reopening (#56) remains unwired.
 Save failure and unchanged-plan identity are checked with fixed-clock dispatcher
 JUnit tests rather than process fault injection.
 
@@ -319,3 +320,11 @@ forced flushing from the committed Save module. These fixtures use the actual
 committed codec (plain names last and full weekday names). Printing preserves
 that module; contract-format interoperability remains a Save-owner handoff.
 See the Developer Guide for the exact differences.
+
+## Issues #52 and #65 console acceptance
+
+UI-033 starts with an overdue saved task, verifies an empty completed view,
+rejects an unknown completion ID, completes the task, lists it, regenerates an
+empty plan and repeats completion. Restart retains the zero-work record.
+Deterministic dispatcher tests verify the no-op preserves plan identity and
+injected save failure preserves the old disk/source/plan before retry.

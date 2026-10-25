@@ -330,7 +330,31 @@ daily/monthly recurrence are not supported.
 Generated tasks use the same exact remaining-work and lifecycle model as ordinary
 tasks. Their estimates can be revised with `task remaining`, and completed work
 can be recorded with `task progress`; both preserve their provenance. Explicit
-completion and reopening remain internal Java APIs.
+completion is available through `task complete`; reopening remains an internal Java API.
+
+### Completing and viewing completed tasks
+
+Use `task complete TNUMBER` to retain a task with zero remaining work. Completion
+saves automatically and clears the current plan; run `plan` again to exclude
+that task from study sessions. Repeating completion is harmless and preserves
+the existing plan without another save. Unknown IDs and failed saves leave the
+records and plan unchanged.
+
+```text
+scheduleflow> task complete T1
+Completed T1: CS2113 draft
+scheduleflow> task list completed
+=== Completed Tasks ===
+ID | Name | Duration | Deadline
+T1 | CS2113 draft | 0 min | 2026-11-20 18:00
+Total: 1 task(s).
+```
+
+`task list completed` shows only completed tasks, sorted by numeric ID. It prints
+`No completed tasks found.` when empty. `task list` continues to show all stored
+tasks. Both lists preserve data and the current plan. Names, deadlines, priorities
+and recurring-task provenance survive completion and restart. Reopening a task
+is tracked separately in issue #56 and has no console command yet.
 
 ### Deleting a task
 
@@ -341,7 +365,7 @@ task delete TNUMBER
 Deletes the task permanently. Use this command to remove completed or unwanted
 work. Use `task edit` to correct a name/deadline without replacing the ID.
 There is no undo. To retain a completed record instead of deleting it, use
-`task progress` to credit all its remaining work.
+`task complete TNUMBER`, or `task progress` to credit all its remaining work.
 
 ```text
 scheduleflow> task delete T1
@@ -928,8 +952,7 @@ Delete completed tasks using `task delete TNUMBER`. Correct commitments with
 `commitment edit CNUMBER` and one or more fields; the ID is preserved. To correct
 a task's name or deadline, use `task edit TNUMBER` with `n/` and/or `due/`;
 the ID is preserved. Record completed work with `task progress`; crediting all
-remaining minutes retains the task at zero. Explicit completion/reopening
-commands are not supported yet. Use `task remaining` to correct an estimate
+remaining minutes retains the task at zero. Use `task complete` to mark a task complete directly. A reopening command is not supported yet. Use `task remaining` to correct an estimate
 without recording completed work.
 
 ### Why did my schedule disappear?
@@ -978,6 +1001,8 @@ these storage logs do not include your task names or saved file contents.
 | List tasks | `task list` |
 | Delete a task | `task delete TNUMBER` |
 | Revise a task's remaining time | `task remaining TNUMBER remaining/MINUTES` |
+| Complete a task | `task complete TNUMBER` |
+| View completed tasks | `task list completed` |
 | Record completed minutes | `task progress TNUMBER done/MINUTES` |
 | Record session progress | `task progress TNUMBER session/MINUTES percent/PERCENT` |
 | Add a weekly commitment | `commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD]` |

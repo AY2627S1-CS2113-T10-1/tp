@@ -2,6 +2,73 @@
   "version": 1,
   "cases": [
     {
+      "id": "UI-033",
+      "aim": "Complete a task and view retained completed records across restart",
+      "status": "active",
+      "setup": "Legacy overdue task; isolated data and deterministic outputs",
+      "files": {
+        "data/scheduleflow.txt": "SCHEDULEFLOW|1\nNEXT|3|1\nTASK|2|2000-01-01T09:00|60|Draft\n"
+      },
+      "sessions": [
+        {
+          "startup": "",
+          "steps": [
+            {
+              "input": "task list completed",
+              "output": "No completed tasks found."
+            },
+            {
+              "input": "task complete T9",
+              "output": "Error: Unknown task ID: T9"
+            },
+            {
+              "input": "task complete T2",
+              "output": "Completed T2: Draft"
+            },
+            {
+              "input": "task list completed",
+              "output": "=== Completed Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 0 min | 2000-01-01 09:00\nTotal: 1 task(s)."
+            },
+            {
+              "input": "plan",
+              "output": "Study plan generated successfully! Type 'schedule today' to view your sessions."
+            },
+            {
+              "input": "task complete T2",
+              "output": "Completed T2: Draft"
+            },
+            {
+              "input": "exit",
+              "output": "Goodbye for now!",
+              "exitCode": 0
+            }
+          ]
+        },
+        {
+          "startup": "",
+          "steps": [
+            {
+              "input": "task list completed",
+              "output": "=== Completed Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 0 min | 2000-01-01 09:00\nTotal: 1 task(s)."
+            },
+            {
+              "input": "task remaining T2 remaining/30",
+              "output": "Error: Reopen the completed task before revising remaining work."
+            },
+            {
+              "input": "task list completed",
+              "output": "=== Completed Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 0 min | 2000-01-01 09:00\nTotal: 1 task(s)."
+            },
+            {
+              "input": "exit",
+              "output": "Goodbye for now!",
+              "exitCode": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "UI-032",
       "aim": "Saved recurrence, exact work and reserved breaks survive restart; progress invalidates only the plan",
       "status": "active",
@@ -448,7 +515,7 @@
         { "input": "task add n/A due/2026-02-30 0900 d/30", "output": "Error: Invalid date or time\nExpected: task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES" },
         { "input": "task add n/A n/B due/2026-10-06 0900 d/30", "output": "Error: Invalid command format or missing fields\nExpected: task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES" },
         { "input": "task delete 1", "output": "Error: Invalid command format or missing fields\nExpected: task delete TNUMBER" },
-        { "input": "task list extra", "output": "Error: This command accepts no arguments\nExpected: task list" },
+        { "input": "task list extra", "output": "Error: Invalid command format or missing fields\nExpected: task list OR task list completed" },
         { "input": "commitment add n/A day/mon start/1000 d/30", "output": "Error: Invalid command format or missing fields\nExpected: commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD] OR commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES" },
         { "input": "schedule 2026-02-30", "output": "Error: Invalid date or time\nExpected: schedule today OR schedule YYYY-MM-DD" },
         { "input": "exit extra", "output": "Error: This command accepts no arguments\nExpected: exit" },

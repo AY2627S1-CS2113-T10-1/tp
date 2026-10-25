@@ -23,6 +23,7 @@ import scheduleflow.model.Commitment;
 import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskPriority;
 import scheduleflow.planning.EarliestDeadlinePlanner;
 import scheduleflow.planning.Plan;
 import scheduleflow.planning.ScheduleEntry;
@@ -45,6 +46,21 @@ class TextRendererTest {
     private static final LocalDate DATE = LocalDate.of(2026, 9, 21);
     private static final LocalDateTime NOW = DATE.atTime(7, 0);
     private final TextRenderer renderer = new TextRenderer();
+
+    // @@author ernestgoh-god
+    @Test
+    void completedTasks_emptyAndMixedDeadlines_preservesSuppliedOrderAndFraming() {
+        assertOutput("No completed tasks found.", renderer.completedTasks(List.of()));
+        Task dated = new Task(8, "Done | draft", DEADLINE, 0);
+        Task undated = new Task(2, "Other", Optional.empty(), 0, TaskPriority.NORMAL);
+        assertOutput("=== Completed Tasks ===\nID | Name | Duration | Deadline\n"
+                + "T8 | Done | draft | 0 min | 2027-01-01 09:05\n"
+                + "T2 | Other | 0 min | No deadline\nTotal: 2 task(s).",
+                renderer.completedTasks(List.of(dated, undated)));
+        assertThrows(NullPointerException.class, () -> renderer.completedTasks(null));
+        assertThrows(NullPointerException.class, () -> renderer.completedTasks(Arrays.asList(dated, null)));
+    }
+    // @@author ka-how
 
     @Test
     void unavailablePeriodsAdded_continuousBatch_matchesHandoffAndPreservesInput() {
@@ -255,6 +271,9 @@ class TextRendererTest {
         assertTrue(output.startsWith("=== ScheduleFlow Command Help ===\n"));
         List<String> formats = List.of("help", "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES", "task list",
                 "task delete TNUMBER",
+                // @@author ernestgoh-god
+                "task complete TNUMBER", "task list completed",
+                // @@author ka-how
                 "task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]",
                 "task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES every/WEEKLY [until/YYYY-MM-DD]",
                 "task recur list", "task recur delete RNUMBER",

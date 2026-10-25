@@ -93,6 +93,16 @@ public sealed interface Command {
     record ListTasks() implements Command {
     }
 
+    // @@author ernestgoh-god
+    /** Requests retained tasks whose remaining work is zero. */
+    record ListCompletedTasks() implements Command {
+    }
+
+    /** Requests completion of an existing task without deleting its identity or metadata. */
+    record CompleteTask(int id) implements Command {
+    }
+    // @@author ka-how
+
     /**
      * Carries the numeric suffix of a task ID.
      */

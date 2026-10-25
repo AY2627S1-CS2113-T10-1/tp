@@ -38,6 +38,28 @@ class CommandParserTest {
     // @@author ka-how
     private final CommandParser parser = new CommandParser();
 
+    // @@author ernestgoh-god
+    @Test
+    void parse_completionAndCompletedView_acceptsSpacingAndLargestIdentifier() throws ParseException {
+        assertEquals(new Command.CompleteTask(Integer.MAX_VALUE), parser.parse(" task  complete T2147483647 "));
+        assertEquals(new Command.ListCompletedTasks(), parser.parse("task  list completed"));
+        assertEquals(new Command.ListTasks(), parser.parse("task list"));
+    }
+
+    @Test
+    void parse_completionAndCompletedView_rejectsMalformedAndOverflowingInput() {
+        for (String input : List.of("task complete", "task complete T0", "task complete T01",
+                "task complete R1", "task complete t1", "task complete T2147483648", "task complete T1 extra")) {
+            assertEquals("task complete TNUMBER", assertThrows(ParseException.class,
+                    () -> parser.parse(input)).usage());
+        }
+        for (String input : List.of("task list complete", "task list Completed", "task list completed extra")) {
+            assertEquals("task list OR task list completed", assertThrows(ParseException.class,
+                    () -> parser.parse(input)).usage());
+        }
+    }
+    // @@author ka-how
+
     @Test
     void parse_taskEdit_preservesAllThreeSubsets() throws ParseException {
         LocalDateTime due = LocalDateTime.of(2028, 2, 29, 23, 59);
@@ -513,7 +535,7 @@ class CommandParserTest {
 
     @Test
     void parse_noArgumentCommands_rejectsTrailingInputWithSpecificUsage() {
-        for (String command : List.of("help", "task list", "commitment list", "plan", "exit")) {
+        for (String command : List.of("help", "commitment list", "plan", "exit")) {
             assertRejected(command + " extra", command);
             assertRejected(command + " n/A", command);
         }

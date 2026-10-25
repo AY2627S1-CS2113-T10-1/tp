@@ -31,6 +31,10 @@ public final class CommandParser {
     private static final String HELP_USAGE = "Type help to see available commands";
     private static final String TASK_ADD_USAGE = "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES";
     private static final String TASK_DELETE_USAGE = "task delete TNUMBER";
+    // @@author ernestgoh-god
+    private static final String TASK_LIST_USAGE = "task list OR task list completed";
+    private static final String TASK_COMPLETE_USAGE = "task complete TNUMBER";
+    // @@author ka-how
     // @@author nickpatt
     private static final String TASK_EDIT_USAGE = "task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]";
     private static final String TASK_RECUR_USAGE = "task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES"
@@ -107,6 +111,10 @@ public final class CommandParser {
                     + DATE_RANGE_PATTERN);
     private static final Pattern TASK_DELETE_PATTERN = Pattern.compile(
             "task +delete +T(?<id>" + POSITIVE_INT_TOKEN + ")");
+    // @@author ernestgoh-god
+    private static final Pattern TASK_COMPLETE_PATTERN = Pattern.compile(
+            "task +complete +T(?<id>" + POSITIVE_INT_TOKEN + ")");
+    // @@author ka-how
     // @@author nickpatt
     private static final Pattern TASK_EDIT_PATTERN = Pattern.compile(
             "task +edit +T(?<id>" + POSITIVE_INT_TOKEN + ")"
@@ -254,7 +262,11 @@ public final class CommandParser {
             Command result = switch (command) {
                 case "help" -> parseNoArguments(input, command, new Command.Help());
                 case "task add" -> parseAddTask(input);
-                case "task list" -> parseNoArguments(input, command, new Command.ListTasks());
+                // @@author ernestgoh-god
+                case "task list" -> parseTaskList(input);
+                case "task complete" -> new Command.CompleteTask(Integer.parseInt(
+                        match(TASK_COMPLETE_PATTERN, input, usage).group("id")));
+                // @@author ka-how
                 case "task delete" -> new Command.DeleteTask(Integer.parseInt(
                         match(TASK_DELETE_PATTERN, input, usage).group("id")));
                 // @@author nickpatt
@@ -313,6 +325,10 @@ public final class CommandParser {
         return switch (command) {
             case "task add" -> TASK_ADD_USAGE;
             case "task delete" -> TASK_DELETE_USAGE;
+            // @@author ernestgoh-god
+            case "task list" -> TASK_LIST_USAGE;
+            case "task complete" -> TASK_COMPLETE_USAGE;
+            // @@author ka-how
             // @@author nickpatt
             case "task edit" -> TASK_EDIT_USAGE;
             case "task recur" -> TASK_RECUR_USAGE;
@@ -332,7 +348,7 @@ public final class CommandParser {
             case "commitment delete" -> COMMITMENT_DELETE_USAGE;
             case "schedule" -> SCHEDULE_USAGE;
             case "hours" -> HOURS_USAGE;
-            case "help", "task list", "commitment list", "plan", "exit" -> command;
+            case "help", "commitment list", "plan", "exit" -> command;
             default -> HELP_USAGE;
         };
     }
@@ -346,6 +362,20 @@ public final class CommandParser {
         }
         return result;
     }
+
+    // @@author ernestgoh-god
+    /** Selects the existing full list or completed-only view without accepting other trailing words. */
+    private Command parseTaskList(String input) throws ParseException {
+        String normalized = input.replaceAll(" +", " ");
+        if (normalized.equals("task list")) {
+            return new Command.ListTasks();
+        }
+        if (normalized.equals("task list completed")) {
+            return new Command.ListCompletedTasks();
+        }
+        throw new ParseException("Invalid command format or missing fields", TASK_LIST_USAGE);
+    }
+    // @@author ka-how
 
     /**
      * Extracts task fields after a complete grammar match, leaving business rules to the service.
