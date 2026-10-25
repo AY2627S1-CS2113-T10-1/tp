@@ -703,9 +703,9 @@ included date, leaving other hours available. Each generated period will have
 its own commitment ID for independent editing/deletion. The full request will
 be rejected if any period conflicts with an existing commitment.
 
-The batch confirmation is implemented and unit-tested, but parsing and dispatch
-are still pending. For now, use the existing single-date
-`commitment add ... on/DATE` commands.
+The batch confirmation and syntax parsing are implemented and unit-tested, but
+the console dispatch still cannot run these commands. For now, use the existing
+single-date `commitment add ... on/DATE` commands.
 The [Developer Guide handoff](DeveloperGuide.md#multi-date-unavailable-periods-implementation-handoff-planned)
 contains proposed outputs, owner responsibilities and acceptance tests.
 

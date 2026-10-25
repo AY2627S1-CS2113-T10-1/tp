@@ -30,6 +30,12 @@ class CommandParserTest {
     private static final String COMMITMENT_DELETE_USAGE = "commitment delete CNUMBER";
     private static final String COMMITMENT_SKIP_USAGE = "commitment skip CNUMBER on/YYYY-MM-DD";
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
+    // @@author ernestgoh-god
+    private static final String UNAVAILABLE_CONTINUOUS_USAGE =
+            "unavailable continuous n/NAME from/YYYY-MM-DD HHmm until/YYYY-MM-DD HHmm";
+    private static final String UNAVAILABLE_DAILY_USAGE =
+            "unavailable daily n/NAME from/YYYY-MM-DD until/YYYY-MM-DD start/HHmm end/HHmm";
+    // @@author ka-how
     private final CommandParser parser = new CommandParser();
 
     @Test
@@ -84,6 +90,95 @@ class CommandParserTest {
     }
 
     // @@author ernestgoh-god
+    @Test
+    void parse_unavailableContinuous_preservesNamesDatesAndTimesWithoutDomainValidation() throws ParseException {
+        assertEquals(new Command.AddContinuousBlock("Trip  Café | 复习",
+                LocalDateTime.of(2026, 10, 26, 15, 0), LocalDateTime.of(2026, 10, 28, 11, 0)),
+                parser.parse("  unavailable  continuous  n/ Trip  Café | 复习  from/2026-10-26  1500"
+                        + "  until/2026-10-28  1100  "));
+        assertEquals(new Command.AddContinuousBlock("Same", LocalDateTime.of(2028, 2, 29, 15, 15),
+                LocalDateTime.of(2028, 2, 29, 15, 15)),
+                parser.parse("unavailable continuous n/Same from/2028-02-29 1515 until/2028-02-29 1515"));
+    }
+
+    @Test
+    void parse_unavailableDaily_preservesLeapAndBoundaryDatesWithoutDomainValidation() throws ParseException {
+        assertEquals(new Command.AddDailyBlocks("Appointment", LocalDate.of(2028, 2, 28),
+                LocalDate.of(2028, 3, 1), LocalTime.of(15, 0), LocalTime.of(17, 0)),
+                parser.parse("unavailable daily n/Appointment from/2028-02-28"
+                        + " until/2028-03-01 start/1500 end/1700"));
+        assertEquals(new Command.AddDailyBlocks("Boundary", LocalDate.of(9999, 12, 31),
+                LocalDate.of(1, 1, 1), LocalTime.of(23, 59), LocalTime.MIDNIGHT),
+                parser.parse("unavailable daily n/Boundary from/9999-12-31"
+                        + " until/0001-01-01 start/2359 end/0000"));
+    }
+
+    @Test
+    void parse_unavailable_rejectsMissingReorderedDuplicateMixedAndExtraFields() {
+        for (String input : List.of("unavailable continuous", "unavailable continuous n/A",
+                "unavailable continuous from/2026-10-26 1500 until/2026-10-28 1100",
+                "unavailable continuous n/A until/2026-10-28 1100 from/2026-10-26 1500",
+                "unavailable continuous n/A from/2026-10-26 1500 from/2026-10-27 0000"
+                        + " until/2026-10-28 1100",
+                "unavailable continuous n/A from/2026-10-26 1500 until/2026-10-28 1100 extra",
+                "unavailable continuous n/A from/2026-10-26 1500 until/2026-10-28 1100 start/1500",
+                "unavailable continuous n/A/B from/2026-10-26 1500 until/2026-10-28 1100",
+                "unavailable continuous n/A from/2026-10-26 150 until/2026-10-28 1100")) {
+            assertUnavailableSyntaxRejected(input, UNAVAILABLE_CONTINUOUS_USAGE);
+        }
+        for (String input : List.of("unavailable daily", "unavailable daily n/A from/2026-10-26",
+                "unavailable daily n/A until/2026-10-28 from/2026-10-26 start/1500 end/1700",
+                "unavailable daily n/A from/2026-10-26 until/2026-10-28 end/1700 start/1500",
+                "unavailable daily n/A from/2026-10-26 until/2026-10-28 start/1500 start/1600 end/1700",
+                "unavailable daily n/A from/2026-10-26 until/2026-10-28 start/1500 end/1700 extra",
+                "unavailable daily n/A from/2026-10-26 until/2026-10-28 start/1500 end/1700"
+                        + " from/2026-10-29",
+                "unavailable daily n/A from/2026-10-26 1500 until/2026-10-28 start/1500 end/1700",
+                "unavailable daily n/A from/2026-10-26 until/2026-10-28 start/1500 end/17000")) {
+            assertUnavailableSyntaxRejected(input, UNAVAILABLE_DAILY_USAGE);
+        }
+        ParseException unknown = assertThrows(ParseException.class, () -> parser.parse("unavailable weekly n/A"));
+        assertEquals("Invalid unavailable command format", unknown.getMessage());
+        assertEquals(UNAVAILABLE_CONTINUOUS_USAGE + " OR " + UNAVAILABLE_DAILY_USAGE, unknown.usage());
+    }
+
+    @Test
+    void parse_unavailable_rejectsInvalidCalendarDatesYearsAndTimesWithModeUsage() {
+        for (String input : List.of(
+                "unavailable continuous n/A from/2026-02-30 1500 until/2026-03-01 1100",
+                "unavailable continuous n/A from/2026-10-26 2400 until/2026-10-28 1100",
+                "unavailable daily n/A from/2026-10-26 until/2026-02-29 start/1500 end/1700",
+                "unavailable daily n/A from/2026-10-26 until/2026-10-28 start/1500 end/2460")) {
+            ParseException failure = assertThrows(ParseException.class, () -> parser.parse(input), input);
+            assertEquals("Invalid date or time", failure.getMessage());
+            assertEquals(input.startsWith("unavailable continuous") ? UNAVAILABLE_CONTINUOUS_USAGE
+                    : UNAVAILABLE_DAILY_USAGE, failure.usage());
+        }
+        for (String input : List.of(
+                "unavailable continuous n/A from/0000-01-01 1500 until/2026-10-28 1100",
+                "unavailable daily n/A from/2026-10-26 until/0000-01-01 start/1500 end/1700")) {
+            ParseException failure = assertThrows(ParseException.class, () -> parser.parse(input), input);
+            assertEquals("Year must be between 0001 and 9999", failure.getMessage());
+            assertEquals(input.startsWith("unavailable continuous") ? UNAVAILABLE_CONTINUOUS_USAGE
+                    : UNAVAILABLE_DAILY_USAGE, failure.usage());
+        }
+    }
+
+    @Test
+    void parse_unavailable_embeddedControlsRetainSelectedModeUsage() {
+        ParseException failure = assertThrows(ParseException.class, () -> parser.parse(
+                "unavailable continuous n/A\tB from/2026-10-26 1500 until/2026-10-28 1100"));
+        assertEquals("Use ordinary spaces instead of embedded control characters", failure.getMessage());
+        assertEquals(UNAVAILABLE_CONTINUOUS_USAGE, failure.usage());
+    }
+
+    /** Checks the specified mode's exact syntax error and usage hint. */
+    private void assertUnavailableSyntaxRejected(String input, String usage) {
+        ParseException failure = assertThrows(ParseException.class, () -> parser.parse(input), input);
+        assertEquals("Invalid unavailable command format", failure.getMessage(), input);
+        assertEquals(usage, failure.usage(), input);
+    }
+
     @Test
     void parse_taskProgress_acceptsBothReportedWorkForms() throws ParseException {
         assertEquals(new Command.RecordTaskWork(1, 30), parser.parse("task progress T1 done/30"));
