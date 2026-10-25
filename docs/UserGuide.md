@@ -17,6 +17,9 @@ Study hours default to **08:00–22:00 every day**, including weekends. You can 
 - [Command format](#command-format)
 - [Tasks](#tasks)
   - [Adding a task](#adding-a-task)
+  - [Recording progress](#recording-progress)
+  - [Editing a task](#editing-a-task)
+  - [Weekly recurring tasks](#weekly-recurring-tasks)
   - [Listing tasks](#listing-tasks)
   - [Deleting a task](#deleting-a-task)
 - [Commitments](#commitments)
@@ -29,6 +32,7 @@ Study hours default to **08:00–22:00 every day**, including weekends. You can 
 - [Study hours](#study-hours)
 - [Study plans](#study-plans)
   - [Generating a plan](#generating-a-plan)
+  - [Marking a study period unavailable](#marking-a-study-period-unavailable)
   - [Planning hours and date range](#planning-hours-and-date-range)
   - [Unallocated work](#unallocated-work)
 - [Viewing the schedule](#viewing-the-schedule)
@@ -88,11 +92,13 @@ Enter each command on one line. In syntax examples, uppercase placeholders such 
 | Task/commitment times | Four digits in 24-hour `HHmm` format, from `0000` to `2359` | `0930`, `1800` |
 | Study hours | `HH:mm`, on half-hour boundaries; start before end within the same day | `09:00`, `22:30` |
 | Deadlines | Date and time separated by a space; any minute is allowed | `2026-10-06 2359` |
-| Durations | Positive whole minutes, divisible by 30; no sign or leading zeroes | `30`, `90`, `180` |
+| Task durations | Positive whole minutes; no sign or leading zeroes | `1`, `45`, `180` |
+| Commitment durations | Positive whole minutes divisible by 30; no sign or leading zeroes | `30`, `90`, `180` |
 | Commitment starts | Must be on the hour or half hour | `1000`, `1030` |
 | Commitment weekdays | Exactly `MON`, `TUE`, `WED`, `THU`, `FRI`, `SAT`, or `SUN` | `MON` |
 | Study-hours weekdays | Full lowercase weekday names | `tuesday` |
 | Task IDs | `T` followed by a positive integer, without leading zeroes | `T1`, `T12` |
+| Recurring task template IDs | `R` followed by a positive integer, separate from occurrence IDs | `R1`, `R12` |
 | Commitment IDs | `C` followed by a positive integer, without leading zeroes | `C1`, `C12` |
 
 Use one or more ordinary spaces between fields. Outer whitespace is trimmed, and blank lines are ignored. Names are trimmed at both ends while retaining internal spaces. Quotation marks have no special meaning and are unnecessary. Duplicate names are allowed.
@@ -104,37 +110,98 @@ Missing required fields, repeated, unknown, reordered, or extra fields are rejec
 Impossible dates such as `2026-02-30` are rejected rather than adjusted to another
 date. Parsing keeps `schedule today` as a request for today's schedule; its date
 will be resolved when the command executes. Checks such as a future deadline,
-duration divisibility and whether an ID exists belong to domain validation
+commitment duration divisibility and whether an ID exists belong to domain validation
 after parsing.
 
 Examples below are independent unless a sequence is explicitly described. Use existing IDs and suitable future dates in your own session. List spacing and explanatory error wording may vary; identifiers, values, and behaviour follow the rules described in this guide.
 
 ## Tasks
 
-Task name/deadline editing is implemented only as an internal Java service API.
-Console integration and edit-confirmation rendering are pending; no task-edit
-command is supported yet. The existing add, list and delete commands below are
-unchanged. Deadline removal and progress tracking are not supported.
+Task addition, editing, deletion and weekly recurring templates are available at
+the console. You can revise a task's remaining-work estimate with `task remaining`.
+You can record completed work with either form of `task progress`.
+Deadline clearing, explicit completion/reopening and adding without a deadline
+are implemented as internal Java service APIs, but have no console commands.
+Console addition still requires a deadline, and editing accepts only a name and/or
+concrete deadline. Progress saves changed estimates and retains a completed
+record when its remaining work reaches zero.
+
+The domain retains completed records with zero remaining, preserves IDs and
+requires positive work to reopen them. Session percentage progress credits the
+floor of session minutes times percentage / 100; no timer subtracts work.
+Explicit reopening is not yet available from the console. Loaded undated tasks
+display `No deadline`; loaded completed tasks remain listed with `0 min` and
+receive no planning sessions or unallocated rows. No separate status/completed
+list rendering or priority commands are available yet.
 
 ### Recording duration (tasks and commitments)
 
 Enter duration when adding a task or commitment using `d/MINUTES`; there is no
 separate duration command or timer. For example, `d/90` records 90 minutes.
-Both types require positive multiples of 30: `d/30` and `d/90` are valid,
-while `d/0` and `d/45` are rejected, not rounded.
+Tasks accept positive whole minutes, including `d/1` and `d/45`. Commitments
+still require positive multiples of 30, so commitment `d/45` is rejected.
+Both additions reject `d/0`.
 
 For a task, duration is the estimated remaining work, which may be split into
 several sessions. For a commitment, it is the length of each weekly occurrence
 from its start time, and that occurrence must not cross midnight. Planning
 does not reduce either stored value. Saving and loading preserve both values.
 
-Every stored task represents unfinished work. Its duration is your estimate of the work still required. Generating a plan or letting time pass does not reduce that estimate.
+A task's duration is the exact remaining-work estimate; zero in restored data
+means retained completion. Generating a plan or letting time pass does not
+reduce that estimate. Slot capacity rounds up: 45 minutes needs 60 minutes of
+schedule space, but remains 45 minutes of actual work. If only 30 minutes fits,
+the unallocated work is 15 minutes (requiring another 30-minute slot).
 
-> **Planned issue #40 command:** The parser recognizes `task progress T1 done/30`
-> and `task progress T1 session/60 percent/50`, but the application does not
-> execute them yet. Use the existing task commands until progress dispatch and
-> its response are integrated. A percentage describes work completed during the
-> reported session; it is not a percentage of the whole task.
+Use [progress](#recording-progress) to subtract completed work from an estimate.
+A percentage describes the reported session, not the whole task.
+
+To revise a task's remaining-work estimate without recording completed work, use:
+
+```text
+scheduleflow> task remaining T1 remaining/90
+Remaining time for T1: CS2113 draft | 90 min
+```
+
+Use an existing task ID and a positive whole-minute estimate; `remaining/45`
+is accepted. A changed estimate saves automatically and clears the current
+plan; run `plan` again to reflect it. Repeating the same value
+reports the stored estimate without saving or clearing the plan. Unknown IDs,
+invalid values, attempts to revise a completed task and failed saves leave
+saved data and the current plan unchanged.
+
+### Recording progress
+
+```text
+task progress TNUMBER done/MINUTES
+task progress TNUMBER session/MINUTES percent/PERCENT
+```
+
+For an existing task with 90 minutes remaining:
+
+```text
+scheduleflow> task progress T1 done/30
+Recorded progress for T1: CS2113 draft | Credited: 30 min | Remaining: 60 min
+scheduleflow> task progress T1 session/61 percent/25
+Recorded progress for T1: CS2113 draft | Credited: 15 min | Remaining: 45 min
+```
+
+Direct progress accepts zero or more whole minutes up to the remaining estimate.
+A session requires positive whole minutes and an integer percentage from 0 to
+100. Credit is rounded down to whole minutes: 25% of 61 minutes credits 15.
+Both forms report the actual credit and new estimate; no timer runs automatically.
+Use ordinary decimal numbers without signs or leading zeroes.
+
+A changed estimate saves automatically and clears the current plan. Run `plan`
+again to schedule the remaining work. Zero credit, including a percentage that
+rounds to zero, reports the unchanged estimate without saving or clearing the
+plan. Unknown IDs, overreported work, invalid input and failed saves preserve
+the existing data and plan. Saved progress survives restarting.
+
+Crediting all remaining work retains the task with `0 min`; further progress
+is rejected until it is reopened through the Java API. There is no console
+reopening command yet. Progress also works on generated recurring-task
+occurrences without changing their template or original release date.
 
 ### Adding a task
 
@@ -144,7 +211,7 @@ Every stored task represents unfinished work. Its duration is your estimate of t
 task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES
 ```
 
-The deadline must be strictly later than the current local date and time and no later than midnight at the start of the same calendar date next year. The duration must be a positive multiple of 30 minutes. Deadlines do not need to fall on a half-hour boundary.
+The deadline must be strictly later than the current local date and time and no later than midnight at the start of the same calendar date next year. The task duration must be positive whole minutes. Deadlines do not need to fall on a half-hour boundary.
 
 ```text
 scheduleflow> task add n/CS2113 draft due/2026-10-20 1800 d/180
@@ -193,13 +260,88 @@ No tasks found.
 
 The listed duration is the stored work estimate, not the unallocated remainder of the latest plan.
 
+### Editing a task
+
+```text
+task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]
+```
+
+Supply at least one field. When both are supplied, `n/` must precede `due/`.
+Omitted fields retain their values. Use an existing ID from `task list`:
+
+```text
+scheduleflow> task edit T1 n/CS2113 final draft due/2026-11-20 1800
+Edited T1: CS2113 final draft
+Due: 2026-11-20 18:00 | Duration: 180 min
+```
+
+Replace example dates with suitable future dates. A changed deadline must be
+strictly after the command time and at or before the rolling calendar-year
+limit. Renaming an overdue task is allowed; keeping its unchanged old deadline
+is also allowed. Deadlines cannot currently be removed. Use `task remaining T1
+remaining/90` to revise the estimate rather than adding an unsupported `d/` edit.
+
+Edits preserve the task ID, list position, estimate, other records and all ID
+counters. A changed edit is saved before it clears the current plan; run `plan`
+again. An unchanged normalized edit reports the same details without saving or
+clearing the plan. Invalid edits or failed saves apply nothing.
+
+### Weekly recurring tasks
+
+```text
+task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES every/WEEKLY [until/YYYY-MM-DD]
+task recur list
+task recur delete RNUMBER
+```
+
+A template describes unfinished work repeated each week, not a fixed busy
+commitment. Its first deadline fixes the weekday and time of all occurrences.
+The first deadline must be in the future. Estimates remain positive multiples
+of 30 minutes. Optional `until/` is an inclusive last due date, on or after the
+first due date; omit it for no end date. Only `every/WEEKLY` is supported.
+
+```text
+scheduleflow> task recur add n/Weekly quiz due/2026-11-02 1800 d/60 every/WEEKLY until/2026-11-30
+Added R1: Weekly quiz
+Weekly from: 2026-11-02 18:00 | Duration: 60 min | Until: 2026-11-30
+```
+
+Use future dates in your own session. `task recur list` displays the stable
+`R` IDs and definitions; an empty list prints `No recurring tasks found.`
+Each materialized occurrence gets its own `T` ID and appears in `task list`.
+Adding a template materializes future deadlines through the rolling planning
+horizon. Each `plan` command extends generation as that horizon moves forward.
+Templates may start beyond the current horizon; their first tasks appear once
+eligible. A task is never scheduled before one week before its original due
+date, even if you later edit that occurrence's deadline.
+
+Generation skips ungenerated deadlines already passed; it does not backfill
+missed weeks. Saved cursors prevent restart, replanning or deleting an occurrence
+from recreating it. Templates, provenance and all counters survive saved
+restarts and unrelated task/commitment/study-hours changes. Template IDs are
+never reused. Failed validation, planning or saving leaves live state unchanged.
+
+`task recur delete R1` stops future generation but **retains every already
+generated task**, including future occurrences. Remove unwanted occurrences
+separately with `task delete TNUMBER`. Editing a generated task affects only
+that task, not its template or original release time. Template editing and
+daily/monthly recurrence are not supported.
+
+Generated tasks use the same exact remaining-work and lifecycle model as ordinary
+tasks. Their estimates can be revised with `task remaining`, and completed work
+can be recorded with `task progress`; both preserve their provenance. Explicit
+completion and reopening remain internal Java APIs.
+
 ### Deleting a task
 
 ```text
 task delete TNUMBER
 ```
 
-Deletes the task permanently. Use this command to remove completed work or to remove an incorrect task before adding a replacement. There is no undo or completion command.
+Deletes the task permanently. Use this command to remove completed or unwanted
+work. Use `task edit` to correct a name/deadline without replacing the ID.
+There is no undo. To retain a completed record instead of deleting it, use
+`task progress` to credit all its remaining work.
 
 ```text
 scheduleflow> task delete T1
@@ -488,7 +630,12 @@ of ScheduleFlow; older versions cannot read the new format.
 plan
 ```
 
-ScheduleFlow allocates tasks by earliest deadline first. Tasks with equal deadlines are ordered by numeric ID: for example, `T2` comes before `T10`.
+ScheduleFlow excludes completed tasks and allocates dated tasks by earliest
+deadline first, with stored priority (HIGH, NORMAL, LOW) breaking deadline ties,
+then numeric ID. All console-created tasks default to NORMAL, so `T2` still
+comes before `T10` at an equal deadline. Loaded undated tasks follow all dated
+tasks, by priority and ID, within the same horizon. Priority operations are not
+yet available at the console.
 
 Each task fills the earliest available 30-minute slots that end at or before its deadline. Work may split around commitments or across days. Adjacent slots for the same task on the same day are displayed as one session. Sessions never overlap commitments or other sessions.
 
@@ -510,6 +657,58 @@ Even with no tasks, `plan` creates a current plan. You can then view commitments
 
 Each `plan` command saves and replaces the previous plan without changing stored task durations. If saving fails, the previous plan remains available. This allocator follows deadline order; it does not guarantee the fewest sessions or the greatest number of fully completed tasks.
 
+### Marking a study period unavailable
+
+Use a one-time commitment to block time on a particular date, including time
+that a previous plan assigned to a task:
+
+```text
+commitment add n/Unavailable on/2026-10-26 start/1000 d/60
+plan
+schedule 2026-10-26
+```
+
+Replace the example date with your chosen date within the current planning
+range. This blocks 10:00-11:00 on that date only. You can choose any descriptive
+name, such as `Appointment`; `Unavailable` has no special meaning. The period
+appears as `[BUSY]` with its commitment ID. Replanning moves task work into other
+eligible slots and reports unallocated minutes if it cannot all fit before the
+deadlines. Stored task estimates do not change.
+
+Adding the block saves automatically and clears the old plan; run `plan` again
+to apply it. The block survives restarting, but the generated plan does not.
+You can release it with `commitment delete CNUMBER`, using the ID shown by
+`commitment list`, then run `plan` again. Successful deletion also saves and
+clears the current plan.
+
+The existing one-time commitment rules apply: half-hour-aligned starts,
+positive durations divisible by 30, and an interval ending by midnight. A block
+may overlap planned task sessions, but it cannot overlap another commitment
+occurring on that date. Rejected additions preserve the existing plan and data.
+There is no separate `unavailable` command or command to select a session by ID.
+
+### Blocking multiple dates (planned)
+
+Two extensions are specified for implementation but are not accepted by the
+console yet:
+
+```text
+unavailable continuous n/Trip from/2026-10-26 1500 until/2026-10-28 1100
+unavailable daily n/Appointment from/2026-10-26 until/2026-10-28 start/1500 end/1700
+```
+
+Continuous mode will block every moment from the first date/time up to, but
+excluding, the last date/time. Daily mode will block only 15:00-17:00 on each
+included date, leaving other hours available. Each generated period will have
+its own commitment ID for independent editing/deletion. The full request will
+be rejected if any period conflicts with an existing commitment.
+
+The batch confirmation and syntax parsing are implemented and unit-tested, but
+the console dispatch still cannot run these commands. For now, use the existing
+single-date `commitment add ... on/DATE` commands.
+The [Developer Guide handoff](DeveloperGuide.md#multi-date-unavailable-periods-implementation-handoff-planned)
+contains proposed outputs, owner responsibilities and acceptance tests.
+
 ### Session limits and breaks (planned console feature)
 
 Issue #55's planning algorithm supports a continuous-work limit counting both
@@ -518,8 +717,9 @@ for a fixed consecutive break. Commitments remain fixed even if they exceed
 the limit; a longer commitment does not increase the required break duration.
 
 This feature is currently available only through the Java planning API.
-Settings commands, saving those settings and break-row display are awaiting
-integration. The console's existing `plan` command does not enforce these
+Break rows supplied by the planning API display as `HH:mm - HH:mm | [BREAK]`.
+Settings commands and saving those settings are awaiting integration.
+The console's existing `plan` command does not enforce these
 limits yet; there is no supported command to configure them.
 
 ### Planning hours and date range
@@ -570,7 +770,13 @@ The task still has a stored duration of 90 minutes. Only 30 minutes were allocat
 | `outside planning horizon` | The deadline is later than this plan's date limit, for example after restoring data or changing the clock. Its full duration remains unallocated. |
 | `insufficient time before deadline` | Too few eligible slots remain before the deadline. Any slots that do fit are retained. |
 
-The totals cover the whole plan. Unallocated tasks appear in deadline order, then numeric ID order. Slots must fit in full: a deadline of 08:59 permits an 08:00–08:30 session but not an 08:30–09:00 session.
+The totals cover the whole plan. Unallocated tasks appear in deadline order, with priority then numeric ID breaking ties; undated tasks follow dated tasks. Slots must fit in full: a deadline of 08:59 permits an 08:00–08:30 session but not an 08:30–09:00 session.
+
+Summary scheduled/unallocated totals count exact work, excluding padded capacity.
+Schedule rows still show reserved interval durations. Undated remainder rows say
+`No deadline` and `insufficient available study time`, never `deadline passed` or
+`outside planning horizon`. They follow dated rows; priority breaks equal
+deadline ties before numeric ID. Completed overdue tasks contribute no remainder.
 
 ## Viewing the schedule
 
@@ -593,6 +799,7 @@ The schedule displays the latest plan's full configured window in chronological 
 | `[BUSY]` | A recurring commitment, showing its commitment ID and name. |
 | `[FREE]` | Time eligible for planning that was not assigned to a task or blocked by a commitment. |
 | `[UNPLANNED]` | Time before the planning cutoff on the day the plan was generated. It is not available study time in this plan. |
+| `[BREAK]` | A supplied rest interval from the configured Java planning API; the console cannot configure this policy yet. |
 
 A commitment remains `[BUSY]` even when it occurred before the planning cutoff. Adjacent entries are combined only when their label, ID, and name match, so separate commitments remain separate rows.
 
@@ -650,7 +857,7 @@ No current plan. Run plan to generate one.
 
 A selected date must fall within the current plan's date range. An out-of-range request reports the earliest and latest allowed dates; it does not produce an empty schedule. Run `plan` again when you need a fresh range.
 
-**Plans remain fixed until regenerated.** Viewing a schedule later, including after a restart, does not move its sessions or update its generation time. Successful task or commitment additions, deletions and commitment edits, and study-hours sets and resets, clear the saved plan; failed commands preserve it.
+**Plans remain fixed until regenerated.** Viewing a schedule later, including after a restart, does not move its sessions or update its generation time. Successful changes to tasks, recurring-task templates, commitments or study hours clear the saved plan; failed commands preserve it.
 
 ## Help and exit
 
@@ -673,11 +880,26 @@ Goodbye for now!
 
 ## Saving and restoring data
 
-The application loads saved data and any saved plan before showing its first
-prompt. It saves each successful task, commitment or study-hours change and
-each generated plan automatically.
+The application loads saved data and any saved schedule before its first prompt.
+It automatically saves each successful task, commitment or study-hours change,
+including changed remaining-work estimates, and each generated plan.
 
 Tasks, commitments, study hours and the next ID counters are saved automatically after each successful change and restored at startup. No manual save or load command is needed.
+
+New saves use version 2, 3 or 4 depending on commitment date bounds and skipped
+occurrences, or version 5 when templates, occurrence provenance or an allocated
+template ID counter require it. Ordinary tasks use `TASK2` rows, including in
+version 5; generated tasks use `OCCURRENCE` rows with exact remaining minutes,
+optional deadlines, priority and original template/deadline provenance. Templates,
+generation cursors, custom study hours and all ID counters are preserved.
+Generating a plan writes version 6, containing the complete source data and the
+exact schedule, including credited work, generation time, unallocated work and
+breaks. Versions 1 through 5 remain readable; loading does not rewrite them.
+Snapshot-only saves use at least version 2. Older executables cannot read version 5, and older
+applications without `TASK2` support cannot read those extended rows. See the
+[Developer Guide](DeveloperGuide.md#basic-saving-and-loading) for the precise
+layout. Saved schedules are restored exactly, without regenerating recurring
+tasks or moving sessions during startup.
 
 - **Location:** `data/scheduleflow.txt`, relative to the folder from which you launch the application. Launch from the same folder to use the same data.
 - **First launch:** If the file is absent, the app starts empty. The first successful change or `plan` creates the saved data.
@@ -695,19 +917,25 @@ To back up your data, close the app and copy `data/scheduleflow.txt`. To transfe
 
 ### What if my work does not fit before its deadline?
 
-Run `plan` and review the unallocated minutes and reasons. The app retains every session that fits. You can correct an estimate or deadline by deleting the task and adding a replacement, or remove a commitment if that time has become available. Run `plan` again after changes.
+Run `plan` and review the unallocated minutes and reasons. The app retains every
+session that fits. Revise an estimate with `task remaining`, change a deadline
+with `task edit`, or remove a commitment if that time has become available.
+Run `plan` again after changes.
 
 ### How do I mark work as complete or correct an entry?
 
 Delete completed tasks using `task delete TNUMBER`. Correct commitments with
 `commitment edit CNUMBER` and one or more fields; the ID is preserved. To correct
-a task, delete it and add a replacement with the correct details and a new ID.
-Task editing and completion commands are not supported yet. For partially
-completed work, replace the task with your revised remaining-work estimate.
+a task's name or deadline, use `task edit TNUMBER` with `n/` and/or `due/`;
+the ID is preserved. Record completed work with `task progress`; crediting all
+remaining minutes retains the task at zero. Explicit completion/reopening
+commands are not supported yet. Use `task remaining` to correct an estimate
+without recording completed work.
 
 ### Why did my schedule disappear?
 
-A successful task or commitment addition, deletion, commitment edit or
+A successful task or commitment addition, deletion, task edit, template change,
+progress update, remaining-work revision, commitment edit or
 occurrence skip, or a study-hours set or reset, clears the current plan. Plans
 remain available after restarting until a successful change invalidates them.
 Run `plan` to generate another one.
@@ -724,7 +952,9 @@ New task deadlines must fall within the rolling calendar-year limit at the time 
 
 Check the command's field order, case, prefixes, date, time, duration, and ID. Syntax errors display `Error: MESSAGE` followed by `Expected: USAGE`. Value errors, unknown IDs, and save errors display one `Error: MESSAGE` line. Rejected operations preserve saved data and the current plan.
 
-For example, use `task delete T1`, not `task delete 1`; use duration `60`, not `45` or `060`; and start a commitment at `1030`, not `1015`.
+For example, use `task delete T1`, not `task delete 1`; use commitment duration
+`60`, not `45` or `060`; and start a commitment at `1030`, not `1015`.
+Task duration `45` is valid, but task duration `060` is not.
 
 ### What should I do if the application cannot load my data?
 
@@ -741,8 +971,15 @@ these storage logs do not include your task names or saved file contents.
 | --- | --- |
 | View help | `help` |
 | Add a task | `task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES` |
+| Edit a task | `task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]` |
+| Add weekly task template | `task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES every/WEEKLY [until/YYYY-MM-DD]` |
+| List task templates | `task recur list` |
+| Stop future task generation | `task recur delete RNUMBER` |
 | List tasks | `task list` |
 | Delete a task | `task delete TNUMBER` |
+| Revise a task's remaining time | `task remaining TNUMBER remaining/MINUTES` |
+| Record completed minutes | `task progress TNUMBER done/MINUTES` |
+| Record session progress | `task progress TNUMBER session/MINUTES percent/PERCENT` |
 | Add a weekly commitment | `commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD]` |
 | Add a one-time commitment | `commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES` |
 | List commitments | `commitment list` |
@@ -757,6 +994,8 @@ these storage logs do not include your task names or saved file contents.
 | View a dated schedule | `schedule YYYY-MM-DD` |
 | Exit | `exit` |
 
-`TNUMBER` and `CNUMBER` mean existing IDs such as `T1` and `C1`. Replace other uppercase placeholders with your values; do not type the placeholders literally.
+`TNUMBER`, `CNUMBER` and `RNUMBER` mean existing IDs such as `T1`, `C1` and `R1`.
+`WEEKLY` is a literal keyword, not a placeholder. Replace the other uppercase
+placeholders with your values; do not type the placeholders literally.
 
 [Back to top](#scheduleflow-user-guide)

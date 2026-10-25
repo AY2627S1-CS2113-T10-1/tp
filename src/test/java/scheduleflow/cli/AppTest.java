@@ -30,10 +30,13 @@ import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
+import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskPriority;
 import scheduleflow.planning.EarliestDeadlinePlanner;
 import scheduleflow.planning.Plan;
+import scheduleflow.planning.ScheduleService;
 import scheduleflow.storage.FileStorage;
 import scheduleflow.storage.StateCodec;
 import scheduleflow.storage.Storage;
@@ -150,7 +153,9 @@ class AppTest {
     void run_generatedScheduleAfterRestart_displaysIdenticalFrozenOutput() throws Exception {
         Path file = directory.resolve("data/scheduleflow.txt");
         Result first = run(ADD_TASK + "\nplan\nschedule today\nexit\n", new FileStorage(file, new StateCodec()));
-        Result second = run("schedule today\nexit\n", new FileStorage(file, new StateCodec()));
+        Clock later = Clock.fixed(NOW.plusDays(2).toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
+        Result second = run(new BufferedReader(new StringReader("schedule 2026-09-21\nexit\n")),
+                new FileStorage(file, new StateCodec()), later);
 
         assertEquals(0, first.status());
         assertEquals(0, second.status());
@@ -160,6 +165,42 @@ class AppTest {
                 .split("scheduleflow> Goodbye", 2)[0];
         assertEquals(firstSchedule, restoredSchedule);
         assertTrue(second.output().contains("08:00 - 08:30 | [TASK] T1: Draft (30 min)"));
+    }
+
+    @Test
+    void run_planMaterializesRecurringTasks_restoresExactSourceAndInvalidatesAfterProgress() throws Exception {
+        Path file = directory.resolve("data/scheduleflow.txt");
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        LocalDateTime firstDeadline = NOW.plusDays(1);
+        RecurringTask pending = new RecurringTask(1, "Weekly", firstDeadline,
+                Optional.of(firstDeadline.toLocalDate()), 60, Optional.empty());
+        Task undated = new Task(1, "Undated", Optional.empty(), 17, TaskPriority.HIGH);
+        Snapshot source = new Snapshot(List.of(undated), List.of(), 2, 1,
+                Snapshot.empty().studyHours(), List.of(pending), 2);
+        storage.save(source);
+
+        assertEquals(0, run("plan\nexit\n", storage).status());
+        Snapshot generated = storage.load();
+        Plan plan = storage.loadPlan(generated).orElseThrow();
+        byte[] saved = Files.readAllBytes(file);
+        assertEquals(List.of(1, 2), generated.tasks().stream().map(Task::id).toList());
+        assertEquals(Optional.of(firstDeadline), generated.recurringTasks().getFirst().generatedThrough());
+        assertEquals(77, plan.sessions().stream().mapToInt(session -> session.workMinutes()).sum());
+
+        Result restarted = run("schedule today\nexit\n", new FileStorage(file, new StateCodec()));
+        assertEquals(0, restarted.status());
+        assertTrue(restarted.output().contains(new TextRenderer().schedule(
+                new ScheduleService().forDate(plan, NOW.toLocalDate()))));
+        assertArrayEquals(saved, Files.readAllBytes(file));
+        assertEquals(plan, storage.loadPlan(generated).orElseThrow());
+
+        assertEquals(0, run("task progress T1 done/1\nexit\n", storage).status());
+        Snapshot changed = storage.load();
+        assertEquals(16, changed.tasks().getFirst().remainingMinutes());
+        assertEquals(generated.recurringTasks(), changed.recurringTasks());
+        assertEquals(generated.nextTaskId(), changed.nextTaskId());
+        assertTrue(storage.loadPlan(changed).isEmpty());
+        assertEquals(0, run("schedule today\nexit\n", storage).status());
     }
 
     @Test
@@ -272,11 +313,10 @@ class AppTest {
     void run_domainErrors_printOneErrorAndContinueWithoutSuccess() {
         FakeStorage storage = new FakeStorage(Snapshot.empty());
         Result result = run("task add n/Past due/2026-09-21 0700 d/30\n"
-                + "task add n/Bad due/2026-09-22 1800 d/45\n"
                 + "commitment add n/Bad day/MON start/1015 d/30\n"
                 + "task delete T9\ncommitment delete C9\ntask list\nexit\n", storage);
         assertEquals(0, result.status());
-        assertEquals(5, result.output().split("Error: ", -1).length - 1);
+        assertEquals(4, result.output().split("Error: ", -1).length - 1);
         assertFalse(result.output().contains("Expected:"));
         assertFalse(result.output().contains("Added "));
         assertFalse(result.output().contains("Deleted "));
@@ -284,6 +324,20 @@ class AppTest {
         assertTrue(result.output().contains("No tasks found."));
         assertEquals(0, storage.saveCalls);
     }
+
+    // @@author nickpatt
+    @Test
+    void run_task45_acceptsExactWorkAndReservesWholeSlots() {
+        FakeStorage storage = new FakeStorage(Snapshot.empty());
+        Result result = run("task add n/Draft due/2026-09-22 1800 d/45\nplan\nschedule today\nexit\n", storage);
+        assertEquals(0, result.status());
+        assertFalse(result.output().contains("Error:"));
+        assertTrue(result.output().contains("Due: 2026-09-22 18:00 | Duration: 45 min"));
+        assertTrue(result.output().contains("08:00 - 09:00 | [TASK] T1: Draft (60 min)"));
+        assertEquals(45, storage.saved.tasks().getFirst().remainingMinutes());
+        assertEquals(1, storage.saveCalls);
+    }
+    // @@author ka-how
 
     @Test
     void run_saveFailure_preservesPlanAndRetriesSameIdWithoutFalseSuccess() {
@@ -339,7 +393,7 @@ class AppTest {
         assertTrue(result.output().contains("08:00 - 08:30 | [TASK] T2: Existing (30 min)"));
         // @@author ernestgoh-god
         assertFalse(Arrays.equals(bytes, Files.readAllBytes(file)));
-        assertTrue(Files.readString(file).startsWith("SCHEDULEFLOW|5\n"));
+        assertTrue(Files.readString(file).startsWith("SCHEDULEFLOW|6\n"));
         assertTrue(delegate.loadPlan(original).isPresent());
         // @@author ka-how
         assertEquals(original, delegate.load());
@@ -515,10 +569,17 @@ class AppTest {
      * Allows controlled reader failures and normalizes only platform line endings.
      */
     private Result run(BufferedReader input, Storage storage) {
+        return run(input, storage, CLOCK);
+    }
+
+    // @@author ernestgoh-god
+    /** Runs an isolated session at a selected time to verify restart does not regenerate frozen plans. */
+    private Result run(BufferedReader input, Storage storage, Clock clock) {
         StringWriter output = new StringWriter();
-        int status = new App(storage, CLOCK, new ConsoleUi(input, new PrintWriter(output))).run();
+        int status = new App(storage, clock, new ConsoleUi(input, new PrintWriter(output))).run();
         return new Result(status, output.toString().replace("\r\n", "\n"));
     }
+    // @@author ka-how
 
     /**
      * Holds observable status and complete console output from one session.
@@ -586,9 +647,10 @@ class AppTest {
         @Override
         public void savePlan(Plan plan) throws StorageException {
             planSaveCalls++;
-            if (failPlanSave || !saved.equals(plan.source())) {
+            if (failPlanSave) {
                 throw new StorageException("Plan save rejected");
             }
+            saved = plan.source();
             savedPlan = Optional.of(plan);
         }
         // @@author ka-how

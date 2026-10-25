@@ -11,7 +11,8 @@ commitment changes automatically.
 
 The following features are implemented:
 
-- Add, list, and delete coursework tasks.
+- Add, edit, list, and delete coursework tasks, preserving stable IDs.
+- Add, list, and stop weekly task templates with saved occurrence-generation history.
 - Add, list, and delete recurring weekly commitments.
 - Generate an earliest-deadline-first study plan.
 - View today's schedule or a schedule for a specific date.
@@ -29,6 +30,8 @@ mutation and are not saved between application runs.
 
 - [User Guide](UserGuide.md) — installation, commands, examples, scheduling
   rules, persistence, and troubleshooting.
+- [Task editing](UserGuide.md#editing-a-task) and
+  [weekly recurring tasks](UserGuide.md#weekly-recurring-tasks) — supported Task command examples.
 - [Developer Guide](DeveloperGuide.md) — architecture, implementation details,
   design decisions, testing, and release verification.
 - [About Us](AboutUs.md) — project team information.
@@ -78,6 +81,11 @@ help
 task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES
 task list
 task delete TNUMBER
+task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]
+task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES every/WEEKLY [until/YYYY-MM-DD]
+task recur list
+task recur delete RNUMBER
+task remaining TNUMBER remaining/MINUTES
 commitment add n/NAME day/DAY start/HHmm d/MINUTES
 commitment list
 commitment delete CNUMBER

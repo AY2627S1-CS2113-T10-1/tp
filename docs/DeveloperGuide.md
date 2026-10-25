@@ -29,13 +29,21 @@ Git-based attribution. CLI wiring remains attributed to its Printing owner.
 These tooling comments change no commands, runtime behaviour or UI fixtures;
 the existing Task JUnit coverage and packaged scenarios remain applicable.
 
+Nickhil's task editing and progress work remains in his original commits
+`2751189` and `bfba4b1`. Scoped tags in shared renderer, planning and storage
+files identify his added sections; untagged edits retain their Git attribution.
+The mixed storage codec test has separate tags for Nickhil's format tests and
+Ernest's cross-feature round-trip test, so neither test is credited to the
+other contributor.
+
 ## Duration verification (issue #13)
 
 Duration recording belongs to the existing add operations; no additional
 command or production API is needed. `InputRules.requireDuration` validates
-positive multiples of 30 for both models, and `Commitment` additionally rejects
-intervals crossing midnight. Existing task and commitment service tests cover
-invalid durations and boundary values.
+positive multiples of 30 for commitments and legacy saved TASK rows; `Commitment`
+also rejects intervals crossing midnight. Tasks now use `requireTaskMinutes` for
+nonnegative exact whole minutes, with service additions requiring positive work.
+Task and commitment tests cover their deliberately different boundaries.
 
 Two additional `CommitmentServiceTest` integration checks exercise the existing
 task, commitment, storage and planner APIs together with fixed dates and isolated
@@ -60,7 +68,8 @@ conventions and CS2113 code-quality guidelines used by this project.
 
 ### Command transport
 
-The sealed `Command` interface contains fifteen supported command records.
+The sealed `Command` interface contains implemented command transports and
+planned transports, including the two unwired unavailable-range operations.
 Records that only carry values use Java's generated canonical constructors;
 redundant empty compact constructors have been removed. Records with required
 reference fields retain their null checks. Parsing and the services still own
@@ -72,10 +81,12 @@ the public record components or constructor signatures.
 
 `EarliestDeadlinePlanner` creates chronological half-hour slots from the
 captured command time through the rolling calendar-year horizon. It excludes
-recurring commitments, sorts tasks by deadline then numeric ID, and assigns
+recurring commitments, skips zero-remaining completed tasks, sorts dated tasks by
+deadline, priority then numeric ID, followed by undated tasks by priority/ID, and assigns
 each eligible task to its earliest free slots. Overdue and out-of-horizon
 tasks keep their full work estimate as unallocated; eligible tasks retain any
-sessions that fit before their deadline. Adjacent slots for one task merge
+sessions that fit before their deadline. Undated tasks use the same finite horizon
+without overdue/outside-horizon classification. Adjacent slots for one task merge
 within a day. Source task estimates remain unchanged.
 
 `ScheduleService` projects the frozen plan across the complete configured daily
@@ -87,6 +98,230 @@ allocation relationships remain the planner's responsibility. Fixed-date
 planner and projection tests verify deadline order, conservation of minutes,
 cutoff rounding, clipping, midnight commitments and allowed schedule dates.
 
+### Unavailable study periods (issue #48)
+
+A student marks an unavailable period using the existing one-time commitment
+command: `commitment add n/Unavailable on/YYYY-MM-DD start/HHmm d/MINUTES`.
+The name is an ordinary user description, not a reserved keyword. Equal
+inclusive date bounds represent the single unavailable occurrence, and
+`Commitment.occursOn(date)` supplies the same date membership check to the
+allocator and schedule projection. There is no separate availability model,
+new command or storage format for this workflow.
+
+A period may overlap previously allocated task sessions: commitment overlap
+validation checks fixed commitments, not temporary task allocations. The
+existing save-before-publication dispatcher invalidates the old plan after a
+successful addition. Regenerating allocates tasks around the blocked interval,
+preserves task estimates and reports any work that no longer fits before its
+deadline. The schedule displays the period as `[BUSY]` with its ordinary
+commitment ID. Deleting that ID saves and invalidates again; replanning can use
+the released interval. Previously returned immutable plan objects stay frozen.
+
+The existing half-hour alignment, positive duration, same-day interval and
+fixed-commitment overlap rules apply. Adjacent task sessions can end at the
+block's start or begin at its end. Blocking every available slot produces an
+unallocated-work result rather than scheduling after the task's deadline.
+Hours overrides continue to control the enclosing study window.
+
+Optimizer-owned JUnit acceptance tests exercise adding a block over a planned
+session, regenerating, deletion and restoration, partial and complete loss of
+deadline capacity, frozen schedule projection and no recurrence the next week.
+A temporary-file test reloads the block and date-specific hours before planning,
+then verifies persisted deletion releases the interval. Existing domain and
+UI-018 coverage retains invalid-input and overlap checks. UI-021 exercises this
+workflow's save/restart and add/delete plan invalidation through existing console
+commands; exact task allocation uses fixed-time JUnit tests rather than the live
+clock in the packaged application. This single-date workflow needs no new
+parser or renderer. Multi-date operations below are separate, unfinished
+extensions; this branch remains independent of the #55 study-policy feature.
+
+#### Multi-date unavailable periods: implementation handoff (planned)
+
+**Status:** transport records, exact planned console fixtures and tests for the
+resulting commitment representation are supplied. The commitment service,
+parser and confirmation renderer are implemented and unit-tested. Dispatch
+remains an unwired throwing skeleton, so the two range commands are NOT yet
+usable from the console. The following grammar and output remain the proposed
+implementation contract for the team.
+
+Continuous mode uses an inclusive start and exclusive end:
+
+```text
+scheduleflow> unavailable continuous n/Trip from/2026-10-26 1500 until/2026-10-28 1100
+Blocked 3 unavailable periods.
+C1 | 2026-10-26 | 15:00 - 24:00 | Trip
+C2 | 2026-10-27 | 00:00 - 24:00 | Trip
+C3 | 2026-10-28 | 00:00 - 11:00 | Trip
+Saved unavailable periods. Run plan to regenerate.
+```
+
+Daily mode uses inclusive dates and an end-exclusive window on each date:
+
+```text
+scheduleflow> unavailable daily n/Appointment from/2026-10-26 until/2026-10-28 start/1500 end/1700
+Blocked 3 unavailable periods.
+C1 | 2026-10-26 | 15:00 - 17:00 | Appointment
+C2 | 2026-10-27 | 15:00 - 17:00 | Appointment
+C3 | 2026-10-28 | 15:00 - 17:00 | Appointment
+Saved unavailable periods. Run plan to regenerate.
+```
+
+Examples start with an empty store independently. IDs come from the existing
+commitment counter and are assigned by date. Singular confirmation is
+`Blocked 1 unavailable period.`; plural is `Blocked N unavailable periods.`.
+Rows use `CNUMBER | YYYY-MM-DD | HH:mm - HH:mm | NAME` and LF separators, with
+no trailing newline from the renderer. Display a midnight endpoint as `24:00`.
+The console adds the final newline and prompt as usual.
+
+Use ordinary one-time commitments, not a new availability DTO or grouping ID.
+Every generated record has equal date bounds and the same normalized name.
+Each ID can be independently edited/deleted with existing commitment commands.
+Deleting one ID does not remove the rest of the request. There is no batch
+undo, recurring rule or automatically linked group in this version.
+
+Both modes require half-hour-aligned values with zero seconds/nanoseconds,
+valid calendar dates in years 0001-9999, and ordinary existing name rules.
+These commitments can be outside the current planning horizon, just like other
+commitments; only generated plan dates are projected. No new numeric defaults
+are introduced. Daily mode requires `firstDate <= lastDate` and `start < end`
+on the same day. It does not support overnight windows or a typed `2400` endpoint;
+use continuous mode with the next date at `0000` for an overnight interval.
+Continuous mode permits a same-day interval and requires `start < end`. Split
+at midnight, retaining only positive segments. An exclusive end at midnight
+does not create a zero-length record on that end date. Include leap days and
+avoid arithmetic past year 9999 when stepping dates.
+
+**Owner implementation order:**
+
+1. **Darren (`Darren50`), implemented:** `CommitmentService.addContinuousBlock`
+   and `addDailyBlocks`. Validate the request and calculate the required ID
+   count before expansion. The last assignable ID remains `2147483646`; the
+   next counter may be `2147483647`. Build a candidate locally using the existing
+   dated-add logic; return it only if the whole request succeeds. No disk I/O,
+   live publication, clock reads, partial results or mutation of the source.
+   Both operations validate in the order above, compute the date count
+   arithmetically (continuous mode omits an end date reached exactly at
+   midnight), check ID capacity, then create one `Commitment` per date with
+   equal date bounds through a shared private expansion helper. Each segment is
+   checked against stored commitments with the existing `rejectOverlaps`, in
+   date order, and the generated records are appended with one
+   `Snapshot.withCommitments` call. `CommitmentServiceTest` covers every
+   Darren row of the JUnit matrix below, plus null references and logging.
+   Preserve tasks, their counter, custom hours and other commitments.
+2. **Ernest (`ernestgoh-god`), implemented parsing:**
+   `CommandParser.parseUnavailable` routes both modes from `parse`, returning
+   `Command.AddContinuousBlock` or `Command.AddDailyBlocks`. Complete,
+   case-sensitive patterns preserve stripped Unicode names and parse strict
+   four-digit times and calendar dates in years 0001-9999. Missing, repeated,
+   reordered, extra and mixed-mode fields reject with the selected mode's
+   usage; unknown modes show both alternatives. Invalid dates/times and year
+   zero retain the existing parser messages. Semantic range, alignment and
+   conflict validation remains in the commitment service. Deterministic
+   `CommandParserTest` cases cover valid transport values, leap and boundary
+   dates, malformed fields and mode-specific errors.
+3. **Ernest, coordinating shared dispatch with Ka How:** replace the two
+   explicit throwing switch cases. Call the selected service, identify added
+   records from the candidate's IDs, save the complete candidate exactly once,
+   then publish/invalidate the old plan and format success. Never save or
+   publish after validation failure. Save failure retains snapshot, counters,
+   current plan and settings; retry starts from the same next ID.
+4. **Ka How (`ka-how`), renderer implemented:**
+   `TextRenderer.unavailablePeriodsAdded(List<Commitment>)` formats newly added
+   chronological records only. It preserves supplied order and prints the exact
+   singular/plural count, ID/date/time rows, midnight as `24:00` and regeneration
+   guidance. Null lists/elements, empty batches and weekly records are rejected.
+   `TextRendererTest` covers the continuous example, a daily service batch across
+   leap day, unrelated-record exclusion, Unicode and boundary years. Add the two
+   command formats to help after dispatch work. Existing schedule
+   output continues to show `[BUSY]` and the generated IDs; no new allocation
+   logic belongs in Printing.
+5. **Ernest, saving:** round-trip the whole batch through the existing version 3
+   format (or version 4 if other records have skipped dates). No new schema is
+   needed. Verify restart, one-save rollback/retry and preservation after task,
+   commitment and hours changes. Do not persist the original request separately.
+6. **Gabriel (`GabrielYuSP`):** retain planner/projection acceptance coverage
+   for these ordinary dated segments. Current tests manually supply the
+   expected continuous and daily segments through the existing service; they
+   establish representation compatibility, not success of the unfinished APIs.
+   Add service-to-planner tests once the batch methods are implemented.
+
+Conflict policy: reject the complete request if any generated segment overlaps
+an existing commitment on its actual occurrence date. Planned task sessions do
+not cause a conflict. Adjacency is valid and skipped weekly occurrences do not
+block the date. Check generated dates in order; for the first conflicting date,
+reuse the existing conflict list in start-time/numeric-ID order and the message
+`Commitment overlaps CNUMBER: NAME[; ...]`. No earlier segment may be saved or
+published and no IDs may be consumed by a rejected request.
+
+Required domain messages (the renderer adds `Error: `):
+
+| Invalid value | Exact message |
+| --- | --- |
+| Continuous end at/before start | `Unavailable interval end must be after its start.` |
+| Daily first date after last | `Unavailable date range must start on or before its end.` |
+| Daily start at/after end, including overnight | `Daily unavailable start must be before end on the same day.` |
+| Unaligned time, including seconds/nanoseconds supplied through Java | `Unavailable times must be on half-hour boundaries.` |
+| Too few remaining IDs | `Commitment IDs are exhausted.` |
+| Blank/invalid name | Reuse `InputRules.normalizeName` and its existing messages |
+
+Null API references must raise named `NullPointerException` preconditions once
+implemented. Use existing date validation for out-of-range years. Resolve name,
+date validity, alignment, ordering, ID capacity and then overlap in that order;
+the fixtures use one invalid category per command. Malformed syntax uses
+`Invalid unavailable command format` plus the selected mode's exact usage.
+Invalid date/time syntax uses existing `Invalid date or time` with that usage;
+year zero uses existing `Year must be between 0001 and 9999` with usage. Unknown
+modes use a usage listing both alternatives. No success or count output may be
+printed before the save succeeds.
+
+**Acceptance files and activation:**
+[`test/ui-unavailable-ranges.planned.json`](../test/ui-unavailable-ranges.planned.json)
+contains exact per-command expected output for UI-022 through UI-027. All six
+are `planned`; do not treat their unexecuted expectations or a stub exception
+as a pass. Parsing alone does not activate console cases while dispatch is
+unfinished. The main release fixture remains fully active. Once dependencies are
+implemented, change the relevant case status to `active`, run it with
+`node .agents/skills/test-ui/scripts/run-ui-tests.mjs --fixtures test/ui-unavailable-ranges.planned.json`,
+and move verified cases into the main fixture in the same change. If the file
+contains only planned cases, exit 2 means no active scenarios were executable.
+
+Owners must add these deterministic JUnit cases alongside their implementation:
+
+| Owner / SUT test | Inputs and required assertions |
+| --- | --- |
+| Darren / `CommitmentServiceTest` continuous example | Oct 26 15:00 to Oct 28 11:00 produces durations 540, 1440, 660, IDs in order, equal date bounds and preserved source/settings |
+| Darren / continuous boundaries | Same-day creates one record; Oct 26 23:00 to Oct 27 00:00 creates only Oct 26; a 00:00 start is included; reject equal/reversed/unaligned endpoints |
+| Darren / daily example | Oct 26-28 15:00-17:00 creates three 120-minute dated records; one-date range creates exactly one |
+| Darren / daily boundaries | Include Feb 29 in 2028-02-28 to 2028-03-01; support the date 9999-12-31 without advancing past it; reject reverse dates, zero/overnight windows and unaligned times |
+| Darren / conflicts | First or later segment conflicts with weekly or one-time records; reject the entire request; skipped weekly dates and adjacent times succeed |
+| Darren / ID boundaries | Two records starting at next ID 2147483645 succeed with next counter 2147483647; three records reject without changes; exhausted counter rejects either mode |
+| Ernest / `CommandParserTest` | Both exact commands produce their transport records; check leap dates, year limits, Unicode names, field ordering, duplicates, missing/extra fields, mixed modes and strict four-digit times |
+| Ka How / `TextRendererTest` | Exact singular/plural counts, chronological ID/date rows, Unicode names, `24:00`, LF and no trailing newline; include only new rows; formatter performs no I/O |
+| Ernest + Ka How / `CommandDispatcherTest` | Use fixed time and fake Storage: both modes save once, publish once and invalidate an existing plan; validation saves zero times; injected save failure preserves snapshot/plan/counters and retry IDs; renderer success is not reached on failure |
+| Ernest / `FileStorageTest`, `StateCodecTest` | Save/reload all segments and unrelated skipped commitments/custom hours; deletion of one generated ID persists independently; current version 3/4 round trips preserve all values |
+| Gabriel / `EarliestDeadlinePlannerTest` | Fixed Oct 26 14:00, 180-minute task due Oct 28 12:00: continuous example schedules 60 minutes on Oct 26 and 60 on Oct 28, leaves 60 unallocated; daily mode preserves gaps on every date |
+| Gabriel / `ScheduleServiceTest` | Project first/intermediate/final continuous dates and daily windows; clip to configured hours, omit out-of-range occurrences, retain frozen old plans and permit study at exclusive ends |
+
+Run the affected JUnit tests, Java 25 build/Checkstyle and active console cases
+after each integration. Issue #48 is closed for the working single-date blocking
+workflow. Track the unfinished multi-date commands as follow-up work and keep
+their console cases planned until dispatch and acceptance tests pass. Partial
+PRs may reference #48 for context without using a closing keyword.
+
+### Exact work and slot capacity
+
+Exact work and slot capacity are distinct: `StudySession.workMinutes` carries
+positive exact work while `minutes()` remains the reserved interval capacity.
+The original three-argument constructor defaults work to capacity.
+`UnallocatedWork` carries an optional deadline, exact `int minutes` and rounded
+`long capacityMinutes`; its original concrete-deadline constructor remains.
+Demand is `30 * ceil(R / 30)` using long arithmetic. Allocation consumes
+`min(remaining, 30)` exact work per slot, never subtracting below zero; merged
+sessions retain that exact sum. For R=45, 60 allocated capacity means 45 planned
+work; 30 capacity leaves 15 exact work and 30 unallocated capacity. Source
+estimates are never decremented. Totals must use long streams. Only the final
+session for a task can contain padding, and zero-work sessions are not created.
+
 ### Continuous work and fixed breaks (issue #55, Planning API only)
 
 The Optimizer implementation is available through
@@ -96,9 +331,10 @@ break. No numeric default is selected yet. The original no-argument planner
 and `Planner.generate(Snapshot, LocalDateTime)` remain usable, with the original
 unrestricted behavior until settings are integrated. No #55 command exists yet.
 
-Allocation now walks slots chronologically, choosing unfinished eligible tasks
-by deadline and numeric ID. This preserves the original allocation order while
-allowing one work counter to cover different tasks and commitments. Fixed
+Allocation now walks slots chronologically, choosing dated unfinished tasks by
+deadline, priority and numeric ID, then undated tasks by priority and ID. This
+retains deadline/ID order for equal-priority dated tasks while allowing one work
+counter to cover different tasks and commitments. Fixed
 commitments count even outside study windows and before the rounded generation
 cutoff. The counter starts at midnight on the generation date; activity before
 that date and past task study are not reconstructed. Across future dates,
@@ -132,12 +368,14 @@ Integration handoff (ownership-marked comments are present at the relevant code)
   the configured planner constructor. Settings changes must save before publication
   and plan invalidation, preserving both settings and plan on failure. The existing
   injected planner remains unchanged until this integration is implemented.
-- **Printing/rendering:** implement the explicit throwing `BREAK` switch branch
-  in `TextRenderer.formatScheduleRow` (proposed row: `09:30 - 10:00 | [BREAK]`).
-  Keep output based on supplied intervals; the renderer must not allocate breaks.
+- **Printing/rendering, implemented:** `TextRenderer.formatScheduleRow` prints
+  supplied break intervals, for example `09:30 - 10:00 | [BREAK]`, without a
+  reference, name or duration suffix. It preserves boundaries and never allocates
+  breaks. Renderer tests exercise a configured planner through projection and
+  formatting, plus adjacent supplied break rows with cutoff notes and remainders.
 - **Save:** coordinate adding settings to `Snapshot`, codec versioning and legacy
   defaults. Ensure task, commitment and hours mutations preserve them. This change
-  does not modify the snapshot or saved format; #68 plan persistence is separate.
+  does not modify the snapshot or saved format; #68 persists the resulting frozen breaks.
 
 Fixed-time JUnit tests cover cross-task limits, exact and 2x/3x commitment
 overruns, adjacent commitments, interrupted and partially elapsed breaks,
@@ -145,7 +383,7 @@ pre-window commitments, cutoff rounding, overnight rest, deadline capacity,
 minute conservation, deterministic generation and frozen schedule projection.
 Record tests cover duration validation, anonymous break rows, immutable lists,
 ordering and the original plan constructor. #55 console acceptance remains
-planned until commands, persistence and rendering are integrated; existing
+planned until commands and persistence are integrated; existing
 active process scenarios exercise the no-argument planner.
 
 ### Configurable study hours
@@ -175,14 +413,15 @@ same-day, positive, aligned intervals; the planner enforces configured hours.
 four-argument constructor for default-window callers. Plans freeze their source
 settings, so later time or unrelated snapshots do not alter projections.
 
-The codec reads versions 1, 2 and 3. It writes version 2 when only custom hours
-are present, appending sorted `HOURS|TARGET|HH:mm|HH:mm` rows. Version 3 is
-written when any commitment has date bounds; every commitment row then includes
-its inclusive start and end date, using `-` for both endpoints of an unbounded
-series in the same file. Duplicate targets,
-invalid dates, unknown weekdays and invalid intervals reject the whole file.
-Snapshots without custom settings retain version 1 encoding. Existing version 1
-files load with defaults; older applications reject files containing newer versions.
+The codec reads versions 1 through 5. New saves use at least version 2 for
+extended `TASK2` rows, version 3 when a commitment has date bounds and version 4
+when it has skipped occurrences. Version 3 stores inclusive start and end dates
+on every commitment row, using `-` for unbounded series; version 4 adds skipped
+dates. Recurrence requires version 5 as described below. Sorted
+`HOURS|TARGET|HH:mm|HH:mm` rows retain custom study hours.
+Duplicate targets, invalid dates, unknown weekdays and invalid intervals reject
+the whole file. Legacy version 1 and earlier version 2 files with `TASK` rows
+remain readable. Older applications cannot read `TASK2` records.
 Atomic replacement still saves tasks, commitments, counters and hours together.
 
 JUnit coverage checks precedence/reset, immutable maps, input boundaries,
@@ -194,12 +433,12 @@ three isolated console sessions, including reset and plan invalidation.
 ### Task operations and defensive checks
 
 `Task` owns structural validation: positive IDs, normalized nonblank names,
-minute-precision deadlines in years 0001-9999 and positive 30-minute duration
-multiples. It uses `InputRules`, the shared name/duration authority, and permits
+optional minute-precision deadlines in years 0001-9999 and nonnegative whole-minute
+remaining work (zero is retained completion). It uses `InputRules` and permits
 overdue or out-of-horizon saved deadlines. `ValidationException` carries the
 user-facing explanation and rejects a null message as programmer misuse.
 
-`TaskService.add` checks the captured command time, accepting
+`TaskService.add` requires positive work and checks the captured command time, accepting
 `now < deadline <= TimeRules.horizonEnd(now)`. The horizon moves with each
 command date, including the February 29 adjustment. Additions append to the
 stored task order and advance only the task counter. The last allocatable ID
@@ -248,30 +487,207 @@ privacy and absence of false completion after rejection. Run the owned tests wit
 `./gradlew test --tests 'scheduleflow.task.*' --tests 'scheduleflow.common.*' --tests 'scheduleflow.model.TaskTest'`.
 The existing packaged UI fixtures require no changed output expectations.
 
-### Task detail editing (service API only)
+### Task detail editing (issue #39)
 
 `TaskService.edit(state, id, TaskEdit, now)` implements immutable partial name and
 deadline edits. `TaskEdit` uses nonnull `Optional` containers; omitted fields retain
-their values. Empty edits, unknown IDs and `clearDeadline` requests raise
-`ValidationException`; deadline removal is not a supported domain feature yet.
+their values. Empty edits, unknown IDs and simultaneous `clearDeadline` plus a
+replacement deadline raise `ValidationException`. Clearing alone explicitly
+removes the deadline, including on completed or overdue tasks.
 The full replacement is validated by `Task`. Only an actually changed deadline
 must satisfy `now < deadline <= TimeRules.horizonEnd(now)`. Renaming overdue or
 out-of-horizon work, or explicitly retaining its existing deadline, is valid.
 
-Edits preserve the exact stored position, ID, remaining estimate, other records,
-both counters (including exhausted counters) and configured study hours. A valid
+Edits preserve completion, priority, occurrence provenance, exact stored position,
+ID, remaining estimate, other records, recurrence definitions/cursors, all counters
+(including exhausted counters) and configured study hours. A valid
 edit with no effective change after normalization returns the original snapshot
 instance. The API does not save, publish or invalidate plans. FINE diagnostics
 omit private values; assertions check candidate preservation. Nickhil's additions
 use scoped `// @@author nickpatt` markers without replacing teammates' attribution.
 
+`Command.EditTask` transports a partial edit and `CommandParser` accepts
+`task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]`. At least one field is required,
+in name/deadline order. `TextRenderer.taskEdited` is implemented and reports the
+stored ID, name, deadline and estimate without mutating or saving anything.
+The dispatcher prepares the response before saving, then publishes changed
+candidates only after save succeeds. A normalized no-op returns a confirmation
+without saving or invalidating the current plan. Failed syntax, validation or
+saving retains the old snapshot, counters, file and plan.
+
 Deterministic `TaskServiceTest` and `TaskEditTest` cases cover all field subsets,
 atomic rejection, no-ops, immutable mixed snapshots and custom hours, precise
 command times, structural deadline limits, inclusive/moving/leap-day horizons,
-null preconditions and private diagnostics. Existing console fixtures are unchanged.
-There is no task-edit command, parser or dispatcher integration in this change.
-`TextRenderer.taskEdited(Task)` is an unwired planned-contract skeleton that
-always throws `UnsupportedOperationException`, not a working rendering feature.
+null preconditions and private diagnostics. Parser, renderer and dispatcher tests
+cover strict grammar, exact output, no-op publication, failed-save retry and
+replanning against edited details. UI-021 covers a real saved rename, rejection,
+invalidation and restart with an overdue task, avoiding real-date assumptions.
+
+### Weekly recurring tasks (issue #67)
+
+`RecurringTaskService` integrates weekly recurrence with PR #84's merged exact-work,
+optional-deadline, priority and lifecycle model.
+`RecurringTask` stores an independent positive R ID, normalized name, first
+deadline, optional inclusive final date, positive half-hour estimate and persisted
+last-processed deadline. `TaskOccurrence` retains the template ID and original
+deadline; release is always one week before that original deadline. Ordinary
+Ordinary task additions accept positive whole minutes, including 45; completed
+records retain zero internally. Template estimates remain positive multiples of
+30. Generated tasks subsequently support exact remaining revisions and domain
+progress/completion/reopening while retaining provenance.
+The four-argument Task and four/five-argument Snapshot constructors remain usable
+for shipped callers and legacy data, defaulting recurrence to empty.
+
+`task recur add`, `task recur list` and `task recur delete` are parsed, dispatched
+and rendered at the console. The first deadline establishes weekday/time; only
+`every/WEEKLY` is supported. Creation materializes all future due dates through
+the rolling horizon (including its boundary), subject to an optional last date.
+Future templates beyond the horizon are retained without premature tasks.
+Materialization skips missed deadlines arithmetically rather than backfilling;
+the saved cursor also covers skipped dates. Pending tasks get T IDs in deadline,
+then numeric-template-ID order. The complete batch must fit before any ID is
+allocated. Replanning, a backwards clock change, task deletion and restarting
+never rewind the cursor or recreate a processed occurrence.
+
+Snapshot validates distinct logical occurrences, cursor coverage and the separate
+R counter, including retained provenance after a template is deleted. Task edits,
+remaining revisions, deletions, commitment changes and study-hours changes retain
+the recurrence definitions/counters. Editing one generated task does not edit
+its template or release. Template deletion stops only new generation and retains
+all already-generated tasks. The allocator checks the original release against
+slot start while retaining current study hours, dated/skipped commitments and
+continuous-work policy. No second allocation algorithm is introduced.
+
+`plan` first materializes a candidate and generates its Plan, validates the source
+association and formats the result before publication. It atomically saves the
+complete candidate and frozen plan together through `Storage.savePlan`, then
+commits any changed source and publishes the plan. This avoids an intermediate
+snapshot-only save that could discard the previous plan if the second save failed.
+Planner/null/stale-result/rendering/save failure preserves the previous snapshot,
+cursors, IDs and plan. Every successful `plan` saves its result, including when
+materialization makes no source changes.
+
+#### Recurrence storage format
+
+Version 5 is selected only if a template, occurrence provenance or allocated R
+counter requires it. Otherwise writes use version 2, 3 or 4 according to commitment
+fields; version 2 is the minimum for `TASK2`. Versions 1 through 4 remain readable.
+Loading old versions does not write or migrate files automatically.
+Version 5 stores names last (including literal pipes) and uses these rows:
+
+```text
+SCHEDULEFLOW|5
+NEXT|3|1|2
+TASK2|1|NONE|45|HIGH|Undated draft
+OCCURRENCE|2|2026-11-02T18:00|45|NORMAL|1|2026-11-02T18:00|Weekly quiz
+RECURRING|1|2026-11-02T18:00|60|2026-11-02|2026-11-02T18:00|Weekly quiz
+```
+
+`NEXT` adds next R ID after the existing T/C counters. Ordinary tasks still use
+`TASK2|id|deadline-or-NONE|exact-remaining-int|priority|name`. Occurrence rows have
+eight fields including the discriminator:
+`OCCURRENCE|id|deadline-or-NONE|exact-remaining-int|priority|templateId|originalDeadline|name`.
+Zero remaining retains completion; priority is HIGH, NORMAL or LOW. Original
+deadlines remain concrete even if the current deadline is cleared internally.
+Templates use first deadline, positive half-hour minutes, last
+date and processing cursor, with `-` for absent last date/cursor. V5 commitments
+use the widest existing v4 layout, including bounds and skipped dates; hours rows
+are unchanged. Even an empty state retains v5 after allocating an R ID, so IDs
+are never reused. Invalid/duplicate/counter-inconsistent records reject the whole
+load. Old executables cannot read v5; back up data before upgrading or downgrading.
+
+Fixed-time model/service/planner tests cover weekly bounds, ordering, arithmetic
+catch-up, leap years, release times, exhaustion, no-op identity and recurrence
+preservation. Storage tests cover v1-v4 compatibility, v5 Unicode/pipe round trips,
+corruption, deleted templates and saved cursors. Dispatcher tests cover one-save
+transactions, read-only lists, failed-save retry, cursor-only publication and
+planner failure. UI-022 exercises actual template commands and counters through
+restart with a deliberately beyond-horizon future template. UI-023 uses restored
+historical occurrences to prove replanning/restart do not recreate deleted tasks.
+Fixed-clock JUnit tests cover materialization of currently eligible new tasks.
+
+#### Remaining Task stories
+
+The #39/#67 path is implemented end to end, including console editing, template
+commands, generation and persistence. PR #84 is merged: exact work, optional
+deadlines, stored priorities and domain completion/reopening coexist with
+recurrence in the unified model and v5 codec. Issue #40 console progress is
+connected through the existing parser and dispatcher with its implemented
+Printing confirmation. Completion/reopening commands, deadline
+clearing, undated addition, priority operations and search are not wired console
+features. Do not restore throwing Task edit/recurrence renderers or discard the
+existing commitment/hours formats.
+
+### Task progress and lifecycle
+
+The canonical model is `Task(id, name, Optional<LocalDateTime>, remainingMinutes,
+TaskPriority, Optional<TaskOccurrence>)`. The five-argument optional-deadline
+constructor creates an ordinary task without provenance. The original
+four-argument concrete-date constructor defaults
+priority to NORMAL and still rejects null deadlines; there is no ambiguous
+four-argument Optional overload. Use `Task.withoutDeadline(id, name, minutes)`
+or the canonical constructor for explicit absence, never a sentinel date.
+HIGH/NORMAL/LOW are stored and used only for planner ties here; priority operations
+are not wired at the console. Weekly templates are implemented as described
+above; queries remain deferred.
+
+`TaskService` exposes these pure candidate APIs:
+
+- `addWithoutDeadline(state, name, minutes)` requires positive whole minutes,
+  appends the next ID and does not need a clock.
+- `recordWork(state, id, done)` requires an active task and
+  `0 <= done <= remaining`; it subtracts reported work, not elapsed time.
+- `recordSessionProgress(state, id, sessionMinutes, percentage)` requires positive
+  int minutes and integer 0..100, then credits floor of their long product / 100.
+  Overreported credit rejects atomically. Percent means a fraction of that
+  session, not a whole-task completion percentage.
+- `reviseRemaining(state, id, remaining)` requires active work and a positive
+  estimate; increases are allowed and are not credited as work done.
+- `complete(state, id)` retains the record and ID with zero remaining.
+- `reopen(state, id, positiveRemaining)` requires a completed task and preserves
+  all metadata, including an overdue or absent deadline.
+
+Zero credited work and equal revisions return the identical source snapshot;
+completion is idempotent with the same identity guarantee. Completed tasks reject
+progress even with zero credit, and require explicit reopening before revision.
+Every candidate preserves stored position, priority, optional deadline, occurrence
+provenance, unrelated records, recurrence definitions/cursors, all counters and
+custom study hours. No API saves, publishes, invalidates plans, reads a clock or replans.
+Callers honor no-op identity to avoid unnecessary saves/invalidation.
+New lifecycle methods add no diagnostics;
+existing structural/edit diagnostics retain privacy protections.
+
+`taskProgressUpdated(Task,int)` reports the stable ID/name, actual credited
+minutes and resulting remaining estimate. It does not recompute percentages or
+claim an unchanged value was saved. Both progress forms use the existing
+candidate transaction: changed candidates save before publication; zero-credit
+no-ops preserve the snapshot and plan. Negative renderer credit is programmer
+misuse and raises `IllegalArgumentException`; task validation stays in TaskService.
+`taskCompleted(Task)` prints `Completed TNUMBER: NAME` and `taskReopened(Task)`
+prints `Reopened TNUMBER: NAME | Remaining: N min` for validated lifecycle
+results. These two formatters are unit-tested but have no console routes yet.
+`taskEdited(Task)` is wired for issue #39's concrete-deadline/name edits.
+`taskRemainingUpdated(Task)` formats issue #41's active remaining-time command.
+Weekly recurrence commands are also implemented; no completion/reopening console
+commands are available.
+Existing renderer compatibility changes only display `No deadline` in add/list
+output and undated remainder rows, use an undated capacity-shortfall reason, and
+sum exact session work in plan summaries. Existing schedule interval durations
+still show reserved wall-clock capacity, not exact credited work; slot-aligned
+output remains unchanged. No separate completion/status list is implemented.
+
+Deterministic JUnit covers progress boundaries, overflow-safe floor arithmetic,
+all identity no-ops, invalid/unknown/null inputs, completion/reopening, metadata,
+source immutability, exhausted counters and custom hours. Planner cases verify
+45/60 full and partial allocation, split padding, mixed optional deadlines and
+completed tasks, priority ties, deterministic results and long conservation.
+Codec/file tests cover explicit legacy migration, extended round trips, read-only
+loads and corruption. Renderer tests cover exact progress/lifecycle text, zero
+and partial credit, completion, maximum credit, Unicode, null inputs and framing.
+Dispatcher tests cover successful progress publication, exact rounded credit,
+replanning, no-ops, save failure and retry. UI-030 verifies both progress forms,
+invalid requests, plan invalidation and retained completion across two restarts.
+Completion/reopening commands remain deferred.
 
 ### Basic saving and loading
 
@@ -281,7 +697,7 @@ file. Saving creates missing parent directories, writes a sibling temporary
 file, then atomically replaces the target. There is no non-atomic fallback.
 Constructors perform no I/O; existing constructor call sites remain supported.
 
-Version 1 uses one record per line:
+Legacy version 1 uses one record per line (still read without changing values):
 
 ```text
 SCHEDULEFLOW|1
@@ -291,7 +707,8 @@ COMMITMENT|1|MONDAY|10:30|90|Class
 ```
 
 `NEXT` holds the next task and commitment IDs, including after deletion.
-Tasks store ID, ISO local deadline, remaining minutes and name. Commitments
+Legacy TASK rows store ID, ISO local deadline, positive half-hour minutes and
+name; they load with NORMAL priority. Commitments
 store ID, full uppercase weekday, ISO local start time, duration and name.
 Names are last so literal pipes need no escaping. Encoding preserves each
 list's order and writes LF line endings. Decoding also accepts CRLF/CR and an
@@ -300,25 +717,37 @@ validate the complete snapshot, including overlaps and counters. Past deadlines
 remain valid. Invalid data raises `StorageException`
 without returning a partial snapshot or modifying the file.
 
-Issue #68 adds version 5 when a plan is generated. `PlanCodec` appends one
-`PLAN|generatedAt|horizonEnd|sessionCount|unallocatedCount|breakCount` row,
-followed by counted `SESSION`, `UNALLOCATED` and `BREAK` rows. The source
-snapshot uses the complete version 4 record layout. Names remain last in
-unallocated rows so literal pipes survive. Loading validates both the source
-and the entire frozen result before the first prompt; versions 1–4 restore no
-plan. Ordinary snapshot saves still use the oldest suitable version and omit
-the plan, invalidating it atomically with any successful mutation.
+New writes without recurrence, bounded or skipped commitments use this version 2 layout:
 
-`Storage.savePlan` checks that the plan's source equals the saved snapshot,
-then replaces the same file atomically. The dispatcher saves a generated plan
-before publishing it in `AppState`; failed saves retain the previous disk and
-live plans. Startup restores the plan only when its embedded source matches
-the loaded snapshot. The stored generation time, horizon, sessions,
-unallocated work and reserved breaks are reused without rerunning the planner.
-`PlanCodecTest`, `FileStorageTest`, fixed-clock application tests and UI-022
-cover format validation, restart, rollback and invalidation.
+```text
+SCHEDULEFLOW|2
+NEXT|4|2
+TASK2|1|2026-11-20T18:00|45|NORMAL|Draft
+TASK2|2|NONE|0|NORMAL|Completed|name with pipe
+TASK2|3|NONE|2147483647|NORMAL|Undated
+COMMITMENT|1|MONDAY|10:30|90|Class
+HOURS|2026-11-20|09:00|18:00
+HOURS|monday|08:00|20:00
+```
 
-`StateCodecTest` covers the format and validation. `FileStorageTest` demonstrates
+`TASK2|id|deadline-or-NONE|exact-remaining-int|priority|name` uses uppercase
+`NONE` only for an absent deadline, zero only for completion, and a required
+HIGH/NORMAL/LOW priority. Names stay last and may contain pipes. The distinct
+TASK2 discriminator avoids confusing legacy v2 names containing pipes with new
+fields. Version 2 also accepts the previous TASK rows unchanged, including their
+positive-half-hour validation; version 1 does not accept TASK2 or HOURS. Mixed
+legacy/extended rows still share normal duplicate-ID/counter validation. `TASK2`
+rows are also valid in versions 3 and 4, which add commitment bounds and skips,
+and in version 5, which adds recurring templates and occurrence rows as described
+above. Tasks and commitments retain stored order; HOURS rows sort by target.
+Loading legacy data is read-only; the next snapshot save writes extended
+version 2, 3, 4 or 5. Generating a plan instead writes version 6 as described
+below. FileStorage constructors and atomic replacement behavior are unchanged.
+
+`StateCodecTest` covers the format and validation, including `TASK2` records
+alongside bounded version 3 and skipped version 4 commitments. Planner tests
+cover exact credited minutes and retained completion under the optional break
+policy. `FileStorageTest` demonstrates
 a save followed by a fresh reader, replacement, missing/corrupt files, and
 deterministic filesystem failures with JUnit `@TempDir`. Run these tests with
 `.\gradlew.bat test --tests "scheduleflow.storage.*"` from the repository root.
@@ -335,6 +764,44 @@ Console integration loads once at startup, then saves
 each candidate before `AppState.commit` and success output. `AppTest` verifies
 restart and rollback alongside the storage tests. Use one writer per file;
 atomic replacement does not promise durability after power loss.
+
+### Automatic saved schedules (issue #68)
+
+`PlanCodec` writes `SCHEDULEFLOW|6`, keeping version 5 available for upstream's
+recurring-task snapshots. The embedded source always uses the full version 5
+layout: three NEXT counters, extended tasks, occurrence provenance, templates,
+processing cursors, commitment bounds/skips and study hours. One
+`PLAN|generatedAt|horizonEnd|sessionCount|unallocatedCount|breakCount` row follows,
+then the counted rows:
+
+```text
+SESSION|taskId|start|end|exactWorkMinutes
+UNALLOCATED|taskId|deadline-or-NONE|exactMinutes|capacityMinutes|reason|name
+BREAK|start|end
+```
+
+Session work preserves partial-slot padding, and unallocated capacity is a long
+so rounding an `Integer.MAX_VALUE` estimate cannot overflow. Names remain last
+so literal pipes survive. Decoding validates the source, row counts, references,
+ordering, horizon and individual planning-record contracts without regenerating
+or rescheduling. Versions 1-5 remain readable. The earlier branch's version 5
+saved plans are distinguished by their two NEXT counters and read using the old
+version 4 source layout; new saves always use version 6 for plans.
+
+`FileStorage.savePlan` writes the source and result in one atomic replacement.
+`save` removes any prior plan while saving a mutation. At startup, `App` loads
+and validates the complete file before restoring the matching plan; it does not
+read the clock or materialize recurrence during restoration. Existing sessions,
+generation time, unallocated work and reserved breaks are reused exactly.
+Keep one running instance per data file; atomic replacement does not provide
+coordination between concurrent writers.
+
+`PlanCodecTest` covers exact work, optional deadlines, retained completion,
+recurrence/provenance/counters, large capacity, breaks, pipe names, legacy files
+and malformed rows. File and fixed-clock application tests cover one-file
+restoration, read-only restart, materialization, mutation invalidation and failed
+save rollback. UI-031 checks frozen schedules across packaged-process restarts;
+UI-032 checks saved recurrence metadata with exact work and progress invalidation.
 
 ### Storage defensive checks and diagnostics
 
@@ -405,16 +872,36 @@ rules are required by the root `AGENTS.md` and do not change command behaviour.
 
 Issue #40 parser preparation recognizes `task progress TNUMBER done/MINUTES`
 and `task progress TNUMBER session/MINUTES percent/PERCENT`. It returns
-`RecordTaskWork` or `RecordTaskSession` transport values without reading state;
-the task service will enforce remaining-work limits and apply percentage
-rounding. The command is not dispatched yet because the progress service is
-still on an unmerged teammate branch. `TextRenderer.taskProgressUpdated` is a
-throwing Printing skeleton and is not called by the application. The new
-production parser blocks and parser tests carry scoped Ernest author tags;
-existing Printing blocks retain Ka How's tag. The reserved renderer method is
-tagged to the commit author until Ka How implements its real output. Progress
-acceptance and rollback tests remain pending integration with the task service
-and renderer.
+`RecordTaskWork` or `RecordTaskSession` transport values without reading state.
+The dispatcher uses the Task service to validate and calculate a candidate,
+then derives actual credited minutes from the old and new remaining estimates.
+It requests a Printing confirmation before saving or publishing the candidate.
+`TextRenderer.taskProgressUpdated` now supplies the confirmation, so changed
+candidates save before publication; zero-credit candidates avoid an unnecessary
+save or plan invalidation. Fixed-clock dispatcher tests cover actual credit,
+successful publication, no-ops, failed-save preservation and retry. UI-030 covers
+the existing parsed forms through the packaged application and saved restarts.
+Ernest's parser and dispatcher production code is unchanged; scoped author tags
+attribute the implemented renderer and updated acceptance tests to Ka How.
+
+Issue #41 parses `task remaining TNUMBER remaining/MINUTES` into
+`ReviseTaskRemaining` without reading state. The parser requires positive decimal
+tokens; `TaskService.reviseRemaining` checks the ID and requires a positive
+whole-minute estimate on an active task. It preserves the task's priority and
+optional deadline, replaces only the estimate at its stored position, preserves
+both counters, commitments and study hours, and
+returns the original snapshot for an unchanged estimate. The dispatcher prepares
+the candidate and its confirmation before saving. Changed candidates save
+before live publication and plan invalidation; unchanged candidates report the
+stored value without saving or clearing the plan. `TextRenderer.taskRemainingUpdated`
+formats the stable ID, name and new minutes without claiming that an unchanged
+value was saved again. A failed save preserves the live snapshot and plan.
+Parser, service, renderer and dispatcher JUnit tests cover syntax, values,
+successful publication, no-op behavior and rollback. The Task regression saves
+a revised candidate to an isolated file, reloads it and verifies higher planning
+demand. UI-019 checks exact console responses, plan invalidation, replanning and
+two restarts against a fixed overdue task. Scoped Ernest tags identify issue #41
+additions without claiming existing Task or Printing code.
 
 `CommandParser.parse` implements all command formats in the User Guide and
 returns the existing nested `Command` records. The parser has no clock, storage
@@ -471,8 +958,10 @@ reuse it without filtering by the selected date.
 
 Schedules display `ScheduleView` metadata and entries in their supplied order.
 TASK minutes come from that row's endpoints, rather than the task's whole
-estimate. BUSY retains its reference and name; FREE and UNPLANNED have only their
-labels. Any UNPLANNED row adds the cutoff note. A nonempty remainder list adds a
+estimate. BUSY retains its reference and name; FREE, UNPLANNED and BREAK have
+only their labels. BREAK is renderable through the planning API; the default
+console planner still has no study-policy setting. Any UNPLANNED row adds the
+cutoff note. A nonempty remainder list adds a
 blank line and the whole-plan footer. The formatter never allocates, clips,
 merges, repairs or reorders schedule rows, and never recalculates generation
 time or date ranges. Range validation remains with `ScheduleService`; the
@@ -561,7 +1050,8 @@ four-digit dates. Omitted edit bounds preserve the stored range. Success and lis
 output show inclusive dates only for bounded series, retaining existing text for
 unbounded records. Version 3 storage writes two endpoint fields on every
 commitment row and uses `-|-` for unbounded rows in the same file. Versions 1 and
-2 remain readable, and stores without bounded commitments retain their old version.
+2 remain readable, and stores without recurrence or bounded/skipped commitments
+use version 2 on new saves.
 
 JUnit checks model boundaries, disjoint and intersecting semester overlaps,
 candidate immutability, parser syntax, version 3 round trips, planning and daily
@@ -593,8 +1083,10 @@ already use `occursOn`, so they require no separate exception logic.
 
 Version 4 storage adds one comma-separated skipped-date field to every
 commitment row, using `-` when a series has no exceptions. Dates are encoded in
-chronological order. Versions 1 through 3 remain readable, and the encoder still
-uses the oldest format capable of representing the snapshot. Model, service,
+chronological order. Versions 1 through 3 remain readable, and the encoder
+selects version 2, 3 or 4 based on commitment fields unless recurrence requires
+version 5, while retaining `TASK2`
+rows in every new save. Model, service,
 parser, dispatcher, renderer, codec and planning regressions cover valid,
 invalid and rollback paths. UI-017 verifies exact output, restart persistence,
 released overlap and unconsumed IDs through the packaged JAR.
@@ -609,11 +1101,11 @@ version was added: the design reuses the issue #64 date-range model, so
 `ScheduleService`, and `overlaps` already compares the actual occurrence with
 recurring series (including skipped dates) and other one-time commitments.
 Version 3 rows such as `COMMITMENT|1|FRIDAY|14:00|60|2026-10-30|2026-10-30|NAME`
-store it, and version 4 is used only when some series also has skipped dates.
+store it; skipped dates require at least version 4 and recurrence requires version 5.
 Older stores remain readable unchanged.
 
 The alternative of an explicit kind flag would need a new record component,
-constructor overloads and a version 5 format while behaving identically. The
+constructor overloads and another format extension while behaving identically. The
 trade-off is that a weekly series entered with the same `from/` and `until/`
 date is shown as one-time, which matches its single occurrence. The packaged
 UI-017 expectation for that input was updated accordingly.
@@ -714,7 +1206,8 @@ assertions. Run `./gradlew test --tests 'scheduleflow.commitment.*' --tests 'sch
 Mutation services validate and return candidates. The dispatcher resolves the
 added or removed record, calls `Storage.save`, then calls `AppState.commit` and
 formats success. A failed save propagates without publishing the candidate,
-consuming an ID or clearing the current plan. Shared public APIs are unchanged.
+consuming an ID or clearing the current plan. Existing command and service
+interfaces are preserved; issue #68 adds `loadPlan` and `savePlan` to Storage.
 
 Help, lists, schedule and exit preserve state and make no save call. Planning
 saves and replaces the frozen plan; partial and empty results remain usable.
@@ -728,8 +1221,8 @@ range validation, zone-aware today and frozen/replaced plans.
 
 ### Application lifecycle and executable entry point
 
-`App.run` loads once and stops with status 1 before prompting if storage rejects
-the load. Each loop prompts and reads a line, ignores blanks, parses, dispatches
+`App.run` loads the snapshot and any matching saved plan before prompting, and
+stops with status 1 if storage rejects either load. Each loop prompts and reads a line, ignores blanks, parses, dispatches
 and prints the response. Parse errors include usage; domain and save errors
 print one error and allow another command. Input failure returns 1; exit and
 EOF return 0 with goodbye and no save. Unexpected programming exceptions
@@ -875,7 +1368,7 @@ estimates or commitments before the deadline.
 
 ## Glossary
 
-* *Task* - An unfinished item with a deadline and a remaining-work estimate.
+* *Task* - A retained item with an optional deadline and exact remaining work; zero means complete.
 * *Commitment* - A busy interval repeated on one weekday, optionally within
   inclusive dates, or a one-time busy interval on a single date.
 * *Snapshot* - Immutable tasks, commitments, study hours and independent next-ID counters.

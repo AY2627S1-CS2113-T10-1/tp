@@ -10,10 +10,12 @@ import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import scheduleflow.task.TaskEdit;
 
 /**
  * Parses the complete case-sensitive command grammar without inspecting application state.
@@ -29,7 +31,13 @@ public final class CommandParser {
     private static final String HELP_USAGE = "Type help to see available commands";
     private static final String TASK_ADD_USAGE = "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES";
     private static final String TASK_DELETE_USAGE = "task delete TNUMBER";
+    // @@author nickpatt
+    private static final String TASK_EDIT_USAGE = "task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]";
+    private static final String TASK_RECUR_USAGE = "task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES"
+            + " every/WEEKLY [until/YYYY-MM-DD] OR task recur list OR task recur delete RNUMBER";
+    // @@author ka-how
     // @@author ernestgoh-god
+    private static final String TASK_REMAINING_USAGE = "task remaining TNUMBER remaining/MINUTES";
     private static final String TASK_PROGRESS_USAGE =
             "task progress TNUMBER done/MINUTES OR task progress TNUMBER session/MINUTES percent/PERCENT";
     //@@author Darren50
@@ -50,6 +58,14 @@ public final class CommandParser {
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
     private static final String HOURS_USAGE = "hours DAY|YYYY-MM-DD [/start HH:mm /end HH:mm]"
             + " OR hours reset DAY|YYYY-MM-DD";
+    // @@author ernestgoh-god
+    private static final String UNAVAILABLE_CONTINUOUS_USAGE =
+            "unavailable continuous n/NAME from/YYYY-MM-DD HHmm until/YYYY-MM-DD HHmm";
+    private static final String UNAVAILABLE_DAILY_USAGE =
+            "unavailable daily n/NAME from/YYYY-MM-DD until/YYYY-MM-DD start/HHmm end/HHmm";
+    private static final String UNAVAILABLE_USAGE = UNAVAILABLE_CONTINUOUS_USAGE
+            + " OR " + UNAVAILABLE_DAILY_USAGE;
+    // @@author ka-how
     private static final String DATE_TOKEN = "[0-9]{4}-[0-9]{2}-[0-9]{2}";
     private static final String DATE_RANGE_PATTERN = "(?: +from/(?<from>" + DATE_TOKEN
             + ") +until/(?<until>" + DATE_TOKEN + "))?";
@@ -72,6 +88,16 @@ public final class CommandParser {
      * Matches name text while excluding slash so extra prefixes cannot be swallowed into a multiword name.
      */
     private static final String NAME_TOKEN = "[^/\\p{javaISOControl}]*";
+    // @@author ernestgoh-god
+    private static final Pattern UNAVAILABLE_CONTINUOUS_PATTERN = Pattern.compile(
+            "unavailable +continuous +n/(?<name>" + NAME_TOKEN + ") +from/(?<from>" + DATE_TOKEN
+                    + ") +(?<start>" + TIME_TOKEN + ") +until/(?<until>" + DATE_TOKEN
+                    + ") +(?<end>" + TIME_TOKEN + ")");
+    private static final Pattern UNAVAILABLE_DAILY_PATTERN = Pattern.compile(
+            "unavailable +daily +n/(?<name>" + NAME_TOKEN + ") +from/(?<from>" + DATE_TOKEN
+                    + ") +until/(?<until>" + DATE_TOKEN + ") +start/(?<start>" + TIME_TOKEN
+                    + ") +end/(?<end>" + TIME_TOKEN + ")");
+    // @@author ka-how
     private static final Pattern TASK_ADD_PATTERN = Pattern.compile(
             "task +add +n/(?<name>" + NAME_TOKEN + ") +due/(?<date>" + DATE_TOKEN
                     + ") +(?<time>" + TIME_TOKEN + ") +d/(?<minutes>" + POSITIVE_INT_TOKEN + ")");
@@ -81,12 +107,27 @@ public final class CommandParser {
                     + DATE_RANGE_PATTERN);
     private static final Pattern TASK_DELETE_PATTERN = Pattern.compile(
             "task +delete +T(?<id>" + POSITIVE_INT_TOKEN + ")");
+    // @@author nickpatt
+    private static final Pattern TASK_EDIT_PATTERN = Pattern.compile(
+            "task +edit +T(?<id>" + POSITIVE_INT_TOKEN + ")"
+                    + "(?: +n/(?<name>" + NAME_TOKEN + "))?"
+                    + "(?: +due/(?<date>" + DATE_TOKEN + ") +(?<time>" + TIME_TOKEN + "))?");
+    private static final Pattern TASK_RECUR_ADD_PATTERN = Pattern.compile(
+            "task +recur +add +n/(?<name>" + NAME_TOKEN + ") +due/(?<date>" + DATE_TOKEN
+                    + ") +(?<time>" + TIME_TOKEN + ") +d/(?<minutes>" + POSITIVE_INT_TOKEN + ")"
+                    + " +every/WEEKLY(?: +until/(?<until>" + DATE_TOKEN + "))?");
+    private static final Pattern TASK_RECUR_DELETE_PATTERN = Pattern.compile(
+            "task +recur +delete +R(?<id>" + POSITIVE_INT_TOKEN + ")");
+    // @@author ka-how
     // @@author ernestgoh-god
     private static final Pattern TASK_PROGRESS_WORK_PATTERN = Pattern.compile(
             "task +progress +T(?<id>" + POSITIVE_INT_TOKEN + ") +done/(?<done>0|" + POSITIVE_INT_TOKEN + ")");
     private static final Pattern TASK_PROGRESS_SESSION_PATTERN = Pattern.compile(
             "task +progress +T(?<id>" + POSITIVE_INT_TOKEN + ") +session/(?<session>"
                     + POSITIVE_INT_TOKEN + ") +percent/(?<percent>0|" + POSITIVE_INT_TOKEN + ")");
+    private static final Pattern TASK_REMAINING_PATTERN = Pattern.compile(
+            "task +remaining +T(?<id>" + POSITIVE_INT_TOKEN + ") +remaining/(?<minutes>"
+                    + POSITIVE_INT_TOKEN + ")");
     // @@author ka-how
     private static final Pattern COMMITMENT_DELETE_PATTERN = Pattern.compile(
             "commitment +delete +C(?<id>" + POSITIVE_INT_TOKEN + ")");
@@ -119,6 +160,76 @@ public final class CommandParser {
     public CommandParser() {
     }
 
+    // @@author ernestgoh-god
+    /**
+     * Parses either unavailable range mode without applying commitment service rules.
+     *
+     * @param line complete unavailable command using the grammar in the Developer Guide
+     * @return continuous or daily transport command
+     * @throws ParseException if syntax, dates or times are invalid
+     */
+    private Command parseUnavailable(String line) throws ParseException {
+        String mode = unavailableMode(line);
+        String usage = unavailableUsage(mode);
+        try {
+            return switch (mode) {
+                case "continuous" -> parseContinuousBlock(line, usage);
+                case "daily" -> parseDailyBlocks(line, usage);
+                default -> throw new ParseException("Invalid unavailable command format", usage);
+            };
+        } catch (DateTimeParseException exception) {
+            throw new ParseException("Invalid date or time", usage);
+        }
+    }
+
+    /** Reads the unavailable mode word while leaving complete syntax checks to its pattern. */
+    private String unavailableMode(String input) {
+        String[] words = input.split(" +", 3);
+        return words.length > 1 ? words[1] : "";
+    }
+
+    /** Selects the relevant mode's usage without accepting an unknown mode. */
+    private String unavailableUsage(String mode) {
+        return switch (mode) {
+            case "continuous" -> UNAVAILABLE_CONTINUOUS_USAGE;
+            case "daily" -> UNAVAILABLE_DAILY_USAGE;
+            default -> UNAVAILABLE_USAGE;
+        };
+    }
+
+    /** Builds a transport value from an entire continuous-mode match. */
+    private Command.AddContinuousBlock parseContinuousBlock(String input, String usage) throws ParseException {
+        Matcher fields = matchUnavailable(UNAVAILABLE_CONTINUOUS_PATTERN, input, usage);
+        LocalDate firstDate = parseOptionalDate(fields.group("from"), usage);
+        LocalDate lastDate = parseOptionalDate(fields.group("until"), usage);
+        LocalTime start = LocalTime.parse(fields.group("start"), TIME_FORMAT);
+        LocalTime end = LocalTime.parse(fields.group("end"), TIME_FORMAT);
+        return new Command.AddContinuousBlock(fields.group("name").strip(),
+                firstDate.atTime(start), lastDate.atTime(end));
+    }
+
+    /** Builds a transport value from an entire daily-mode match. */
+    private Command.AddDailyBlocks parseDailyBlocks(String input, String usage) throws ParseException {
+        Matcher fields = matchUnavailable(UNAVAILABLE_DAILY_PATTERN, input, usage);
+        LocalDate firstDate = parseOptionalDate(fields.group("from"), usage);
+        LocalDate lastDate = parseOptionalDate(fields.group("until"), usage);
+        LocalTime start = LocalTime.parse(fields.group("start"), TIME_FORMAT);
+        LocalTime end = LocalTime.parse(fields.group("end"), TIME_FORMAT);
+        return new Command.AddDailyBlocks(fields.group("name").strip(), firstDate, lastDate, start, end);
+    }
+
+    /** Rejects an incomplete, reordered or mixed unavailable command before constructing a transport value. */
+    private Matcher matchUnavailable(Pattern pattern, String input, String usage) throws ParseException {
+        Matcher fields = pattern.matcher(input);
+        if (!fields.matches()) {
+            throw new ParseException("Invalid unavailable command format", usage);
+        }
+        assert fields.start() == 0 && fields.end() == input.length() : "Grammar must match the complete input";
+        return fields;
+    }
+    // @@author
+    // @@author ka-how
+
     /**
      * Parses one nonblank line, translating syntax, number and date errors to ParseException.
      * Leaves domain validation and resolving today's date to command execution.
@@ -133,7 +244,7 @@ public final class CommandParser {
         String input = Objects.requireNonNull(line, "line").strip();
         LOGGER.log(Level.FINE, "Starting command parsing");
         String command = identifyCommand(input);
-        String usage = findUsage(command);
+        String usage = findUsage(command, input);
         LOGGER.log(Level.FINE, "Command words recognized; validating syntax");
         if (input.codePoints().anyMatch(Character::isISOControl)) {
             LOGGER.log(Level.FINE, "Rejected embedded control characters");
@@ -146,8 +257,15 @@ public final class CommandParser {
                 case "task list" -> parseNoArguments(input, command, new Command.ListTasks());
                 case "task delete" -> new Command.DeleteTask(Integer.parseInt(
                         match(TASK_DELETE_PATTERN, input, usage).group("id")));
+                // @@author nickpatt
+                case "task edit" -> parseEditTask(input);
+                case "task recur" -> parseRecurringTask(input);
                 // @@author ernestgoh-god
                 case "task progress" -> parseTaskProgress(input);
+                case "task remaining" -> parseTaskRemaining(input);
+                // @@author ka-how
+                // @@author ernestgoh-god
+                case "unavailable" -> parseUnavailable(input);
                 // @@author ka-how
                 case "commitment add" -> parseAddCommitment(input);
                 case "commitment edit" -> parseEditCommitment(input);
@@ -191,12 +309,20 @@ public final class CommandParser {
     /**
      * Selects the expected syntax for recognized command words or the help hint.
      */
-    private String findUsage(String command) {
+    private String findUsage(String command, String input) {
         return switch (command) {
             case "task add" -> TASK_ADD_USAGE;
             case "task delete" -> TASK_DELETE_USAGE;
+            // @@author nickpatt
+            case "task edit" -> TASK_EDIT_USAGE;
+            case "task recur" -> TASK_RECUR_USAGE;
+            // @@author ka-how
             // @@author ernestgoh-god
             case "task progress" -> TASK_PROGRESS_USAGE;
+            case "task remaining" -> TASK_REMAINING_USAGE;
+            // @@author ka-how
+            // @@author ernestgoh-god
+            case "unavailable" -> unavailableUsage(unavailableMode(input));
             // @@author ka-how
             case "commitment add" -> COMMITMENT_ADD_USAGE;
             case "commitment edit" -> COMMITMENT_EDIT_USAGE;
@@ -232,6 +358,42 @@ public final class CommandParser {
         return new Command.AddTask(fields.group("name").strip(), deadline, Integer.parseInt(fields.group("minutes")));
     }
 
+    // @@author nickpatt
+    /** Preserves omitted fields and rejects malformed or reordered edits before execution. */
+    private Command.EditTask parseEditTask(String input) throws ParseException {
+        Matcher fields = match(TASK_EDIT_PATTERN, input, TASK_EDIT_USAGE);
+        Optional<String> name = Optional.ofNullable(fields.group("name")).map(String::strip);
+        Optional<LocalDateTime> deadline = Optional.empty();
+        if (fields.group("date") != null) {
+            LocalDateTime value = LocalDateTime.parse(fields.group("date") + " " + fields.group("time"),
+                    DEADLINE_FORMAT);
+            requireSupportedYear(value.toLocalDate(), TASK_EDIT_USAGE);
+            deadline = Optional.of(value);
+        }
+        if (name.isEmpty() && deadline.isEmpty()) {
+            throw new ParseException("Supply at least one task field to edit", TASK_EDIT_USAGE);
+        }
+        return new Command.EditTask(Integer.parseInt(fields.group("id")), new TaskEdit(name, deadline, false));
+    }
+
+    /** Parses the weekly-only recurrence vocabulary without inventing a weekday or reading a clock. */
+    private Command parseRecurringTask(String input) throws ParseException {
+        if (input.replaceAll(" +", " ").equals("task recur list")) {
+            return new Command.ListRecurringTasks();
+        }
+        Matcher deletion = TASK_RECUR_DELETE_PATTERN.matcher(input);
+        if (deletion.matches()) {
+            return new Command.DeleteRecurringTask(Integer.parseInt(deletion.group("id")));
+        }
+        Matcher fields = match(TASK_RECUR_ADD_PATTERN, input, TASK_RECUR_USAGE);
+        LocalDateTime first = LocalDateTime.parse(fields.group("date") + " " + fields.group("time"), DEADLINE_FORMAT);
+        requireSupportedYear(first.toLocalDate(), TASK_RECUR_USAGE);
+        LocalDate until = parseOptionalDate(fields.group("until"), TASK_RECUR_USAGE);
+        return new Command.AddRecurringTask(fields.group("name").strip(), first,
+                Integer.parseInt(fields.group("minutes")), Optional.ofNullable(until));
+    }
+    // @@author ka-how
+
     // @@author ernestgoh-god
     /** Parses either progress form without applying task-state validation. */
     private Command parseTaskProgress(String input) throws ParseException {
@@ -250,6 +412,13 @@ public final class CommandParser {
                     Integer.parseInt(session.group("session")), percent);
         }
         throw new ParseException("Invalid command format or missing fields", TASK_PROGRESS_USAGE);
+    }
+
+    /** Parses a replacement estimate without applying task-state or duration rules. */
+    private Command.ReviseTaskRemaining parseTaskRemaining(String input) throws ParseException {
+        Matcher fields = match(TASK_REMAINING_PATTERN, input, TASK_REMAINING_USAGE);
+        return new Command.ReviseTaskRemaining(Integer.parseInt(fields.group("id")),
+                Integer.parseInt(fields.group("minutes")));
     }
     // @@author ka-how
 

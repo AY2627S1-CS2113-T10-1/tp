@@ -26,8 +26,13 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import scheduleflow.commitment.CommitmentService;
 import scheduleflow.model.Commitment;
+import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
+import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskOccurrence;
+import scheduleflow.model.TaskPriority;
+import scheduleflow.planning.EarliestDeadlinePlanner;
 import scheduleflow.planning.Plan;
 import scheduleflow.planning.TimeRules;
 import scheduleflow.task.TaskService;
@@ -41,6 +46,96 @@ class FileStorageTest {
     @TempDir
     private Path directory;
 
+    // @@author nickpatt
+    @Test
+    void saveAndLoad_recurrence_preservesBytesAndDoesNotRecreateDeletedTemplates() throws Exception {
+        LocalDateTime first = LocalDateTime.of(2026, 10, 26, 18, 0);
+        RecurringTask recurring = new RecurringTask(1, "Weekly | café", first, Optional.empty(), 60,
+                Optional.of(first.plusWeeks(2)));
+        Task occurrence = new Task(1, "Work | 复习", first, 30,
+                Optional.of(new TaskOccurrence(1, first)));
+        Snapshot state = new Snapshot(List.of(occurrence), List.of(), 5, 4,
+                Snapshot.empty().studyHours(), List.of(recurring), 3);
+        Path file = directory.resolve("recurrence.txt");
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        storage.save(state);
+        byte[] bytes = Files.readAllBytes(file);
+        assertEquals(state, new FileStorage(file, new StateCodec()).load());
+        assertArrayEquals(bytes, Files.readAllBytes(file));
+        Snapshot deleted = new Snapshot(state.tasks(), List.of(), 5, 4, state.studyHours(), List.of(), 3);
+        storage.save(deleted);
+        bytes = Files.readAllBytes(file);
+        assertEquals(deleted, new FileStorage(file, new StateCodec()).load());
+        assertEquals(deleted, storage.load());
+        assertArrayEquals(bytes, Files.readAllBytes(file));
+    }
+
+    @Test
+    void saveAndLoad_occurrenceLifecycle_preservesRecurrenceAndPeerTaskMetadata() throws Exception {
+        LocalDateTime first = LocalDateTime.of(2026, 10, 26, 18, 0);
+        Task occurrence = new Task(1, "Work|kept", Optional.empty(), 45, TaskPriority.HIGH,
+                Optional.of(new TaskOccurrence(1, first)));
+        RecurringTask recurring = new RecurringTask(1, "Weekly", first, Optional.empty(), 60, Optional.of(first));
+        Snapshot source = new Snapshot(List.of(occurrence), List.of(), 5, 4,
+                Snapshot.empty().studyHours().withWindow("monday",
+                        new StudyWindow(LocalTime.of(9, 0), LocalTime.of(20, 0))), List.of(recurring), 3);
+        TaskService tasks = new TaskService();
+        Snapshot progressed = tasks.recordWork(source, 1, 14);
+        Snapshot completed = tasks.complete(progressed, 1);
+        Snapshot reopened = tasks.reopen(completed, 1, 17);
+        Snapshot revised = tasks.reviseRemaining(reopened, 1, 19);
+        Snapshot session = tasks.recordSessionProgress(revised, 1, 5, 50);
+        Path file = directory.resolve("occurrence-lifecycle.txt");
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        for (Snapshot candidate : List.of(progressed, completed, reopened, revised, session)) {
+            Task task = candidate.tasks().getFirst();
+            assertEquals(occurrence.occurrence(), task.occurrence());
+            assertEquals(occurrence.deadline(), task.deadline());
+            assertEquals(occurrence.priority(), task.priority());
+            assertEquals(source.recurringTasks(), candidate.recurringTasks());
+            assertEquals(source.nextRecurringTaskId(), candidate.nextRecurringTaskId());
+            assertEquals(source.nextTaskId(), candidate.nextTaskId());
+            assertEquals(source.nextCommitmentId(), candidate.nextCommitmentId());
+            assertEquals(source.studyHours(), candidate.studyHours());
+            storage.save(candidate);
+            byte[] bytes = Files.readAllBytes(file);
+            assertEquals(candidate, new FileStorage(file, new StateCodec()).load());
+            assertArrayEquals(bytes, Files.readAllBytes(file));
+        }
+        assertEquals(List.of(31, 0, 17, 19, 17), List.of(progressed, completed, reopened, revised, session)
+                .stream().map(candidate -> candidate.tasks().getFirst().remainingMinutes()).toList());
+        assertEquals(45, source.tasks().getFirst().remainingMinutes());
+    }
+
+    @Test
+    void saveAndLoad_lifecycleCandidates_preservesExactStateAndReadOnlyMigration() throws Exception {
+        Path file = directory.resolve("lifecycle.txt");
+        String legacy = "SCHEDULEFLOW|1\r\nNEXT|4|2\r\nTASK|3|2000-01-01T09:00|60|Old|task\r\n"
+                + "COMMITMENT|1|MONDAY|10:00|30|Class";
+        Files.writeString(file, legacy);
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        Snapshot source = storage.load();
+        assertEquals(legacy, Files.readString(file));
+        source = source.withStudyHours(source.studyHours().withWindow("monday",
+                new StudyWindow(LocalTime.of(9, 0), LocalTime.of(11, 0))));
+        TaskService tasks = new TaskService();
+        Snapshot progressed = tasks.recordWork(source, 3, 15);
+        Snapshot mixed = tasks.addWithoutDeadline(progressed, "Undated|name", 45);
+        Snapshot completed = tasks.complete(mixed, 3);
+        for (Snapshot candidate : List.of(progressed, mixed, completed, tasks.reopen(completed, 3, 1))) {
+            storage.save(candidate);
+            byte[] bytes = Files.readAllBytes(file);
+            assertEquals(candidate, new FileStorage(file, new StateCodec()).load());
+            assertArrayEquals(bytes, Files.readAllBytes(file));
+            assertTrue(Files.readString(file).startsWith("SCHEDULEFLOW|2\n"));
+        }
+        assertEquals(60, source.tasks().getFirst().remainingMinutes());
+        assertEquals(4, source.nextTaskId());
+        assertEquals(5, completed.nextTaskId());
+        assertEquals(2, completed.nextCommitmentId());
+    }
+    // @@author ernestgoh-god
+
     @Test
     void savePlan_restartRestoresFrozenResultAndMutationRemovesIt() throws Exception {
         Path file = directory.resolve("data/scheduleflow.txt");
@@ -52,7 +147,7 @@ class FileStorageTest {
         storage.savePlan(empty);
         assertEquals(Snapshot.empty(), new FileStorage(file, new StateCodec()).load());
         assertEquals(Optional.of(empty), new FileStorage(file, new StateCodec()).loadPlan(Snapshot.empty()));
-        assertTrue(Files.readString(file).startsWith("SCHEDULEFLOW|5\n"));
+        assertTrue(Files.readString(file).startsWith("SCHEDULEFLOW|6\n"));
 
         Snapshot changed = new Snapshot(List.of(new Task(1, "Draft", now.plusDays(1), 30)), List.of(), 2, 1);
         storage.save(changed);
@@ -61,19 +156,40 @@ class FileStorageTest {
     }
 
     @Test
-    void savePlan_staleSourceRejectsWithoutChangingPriorBytes() throws Exception {
+    void savePlan_candidateSourceAndPlan_replaceTogetherAndRejectMismatchedLoad() throws Exception {
         Path file = directory.resolve("scheduleflow.txt");
         FileStorage storage = new FileStorage(file, new StateCodec());
         LocalDateTime now = LocalDateTime.of(2026, 10, 5, 7, 0);
         Snapshot source = new Snapshot(List.of(new Task(1, "Draft", now.plusDays(1), 30)), List.of(), 2, 1);
         storage.save(source);
-        byte[] original = Files.readAllBytes(file);
-        Plan stale = new Plan(now, TimeRules.horizonEnd(now), Snapshot.empty(), List.of(), List.of());
+        Snapshot candidate = new TaskService().recordWork(source, 1, 15);
+        Plan plan = new EarliestDeadlinePlanner().generate(candidate, now);
 
-        assertThrows(StorageException.class, () -> storage.savePlan(stale));
-        assertArrayEquals(original, Files.readAllBytes(file));
-        assertEquals(Optional.empty(), storage.loadPlan(source));
-        assertThrows(StorageException.class, () -> storage.loadPlan(Snapshot.empty()));
+        storage.savePlan(plan);
+
+        FileStorage restarted = new FileStorage(file, new StateCodec());
+        byte[] saved = Files.readAllBytes(file);
+        assertEquals(candidate, restarted.load());
+        assertEquals(Optional.of(plan), restarted.loadPlan(candidate));
+        assertThrows(StorageException.class, () -> restarted.loadPlan(source));
+        assertArrayEquals(saved, Files.readAllBytes(file));
+    }
+
+    @Test
+    void savePlan_failedReplacement_preservesExistingTargetAndCleansTemporaryFile() throws Exception {
+        Path file = directory.resolve("occupied");
+        Files.createDirectory(file);
+        Path retained = file.resolve("retained.txt");
+        Files.writeString(retained, "keep");
+        LocalDateTime now = LocalDateTime.of(2026, 10, 5, 7, 0);
+        Plan plan = new Plan(now, TimeRules.horizonEnd(now), Snapshot.empty(), List.of(), List.of());
+
+        assertThrows(StorageException.class, () -> new FileStorage(file, new StateCodec()).savePlan(plan));
+
+        assertEquals("keep", Files.readString(retained));
+        try (var children = Files.list(directory)) {
+            assertEquals(List.of(file), children.toList());
+        }
     }
 
     @Test

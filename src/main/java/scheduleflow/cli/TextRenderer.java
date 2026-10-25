@@ -16,6 +16,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import scheduleflow.model.Commitment;
+import scheduleflow.model.RecurringTask;
 import scheduleflow.model.StudyHours;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
@@ -51,18 +52,62 @@ public final class TextRenderer {
     public TextRenderer() {
     }
 
-    // @@author ernestgoh-god
+    // @@author ka-how
     /**
-     * Reserves the confirmation for recorded task progress.
+     * Confirms only the newly saved unavailable periods in the supplied chronological order.
      *
-     * @param task persisted task after progress
+     * @param added nonempty chronological list of newly persisted one-time commitments
+     * @return batch count, individual IDs and date/time rows, and regeneration guidance
+     * @throws NullPointerException if the list or an element is null
+     * @throws IllegalArgumentException if the list is empty or contains a weekly commitment
+     */
+    public String unavailablePeriodsAdded(List<Commitment> added) {
+        requireElements(added, "added");
+        if (added.isEmpty() || added.stream().anyMatch(commitment -> !commitment.isOneTime())) {
+            throw new IllegalArgumentException("Expected newly saved one-time unavailable periods.");
+        }
+        LOGGER.log(Level.FINE, "Formatting unavailable periods response");
+        StringJoiner lines = new StringJoiner("\n");
+        lines.add("Blocked " + added.size() + " unavailable period" + (added.size() == 1 ? "." : "s."));
+        for (Commitment commitment : added) {
+            lines.add(commitment.displayId() + " | " + DATE.format(commitment.startDate())
+                    + " | " + formatCommitmentTimes(commitment) + " | " + commitment.name());
+        }
+        return finish(lines.add("Saved unavailable periods. Run plan to regenerate.").toString());
+    }
+
+    /**
+     * Reports actual credited work and the resulting estimate, including zero-credit no-ops.
+     *
+     * @param task validated candidate task after progress, before persistence
      * @param creditedMinutes whole minutes credited, including percentage rounding
-     * @return confirmation text once Printing implements this method
-     * @throws UnsupportedOperationException until Printing supplies the response
+     * @return confirmation without claiming that an unchanged estimate was saved again
+     * @throws NullPointerException if task is null
+     * @throws IllegalArgumentException if credited minutes are negative
      */
     public String taskProgressUpdated(Task task, int creditedMinutes) {
-        // TODO(ka-how): implement task progress confirmation and exact-output tests.
-        throw new UnsupportedOperationException("Task progress rendering is not implemented yet.");
+        Objects.requireNonNull(task, "task");
+        if (creditedMinutes < 0) {
+            throw new IllegalArgumentException("Credited minutes must not be negative.");
+        }
+        LOGGER.log(Level.FINE, "Formatting task progress response");
+        return finish("Recorded progress for " + task.displayId() + ": " + task.name()
+                + " | Credited: " + creditedMinutes + " min | Remaining: " + task.remainingMinutes() + " min");
+    }
+
+    // @@author ernestgoh-god
+    /**
+     * Reports a validated remaining-work estimate without implying that unchanged values were saved again.
+     *
+     * @param task validated task with its remaining minutes
+     * @return confirmation without a trailing newline
+     * @throws NullPointerException if task is null
+     */
+    public String taskRemainingUpdated(Task task) {
+        Objects.requireNonNull(task, "task");
+        LOGGER.log(Level.FINE, "Formatting task remaining-work response");
+        return finish("Remaining time for " + task.displayId() + ": " + task.name()
+                + " | " + task.remainingMinutes() + " min");
     }
     // @@author ka-how
 
@@ -76,6 +121,18 @@ public final class TextRenderer {
                 "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES - Add a task.",
                 "task list - List stored tasks.",
                 "task delete TNUMBER - Delete a task.",
+                // @@author nickpatt
+                "task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm] - Edit at least one field; run plan again.",
+                "task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES every/WEEKLY [until/YYYY-MM-DD]"
+                        + " - Add a weekly task template and generate occurrences.",
+                "task recur list - List weekly task templates (R IDs).",
+                "task recur delete RNUMBER - Stop future generation; existing tasks remain.",
+                // @@author ernestgoh-god
+                "task remaining TNUMBER remaining/MINUTES - Revise a task's remaining time.",
+                // @@author ka-how
+                "task progress TNUMBER done/MINUTES - Record whole minutes of completed work.",
+                "task progress TNUMBER session/MINUTES percent/PERCENT"
+                        + " - Credit a percentage of a session, rounded down to whole minutes.",
                 "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
                         + " [from/YYYY-MM-DD until/YYYY-MM-DD] - Add a weekly commitment.",
                 // @@author
@@ -128,23 +185,93 @@ public final class TextRenderer {
     public String taskAdded(Task task) {
         Objects.requireNonNull(task, "task");
         LOGGER.log(Level.FINE, "Formatting task addition response");
-        return finish("Added " + task.displayId() + ": " + task.name() + "\nDue: " + DATE_TIME.format(task.deadline())
+        // @@author nickpatt
+        return finish("Added " + task.displayId() + ": " + task.name() + "\nDue: "
+                + task.deadline().map(DATE_TIME::format).orElse("No deadline")
                 + " | Duration: " + task.remainingMinutes() + " min");
+        // @@author ka-how
     }
 
     // @@author nickpatt
     /**
-     * Reserves formatting of a successfully saved task edit; not implemented or connected to the CLI.
-     * The planned response will use the stored ID, name, deadline and estimate without mutation or I/O.
+     * Formats validated task details without changing estimates, IDs or occurrence provenance.
      *
-     * @param task successfully saved edited task
-     * @return planned edit confirmation without a trailing newline
-     * @throws UnsupportedOperationException always, until task edit rendering is implemented
+     * @param task edited task, or unchanged task for a normalized no-op
+     * @return confirmation without a trailing newline
+     * @throws NullPointerException if task is null
      */
     public String taskEdited(Task task) {
-        // TODO(Tasks): implement TextRenderer.taskEdited
-        throw new UnsupportedOperationException("Task edit rendering is not implemented yet.");
+        Objects.requireNonNull(task, "task");
+        LOGGER.log(Level.FINE, "Formatting task edit response");
+        return finish("Edited " + task.displayId() + ": " + task.name() + "\nDue: "
+                + task.deadline().map(DATE_TIME::format).orElse("No deadline")
+                + " | Duration: " + task.remainingMinutes() + " min");
     }
+
+    /** Formats a validated template without claiming a particular number of materialized tasks. */
+    public String recurringTaskAdded(RecurringTask task) {
+        Objects.requireNonNull(task, "task");
+        LOGGER.log(Level.FINE, "Formatting recurring task addition response");
+        return finish("Added " + task.displayId() + ": " + task.name() + "\n" + recurringTaskDetails(task));
+    }
+
+    /** Confirms stopping future generation, explicitly retaining previously generated tasks. */
+    public String recurringTaskDeleted(RecurringTask task) {
+        Objects.requireNonNull(task, "task");
+        LOGGER.log(Level.FINE, "Formatting recurring task deletion response");
+        return finish("Deleted recurring task " + task.displayId() + ": " + task.name()
+                + "\nExisting task occurrences are retained.");
+    }
+
+    /** Lists immutable template definitions in the service's numeric R-ID order. */
+    public String recurringTasks(List<RecurringTask> tasks) {
+        requireElements(tasks, "tasks");
+        LOGGER.log(Level.FINE, "Formatting recurring task list");
+        if (tasks.isEmpty()) {
+            return finish("No recurring tasks found.");
+        }
+        StringJoiner lines = new StringJoiner("\n");
+        lines.add("=== Weekly Recurring Tasks ===");
+        for (RecurringTask task : tasks) {
+            lines.add(task.displayId() + " | " + task.name() + " | " + recurringTaskDetails(task));
+        }
+        return finish(lines.add("Total: " + tasks.size() + " recurring task(s).").toString());
+    }
+
+    /** Formats the original weekly sequence, not the cursor or a regenerated occurrence count. */
+    private String recurringTaskDetails(RecurringTask task) {
+        return "Weekly from: " + DATE_TIME.format(task.firstDeadline()) + " | Duration: " + task.minutes()
+                + " min | Until: " + task.until().map(DATE::format).orElse("No end date");
+    }
+
+    // @@author ka-how
+    /**
+     * Confirms retained completion without implying that the task was deleted.
+     *
+     * @param task validated completed task with zero remaining work
+     * @return confirmation retaining the task's ID and name
+     * @throws NullPointerException if task is null
+     */
+    public String taskCompleted(Task task) {
+        Objects.requireNonNull(task, "task");
+        LOGGER.log(Level.FINE, "Formatting task completion response");
+        return finish("Completed " + task.displayId() + ": " + task.name());
+    }
+
+    /**
+     * Confirms reopening using the task's revised remaining-work estimate.
+     *
+     * @param task validated reopened task with positive remaining work
+     * @return confirmation retaining the task's ID, name and exact estimate
+     * @throws NullPointerException if task is null
+     */
+    public String taskReopened(Task task) {
+        Objects.requireNonNull(task, "task");
+        LOGGER.log(Level.FINE, "Formatting task reopening response");
+        return finish("Reopened " + task.displayId() + ": " + task.name()
+                + " | Remaining: " + task.remainingMinutes() + " min");
+    }
+
     // @@author
     // @@author ka-how
 
@@ -177,8 +304,10 @@ public final class TextRenderer {
         StringJoiner lines = new StringJoiner("\n");
         lines.add("=== Actionable Tasks ===").add("ID | Name | Duration | Deadline");
         for (Task task : tasks) {
+            // @@author nickpatt
             lines.add(task.displayId() + " | " + task.name() + " | " + task.remainingMinutes()
-                    + " min | " + DATE_TIME.format(task.deadline()));
+                    + " min | " + task.deadline().map(DATE_TIME::format).orElse("No deadline"));
+            // @@author ka-how
         }
         return finish(lines.add("Total: " + tasks.size() + " task(s).").toString());
     }
@@ -352,7 +481,9 @@ public final class TextRenderer {
         if (plan.isComplete()) {
             return finish("Study plan generated successfully! Type 'schedule today' to view your sessions.");
         }
-        long scheduled = plan.sessions().stream().mapToLong(StudySession::minutes).sum();
+        // @@author nickpatt
+        long scheduled = plan.sessions().stream().mapToLong(StudySession::workMinutes).sum();
+        // @@author ka-how
         long unallocated = plan.unallocated().stream().mapToLong(UnallocatedWork::minutes).sum();
         StringJoiner lines = new StringJoiner("\n");
         lines.add("Study plan generated with unallocated work.");
@@ -470,9 +601,7 @@ public final class TextRenderer {
             case BUSY -> range + " " + entry.reference() + ": " + entry.name();
             case TASK -> range + " " + entry.reference() + ": " + entry.name()
                     + " (" + Duration.between(entry.start(), entry.end()).toMinutes() + " min)";
-            case FREE, UNPLANNED -> range;
-            // TODO(Printing): implement TextRenderer.formatScheduleRow BREAK output for issue #55.
-            case BREAK -> throw new UnsupportedOperationException("Break rendering awaits Printing integration.");
+            case FREE, UNPLANNED, BREAK -> range;
         };
     }
 
@@ -485,10 +614,15 @@ public final class TextRenderer {
             String reason = switch (work.reason()) {
                 case DEADLINE_PASSED -> "deadline passed";
                 case OUTSIDE_HORIZON -> "outside planning horizon";
-                case INSUFFICIENT_CAPACITY -> "insufficient time before deadline";
+                // @@author nickpatt
+                case INSUFFICIENT_CAPACITY -> work.deadline().isEmpty()
+                        ? "insufficient available study time" : "insufficient time before deadline";
+                        // @@author ka-how
             };
+            // @@author nickpatt
             lines.add("T" + work.taskId() + ": " + work.taskName() + " | Unallocated: " + work.minutes()
-                    + " min | Reason: " + reason);
+                    + " min | Reason: " + reason + (work.deadline().isEmpty() ? " | No deadline" : ""));
+            // @@author ka-how
         }
     }
 

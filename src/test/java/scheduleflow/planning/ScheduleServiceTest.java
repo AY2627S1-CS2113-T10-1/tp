@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import scheduleflow.commitment.CommitmentService;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.Snapshot;
@@ -87,7 +88,7 @@ class ScheduleServiceTest {
         Task task = new Task(1, "Tomorrow", MONDAY.plusDays(1).atTime(8, 30), 30);
         Snapshot source = new Snapshot(List.of(task), List.of(
                 new Commitment(1, "Lecture", DayOfWeek.MONDAY, LocalTime.of(9, 0), 60)), 2, 2);
-        UnallocatedWork remainder = new UnallocatedWork(1, task.name(), task.deadline(), 30,
+        UnallocatedWork remainder = new UnallocatedWork(1, task.name(), task.deadline().orElseThrow(), 30,
                 UnallocatedReason.INSUFFICIENT_CAPACITY);
         Plan plan = plan(source, generated, List.of(), List.of(remainder));
 
@@ -157,6 +158,29 @@ class ScheduleServiceTest {
         assertEquals(1, nextDay.entries().size());
         assertEquals(SlotKind.FREE, nextDay.entries().getFirst().kind());
     }
+
+    // @@author GabrielYuSP
+    @Test
+    void forDate_unavailableStudyPeriod_projectsRegeneratedBlockAndKeepsOriginalPlanFrozen() {
+        Task draft = new Task(1, "Draft", MONDAY.atTime(12, 0), 90);
+        Snapshot original = new Snapshot(List.of(draft), List.of(), 2, 1);
+        EarliestDeadlinePlanner planner = new EarliestDeadlinePlanner();
+        Plan before = planner.generate(original, MORNING);
+        Snapshot blocked = new CommitmentService().add(original, "Unavailable",
+                DayOfWeek.MONDAY, LocalTime.of(8, 30), 60, MONDAY, MONDAY);
+        Plan after = planner.generate(blocked, MORNING);
+
+        assertEquals(List.of(entry(8, 0, 8, 30, SlotKind.TASK, "T1", "Draft"),
+                entry(8, 30, 9, 30, SlotKind.BUSY, "C1", "Unavailable"),
+                entry(9, 30, 10, 30, SlotKind.TASK, "T1", "Draft"),
+                entry(10, 30, 22, 0, SlotKind.FREE, "", "")), schedules.forDate(after, MONDAY).entries());
+        assertEquals(List.of(entry(8, 0, 9, 30, SlotKind.TASK, "T1", "Draft"),
+                entry(9, 30, 22, 0, SlotKind.FREE, "", "")), schedules.forDate(before, MONDAY).entries());
+        assertEquals(List.of(new ScheduleEntry(MONDAY.plusWeeks(1).atTime(8, 0),
+                MONDAY.plusWeeks(1).atTime(22, 0), SlotKind.FREE, "", "")),
+                schedules.forDate(after, MONDAY.plusWeeks(1)).entries());
+    }
+    // @@author
 
     @Test
     void forDate_policyPlan_projectsMergedBreaksAndKeepsFrozenResults() {

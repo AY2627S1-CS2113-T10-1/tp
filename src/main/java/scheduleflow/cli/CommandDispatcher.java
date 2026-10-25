@@ -11,6 +11,7 @@ import java.util.logging.Logger;
 import scheduleflow.common.ValidationException;
 import scheduleflow.commitment.CommitmentService;
 import scheduleflow.model.Commitment;
+import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.StudyHours;
 import scheduleflow.model.StudyWindow;
@@ -20,6 +21,7 @@ import scheduleflow.planning.Planner;
 import scheduleflow.planning.ScheduleService;
 import scheduleflow.storage.Storage;
 import scheduleflow.storage.StorageException;
+import scheduleflow.task.RecurringTaskService;
 import scheduleflow.task.TaskService;
 
 /**
@@ -62,6 +64,11 @@ public final class CommandDispatcher {
      */
     private final Clock clock;
 
+    // @@author nickpatt
+    /** Materializes immutable weekly-task candidates using the same captured command time. */
+    private final RecurringTaskService recurringTasks = new RecurringTaskService();
+    // @@author ka-how
+
     /**
      * Creates the CommandDispatcher dependencies without performing I/O.
      *
@@ -101,6 +108,14 @@ public final class CommandDispatcher {
         LocalDateTime now = LocalDateTime.now(clock);
         LOGGER.log(Level.FINE, "Command time captured");
         String output = switch (command) {
+            // @@author GabrielYuSP
+            // TODO(ernestgoh-god): implement both range routes with one save before publication and output.
+            case Command.AddContinuousBlock ignored -> throw new UnsupportedOperationException(
+                    "Continuous unavailable dispatch is not implemented yet.");
+            case Command.AddDailyBlocks ignored -> throw new UnsupportedOperationException(
+                    "Daily unavailable dispatch is not implemented yet.");
+            // @@author
+            // @@author ka-how
             case Command.Help ignored -> renderer.help();
             case Command.SetHours hours -> changeHours(hours.target(), state.snapshot().studyHours()
                     .withWindow(hours.target(), new StudyWindow(hours.start(), hours.end())), state);
@@ -110,11 +125,15 @@ public final class CommandDispatcher {
             case Command.AddTask add -> addTask(add, state, now);
             case Command.ListTasks ignored -> renderer.tasks(tasks.list(state.snapshot()));
             case Command.DeleteTask delete -> deleteTask(delete.id(), state);
+            // @@author nickpatt
+            case Command.EditTask edit -> editTask(edit, state, now);
+            case Command.AddRecurringTask add -> addRecurringTask(add, state, now);
+            case Command.ListRecurringTasks ignored -> renderer.recurringTasks(recurringTasks.list(state.snapshot()));
+            case Command.DeleteRecurringTask delete -> deleteRecurringTask(delete.id(), state);
             // @@author ernestgoh-god
-            case Command.RecordTaskWork ignored -> throw new ValidationException(
-                    "Task progress is awaiting task-service integration.");
-            case Command.RecordTaskSession ignored -> throw new ValidationException(
-                    "Task progress is awaiting task-service integration.");
+            case Command.RecordTaskWork work -> recordTaskWork(work, state);
+            case Command.RecordTaskSession session -> recordTaskSession(session, state);
+            case Command.ReviseTaskRemaining revise -> reviseTaskRemaining(revise, state);
             // @@author ka-how
             case Command.AddCommitment add -> addCommitment(add, state);
             case Command.EditCommitment edit -> editCommitment(edit, state);
@@ -174,6 +193,135 @@ public final class CommandDispatcher {
         saveAndCommit(candidate, state);
         return renderer.taskDeleted(removed);
     }
+
+    // @@author nickpatt
+    /** Saves changed details before publication; normalized no-ops preserve both disk and current plan. */
+    private String editTask(Command.EditTask command, AppState state, LocalDateTime now) throws StorageException {
+        Snapshot original = state.snapshot();
+        Snapshot candidate = tasks.edit(original, command.id(), command.edit(), now);
+        Task edited = candidate.tasks().stream().filter(task -> task.id() == command.id()).findFirst().orElseThrow();
+        String confirmation = renderer.taskEdited(edited);
+        if (candidate != original) {
+            saveAndCommit(candidate, state);
+        }
+        return confirmation;
+    }
+
+    /** Saves a template, generated tasks, processing cursors and all counters in one transaction. */
+    private String addRecurringTask(Command.AddRecurringTask command, AppState state, LocalDateTime now)
+            throws StorageException {
+        Snapshot original = state.snapshot();
+        Snapshot candidate = recurringTasks.add(original, command.name(), command.firstDeadline(), command.minutes(),
+                command.until(), now);
+        RecurringTask added = candidate.recurringTasks().stream()
+                .filter(task -> task.id() == original.nextRecurringTaskId()).findFirst().orElseThrow();
+        String confirmation = renderer.recurringTaskAdded(added);
+        saveAndCommit(candidate, state);
+        return confirmation;
+    }
+
+    /** Stops only future generation; saved task occurrences and all ID sequences are retained. */
+    private String deleteRecurringTask(int id, AppState state) throws StorageException {
+        Snapshot original = state.snapshot();
+        Snapshot candidate = recurringTasks.delete(original, id);
+        RecurringTask removed = original.recurringTasks().stream().filter(task -> task.id() == id)
+                .findFirst().orElseThrow();
+        String confirmation = renderer.recurringTaskDeleted(removed);
+        saveAndCommit(candidate, state);
+        return confirmation;
+    }
+    // @@author ka-how
+
+    // @@author ernestgoh-god
+    /**
+     * Prepares a whole-minute progress candidate without changing the live snapshot.
+     *
+     * @param command task ID and reported completed minutes
+     * @param state live snapshot and temporary plan
+     * @return confirmation once Printing supplies it
+     * @throws StorageException if saving a changed candidate fails
+     */
+    private String recordTaskWork(Command.RecordTaskWork command, AppState state) throws StorageException {
+        Snapshot original = state.snapshot();
+        Snapshot candidate = tasks.recordWork(original, command.id(), command.doneMinutes());
+        return publishTaskProgress(command.id(), original, candidate, state);
+    }
+
+    /**
+     * Prepares the service's rounded session credit without duplicating its arithmetic in the CLI.
+     *
+     * @param command task ID, session minutes and percentage of work completed
+     * @param state live snapshot and temporary plan
+     * @return confirmation once Printing supplies it
+     * @throws StorageException if saving a changed candidate fails
+     */
+    private String recordTaskSession(Command.RecordTaskSession command, AppState state) throws StorageException {
+        Snapshot original = state.snapshot();
+        Snapshot candidate = tasks.recordSessionProgress(original, command.id(), command.sessionMinutes(),
+                command.percent());
+        return publishTaskProgress(command.id(), original, candidate, state);
+    }
+
+    /**
+     * Prepares the actual credited amount for Printing before saving and publishing any change.
+     * An unfinished renderer leaves the command recoverable and the saved/live data untouched.
+     *
+     * @param taskId validated task ID
+     * @param original source snapshot
+     * @param candidate validated candidate or original instance for zero credited work
+     * @param state live state to publish after a successful save
+     * @return progress confirmation once Printing supplies it
+     * @throws StorageException if saving a changed candidate fails
+     */
+    private String publishTaskProgress(int taskId, Snapshot original, Snapshot candidate, AppState state)
+            throws StorageException {
+        Task previous = original.tasks().stream().filter(task -> task.id() == taskId).findFirst()
+                .orElseThrow(() -> new IllegalStateException("Validated progress is missing its original task."));
+        Task revised = candidate.tasks().stream().filter(task -> task.id() == taskId).findFirst()
+                .orElseThrow(() -> new IllegalStateException("Validated progress is missing its revised task."));
+        int creditedMinutes = previous.remainingMinutes() - revised.remainingMinutes();
+        LOGGER.log(Level.FINE, "Preparing task progress confirmation");
+        String confirmation;
+        try {
+            confirmation = Objects.requireNonNull(renderer.taskProgressUpdated(revised, creditedMinutes),
+                    "task progress confirmation");
+        } catch (UnsupportedOperationException exception) {
+            if (!"Task progress rendering is not implemented yet.".equals(exception.getMessage())) {
+                throw exception;
+            }
+            LOGGER.log(Level.FINE, "Task progress confirmation is still pending");
+            throw new ValidationException("Task progress is awaiting printing.");
+        }
+        if (candidate != original) {
+            saveAndCommit(candidate, state);
+        }
+        return confirmation;
+    }
+
+    /**
+     * Validates a revised estimate and prepares its response before any save or publication.
+     *
+     * @param command task ID and replacement remaining minutes
+     * @param state live snapshot and temporary plan
+     * @return confirmation for the validated estimate, including an unchanged estimate
+     * @throws StorageException if the candidate cannot be saved
+     * @throws ValidationException if the task or estimate is invalid
+     */
+    private String reviseTaskRemaining(Command.ReviseTaskRemaining command, AppState state) throws StorageException {
+        LOGGER.log(Level.FINE, "Validating task remaining-work revision");
+        Snapshot original = state.snapshot();
+        Snapshot candidate = tasks.reviseRemaining(original, command.id(), command.remainingMinutes());
+        Task revised = candidate.tasks().stream().filter(task -> task.id() == command.id())
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Validated revision is missing its target."));
+        String confirmation = Objects.requireNonNull(renderer.taskRemainingUpdated(revised),
+                "task remaining confirmation");
+        if (candidate != original) {
+            saveAndCommit(candidate, state);
+        }
+        return confirmation;
+    }
+    // @@author ka-how
 
     /**
      * Saves a validated weekly series before clearing the temporary plan or announcing success.
@@ -262,15 +410,22 @@ public final class CommandDispatcher {
      * A failed save leaves the current plan and saved file untouched.
      */
     private String generatePlan(AppState state, LocalDateTime now) throws StorageException {
-        LOGGER.log(Level.FINE, "Generating temporary plan");
-        Plan plan = Objects.requireNonNull(planner.generate(state.snapshot(), now), "generated plan");
-        if (!plan.source().equals(state.snapshot())) {
-            throw new IllegalArgumentException("Plan source must match the current snapshot.");
+        LOGGER.log(Level.FINE, "Generating frozen plan");
+        // @@author nickpatt
+        Snapshot candidate = recurringTasks.materialize(state.snapshot(), now);
+        Plan plan = Objects.requireNonNull(planner.generate(candidate, now), "generated plan");
+        if (!plan.source().equals(candidate)) {
+            throw new IllegalArgumentException("Generated plan must use the validated source snapshot.");
         }
+        String output = renderer.plan(plan);
+        // @@author ernestgoh-god
         storage.savePlan(plan);
+        if (candidate != state.snapshot()) {
+            state.commit(candidate);
+        }
         state.replacePlan(plan);
-        LOGGER.log(Level.FINE, "Temporary plan published; formatting result");
-        return renderer.plan(plan);
+        LOGGER.log(Level.FINE, "Saved plan published");
+        return output;
     }
     // @@author ka-how
 

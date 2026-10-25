@@ -11,7 +11,9 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import scheduleflow.task.TaskEdit;
 
 /**
  * Verifies stage 1 grammar and transport values independently of services, storage and the clock.
@@ -28,9 +30,155 @@ class CommandParserTest {
     private static final String COMMITMENT_DELETE_USAGE = "commitment delete CNUMBER";
     private static final String COMMITMENT_SKIP_USAGE = "commitment skip CNUMBER on/YYYY-MM-DD";
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
+    // @@author ernestgoh-god
+    private static final String UNAVAILABLE_CONTINUOUS_USAGE =
+            "unavailable continuous n/NAME from/YYYY-MM-DD HHmm until/YYYY-MM-DD HHmm";
+    private static final String UNAVAILABLE_DAILY_USAGE =
+            "unavailable daily n/NAME from/YYYY-MM-DD until/YYYY-MM-DD start/HHmm end/HHmm";
+    // @@author ka-how
     private final CommandParser parser = new CommandParser();
 
+    @Test
+    void parse_taskEdit_preservesAllThreeSubsets() throws ParseException {
+        LocalDateTime due = LocalDateTime.of(2028, 2, 29, 23, 59);
+        assertEquals(new Command.EditTask(12, new TaskEdit(Optional.of("New  name"), Optional.empty(), false)),
+                parser.parse(" task  edit T12 n/ New  name "));
+        assertEquals(new Command.EditTask(12, new TaskEdit(Optional.empty(), Optional.of(due), false)),
+                parser.parse("task edit T12 due/2028-02-29 2359"));
+        assertEquals(new Command.EditTask(12, new TaskEdit(Optional.of("New"), Optional.of(due), false)),
+                parser.parse("task edit T12 n/New due/2028-02-29 2359"));
+    }
+
+    @Test
+    void parse_taskEdit_rejectsMalformedFieldsAndIdentifiers() {
+        String usage = "task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]";
+        for (String suffix : List.of("T1", "R1 n/A", "T01 n/A", "T0 n/A", "T2147483648 n/A",
+                "T1 n/A n/B", "T1 due/2026-02-30 0900", "T1 due/0000-01-01 0900",
+                "T1 due/2026-10-06 2400", "T1 due/2026-10-06 0900 n/A", "T1 n/A d/30",
+                "T1 due/none", "T1 due/2026-10-06 0900 extra", "T1 n/A\tB")) {
+            assertRejected("task edit " + suffix, usage);
+        }
+    }
+
+    @Test
+    void parse_recurrence_acceptsBoundedUnboundedAndIndependentIds() throws ParseException {
+        LocalDateTime due = LocalDateTime.of(2028, 2, 29, 9, 5);
+        String input = "task recur add n/Weekly  review due/2028-02-29 0905 d/90 every/WEEKLY";
+        assertEquals(new Command.AddRecurringTask("Weekly  review", due, 90, Optional.empty()), parser.parse(input));
+        assertEquals(new Command.AddRecurringTask("Weekly  review", due, 90,
+                Optional.of(LocalDate.of(2028, 3, 7))), parser.parse(input + " until/2028-03-07"));
+        assertEquals(new Command.ListRecurringTasks(), parser.parse(" task  recur  list "));
+        assertEquals(new Command.DeleteRecurringTask(Integer.MAX_VALUE),
+                parser.parse("task recur delete R2147483647"));
+    }
+
+    @Test
+    void parse_recurrence_rejectsStrictDateOrderExtraFieldsAndOverflow() {
+        String usage = "task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES"
+                + " every/WEEKLY [until/YYYY-MM-DD] OR task recur list OR task recur delete RNUMBER";
+        String add = "task recur add n/A due/2026-10-06 0900 d/30 every/WEEKLY";
+        for (String input : List.of(add.replace("2026-10-06", "2026-02-30"),
+                add.replace("2026-10-06", "0000-01-01"), add + " until/2026-02-29",
+                add.replace("d/30", "d/2147483648"), add.replace("d/30", "d/030"),
+                add.replace("every/WEEKLY", "every/weekly"), add.replace("every/WEEKLY", "every/DAILY"),
+                add.replace("d/30 every/WEEKLY", "every/WEEKLY d/30"), add + " d/60", add + " extra",
+                add + " until/2026-11-01 until/2026-12-01", "task recur list extra",
+                "task recur delete T1", "task recur delete R01", "task recur delete R0",
+                "task recur delete R2147483648", "task recur delete R1 extra")) {
+            assertRejected(input, usage);
+        }
+    }
+
     // @@author ernestgoh-god
+    @Test
+    void parse_unavailableContinuous_preservesNamesDatesAndTimesWithoutDomainValidation() throws ParseException {
+        assertEquals(new Command.AddContinuousBlock("Trip  Café | 复习",
+                LocalDateTime.of(2026, 10, 26, 15, 0), LocalDateTime.of(2026, 10, 28, 11, 0)),
+                parser.parse("  unavailable  continuous  n/ Trip  Café | 复习  from/2026-10-26  1500"
+                        + "  until/2026-10-28  1100  "));
+        assertEquals(new Command.AddContinuousBlock("Same", LocalDateTime.of(2028, 2, 29, 15, 15),
+                LocalDateTime.of(2028, 2, 29, 15, 15)),
+                parser.parse("unavailable continuous n/Same from/2028-02-29 1515 until/2028-02-29 1515"));
+    }
+
+    @Test
+    void parse_unavailableDaily_preservesLeapAndBoundaryDatesWithoutDomainValidation() throws ParseException {
+        assertEquals(new Command.AddDailyBlocks("Appointment", LocalDate.of(2028, 2, 28),
+                LocalDate.of(2028, 3, 1), LocalTime.of(15, 0), LocalTime.of(17, 0)),
+                parser.parse("unavailable daily n/Appointment from/2028-02-28"
+                        + " until/2028-03-01 start/1500 end/1700"));
+        assertEquals(new Command.AddDailyBlocks("Boundary", LocalDate.of(9999, 12, 31),
+                LocalDate.of(1, 1, 1), LocalTime.of(23, 59), LocalTime.MIDNIGHT),
+                parser.parse("unavailable daily n/Boundary from/9999-12-31"
+                        + " until/0001-01-01 start/2359 end/0000"));
+    }
+
+    @Test
+    void parse_unavailable_rejectsMissingReorderedDuplicateMixedAndExtraFields() {
+        for (String input : List.of("unavailable continuous", "unavailable continuous n/A",
+                "unavailable continuous from/2026-10-26 1500 until/2026-10-28 1100",
+                "unavailable continuous n/A until/2026-10-28 1100 from/2026-10-26 1500",
+                "unavailable continuous n/A from/2026-10-26 1500 from/2026-10-27 0000"
+                        + " until/2026-10-28 1100",
+                "unavailable continuous n/A from/2026-10-26 1500 until/2026-10-28 1100 extra",
+                "unavailable continuous n/A from/2026-10-26 1500 until/2026-10-28 1100 start/1500",
+                "unavailable continuous n/A/B from/2026-10-26 1500 until/2026-10-28 1100",
+                "unavailable continuous n/A from/2026-10-26 150 until/2026-10-28 1100")) {
+            assertUnavailableSyntaxRejected(input, UNAVAILABLE_CONTINUOUS_USAGE);
+        }
+        for (String input : List.of("unavailable daily", "unavailable daily n/A from/2026-10-26",
+                "unavailable daily n/A until/2026-10-28 from/2026-10-26 start/1500 end/1700",
+                "unavailable daily n/A from/2026-10-26 until/2026-10-28 end/1700 start/1500",
+                "unavailable daily n/A from/2026-10-26 until/2026-10-28 start/1500 start/1600 end/1700",
+                "unavailable daily n/A from/2026-10-26 until/2026-10-28 start/1500 end/1700 extra",
+                "unavailable daily n/A from/2026-10-26 until/2026-10-28 start/1500 end/1700"
+                        + " from/2026-10-29",
+                "unavailable daily n/A from/2026-10-26 1500 until/2026-10-28 start/1500 end/1700",
+                "unavailable daily n/A from/2026-10-26 until/2026-10-28 start/1500 end/17000")) {
+            assertUnavailableSyntaxRejected(input, UNAVAILABLE_DAILY_USAGE);
+        }
+        ParseException unknown = assertThrows(ParseException.class, () -> parser.parse("unavailable weekly n/A"));
+        assertEquals("Invalid unavailable command format", unknown.getMessage());
+        assertEquals(UNAVAILABLE_CONTINUOUS_USAGE + " OR " + UNAVAILABLE_DAILY_USAGE, unknown.usage());
+    }
+
+    @Test
+    void parse_unavailable_rejectsInvalidCalendarDatesYearsAndTimesWithModeUsage() {
+        for (String input : List.of(
+                "unavailable continuous n/A from/2026-02-30 1500 until/2026-03-01 1100",
+                "unavailable continuous n/A from/2026-10-26 2400 until/2026-10-28 1100",
+                "unavailable daily n/A from/2026-10-26 until/2026-02-29 start/1500 end/1700",
+                "unavailable daily n/A from/2026-10-26 until/2026-10-28 start/1500 end/2460")) {
+            ParseException failure = assertThrows(ParseException.class, () -> parser.parse(input), input);
+            assertEquals("Invalid date or time", failure.getMessage());
+            assertEquals(input.startsWith("unavailable continuous") ? UNAVAILABLE_CONTINUOUS_USAGE
+                    : UNAVAILABLE_DAILY_USAGE, failure.usage());
+        }
+        for (String input : List.of(
+                "unavailable continuous n/A from/0000-01-01 1500 until/2026-10-28 1100",
+                "unavailable daily n/A from/2026-10-26 until/0000-01-01 start/1500 end/1700")) {
+            ParseException failure = assertThrows(ParseException.class, () -> parser.parse(input), input);
+            assertEquals("Year must be between 0001 and 9999", failure.getMessage());
+            assertEquals(input.startsWith("unavailable continuous") ? UNAVAILABLE_CONTINUOUS_USAGE
+                    : UNAVAILABLE_DAILY_USAGE, failure.usage());
+        }
+    }
+
+    @Test
+    void parse_unavailable_embeddedControlsRetainSelectedModeUsage() {
+        ParseException failure = assertThrows(ParseException.class, () -> parser.parse(
+                "unavailable continuous n/A\tB from/2026-10-26 1500 until/2026-10-28 1100"));
+        assertEquals("Use ordinary spaces instead of embedded control characters", failure.getMessage());
+        assertEquals(UNAVAILABLE_CONTINUOUS_USAGE, failure.usage());
+    }
+
+    /** Checks the specified mode's exact syntax error and usage hint. */
+    private void assertUnavailableSyntaxRejected(String input, String usage) {
+        ParseException failure = assertThrows(ParseException.class, () -> parser.parse(input), input);
+        assertEquals("Invalid unavailable command format", failure.getMessage(), input);
+        assertEquals(usage, failure.usage(), input);
+    }
+
     @Test
     void parse_taskProgress_acceptsBothReportedWorkForms() throws ParseException {
         assertEquals(new Command.RecordTaskWork(1, 30), parser.parse("task progress T1 done/30"));
@@ -51,6 +199,28 @@ class CommandParserTest {
                 "task progress T1 session/60", "task progress T1 percent/50 session/60",
                 "task progress T1 done/30 percent/50", "task progress T1 session/60 percent/50 done/30",
                 "task progress T1 done/30 done/30", "task progress T1 done/30 extra")) {
+            assertEquals(usage, assertThrows(ParseException.class, () -> parser.parse(input), input).usage());
+        }
+    }
+
+    @Test
+    void parse_taskRemaining_acceptsPositiveWholeMinuteTokens() throws ParseException {
+        assertEquals(new Command.ReviseTaskRemaining(1, 30),
+                parser.parse("task remaining T1 remaining/30"));
+        assertEquals(new Command.ReviseTaskRemaining(12, Integer.MAX_VALUE),
+                parser.parse(" task  remaining  T12  remaining/2147483647 "));
+    }
+
+    @Test
+    void parse_taskRemaining_rejectsMalformedAndOverflowingInput() {
+        String usage = "task remaining TNUMBER remaining/MINUTES";
+        for (String input : List.of("task remaining", "task remaining 1 remaining/30",
+                "task remaining C1 remaining/30", "task remaining T0 remaining/30",
+                "task remaining T01 remaining/30", "task remaining T1 remaining/0",
+                "task remaining T1 remaining/01", "task remaining T1 remaining/-30",
+                "task remaining T1 remaining/2147483648", "task remaining T2147483648 remaining/30",
+                "task remaining T1 d/30", "task remaining T1 remaining/30 extra",
+                "task remaining T1 remaining/30 remaining/60", "task remaining T1 done/30 remaining/60")) {
             assertEquals(usage, assertThrows(ParseException.class, () -> parser.parse(input), input).usage());
         }
     }
@@ -361,7 +531,7 @@ class CommandParserTest {
     void parse_wrongCommandCaseAndUnknownCommands_returnsHelpHint() {
         for (String input : List.of("HELP", "Task list", "task LIST", "task ADD", "task addendum",
                 "Commitment list", "commitment DELETE C1", "PLAN", "SCHEDULE today", "EXIT",
-                "task", "commitment", "task edit T1", "commitment remove C1", "save", "helpful", "", "   ")) {
+                "task", "commitment", "commitment remove C1", "save", "helpful", "", "   ")) {
             assertRejected(input, HELP_USAGE);
         }
     }

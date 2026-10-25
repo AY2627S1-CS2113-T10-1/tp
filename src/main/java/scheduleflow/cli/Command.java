@@ -6,11 +6,38 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Objects;
+import java.util.Optional;
+import scheduleflow.task.TaskEdit;
 
 /**
  * Defines the complete command vocabulary as immutable transport values.
  */
 public sealed interface Command {
+    // @@author GabrielYuSP
+    /** Carries an inclusive start and exclusive end for a continuous unavailable interval. */
+    record AddContinuousBlock(String name, LocalDateTime start, LocalDateTime end) implements Command {
+        /** Requires transport references; the commitment service will validate values and ordering. */
+        public AddContinuousBlock {
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(start, "start");
+            Objects.requireNonNull(end, "end");
+        }
+    }
+
+    /** Carries a same-day window repeated over an inclusive range of dates. */
+    record AddDailyBlocks(String name, LocalDate firstDate, LocalDate lastDate,
+            LocalTime start, LocalTime end) implements Command {
+        /** Requires transport references while leaving domain validation to the commitment service. */
+        public AddDailyBlocks {
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(firstDate, "firstDate");
+            Objects.requireNonNull(lastDate, "lastDate");
+            Objects.requireNonNull(start, "start");
+            Objects.requireNonNull(end, "end");
+        }
+    }
+    // @@author
+
     // @@author GabrielYuSP
     /** Requests replacement of one recurring weekday or date-specific window. */
     record SetHours(String target, LocalTime start, LocalTime end) implements Command {
@@ -72,7 +99,40 @@ public sealed interface Command {
     record DeleteTask(int id) implements Command {
     }
 
+    // @@author nickpatt
+    /** Carries optional name/deadline replacements without applying domain validation. */
+    record EditTask(int id, TaskEdit edit) implements Command {
+        /** Requires the partial edit while leaving ID and field validation to TaskService. */
+        public EditTask {
+            Objects.requireNonNull(edit, "edit");
+        }
+    }
+
+    /** Carries a weekly template's first deadline, work estimate and optional inclusive last date. */
+    record AddRecurringTask(String name, LocalDateTime firstDeadline, int minutes,
+            Optional<LocalDate> until) implements Command {
+        /** Requires explicit transport values without allocating IDs or reading the clock. */
+        public AddRecurringTask {
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(firstDeadline, "firstDeadline");
+            Objects.requireNonNull(until, "until");
+        }
+    }
+
+    /** Requests weekly template definitions rather than their individual task occurrences. */
+    record ListRecurringTasks() implements Command {
+    }
+
+    /** Carries the independent numeric R-ID of a weekly template to remove. */
+    record DeleteRecurringTask(int id) implements Command {
+    }
+    // @@author ka-how
+
     // @@author ernestgoh-god
+    /** Carries a replacement remaining-work estimate for a stored task. */
+    record ReviseTaskRemaining(int id, int remainingMinutes) implements Command {
+    }
+
     /** Carries reported whole minutes of completed task work. */
     record RecordTaskWork(int id, int doneMinutes) implements Command {
     }

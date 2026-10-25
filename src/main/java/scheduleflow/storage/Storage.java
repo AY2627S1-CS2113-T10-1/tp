@@ -41,6 +41,7 @@ public interface Storage {
     // @@author ernestgoh-god
     /**
      * Atomically saves a frozen plan together with its source snapshot.
+     * The source may include new recurring-task occurrences; callers publish it only after saving succeeds.
      *
      * @param plan validated result to retain across restarts
      * @throws StorageException if saving fails without replacing the prior file

@@ -90,7 +90,7 @@ public final class FileStorage implements Storage {
         LOGGER.log(Level.FINE, "Starting frozen plan load");
         try {
             String text = Files.readString(file, StandardCharsets.UTF_8);
-            if (!text.startsWith("SCHEDULEFLOW|5\n") && !text.startsWith("SCHEDULEFLOW|5\r")) {
+            if (!PlanCodec.hasSavedPlan(text)) {
                 if (!codec.decode(text).equals(source)) {
                     throw new StorageException("Saved data does not match the loaded snapshot.");
                 }
@@ -135,13 +135,10 @@ public final class FileStorage implements Storage {
     }
 
     // @@author ernestgoh-god
-    /** Saves a plan only when its source still matches the complete saved snapshot. */
+    /** Saves a plan and its candidate source in one replacement, including newly materialized recurring tasks. */
     @Override
     public void savePlan(Plan plan) throws StorageException {
         Objects.requireNonNull(plan, "plan");
-        if (!load().equals(plan.source())) {
-            throw new StorageException("Cannot save a plan for different saved data.");
-        }
         LOGGER.log(Level.FINE, "Starting frozen plan save");
         writeAtomically(new PlanCodec(codec).encode(plan));
     }

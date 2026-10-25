@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Path;
 import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -19,6 +20,7 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import scheduleflow.common.InputRules;
 import scheduleflow.common.ValidationException;
@@ -27,10 +29,14 @@ import scheduleflow.model.Snapshot;
 import scheduleflow.model.StudyHours;
 import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskPriority;
+import scheduleflow.planning.EarliestDeadlinePlanner;
 import scheduleflow.planning.TimeRules;
+import scheduleflow.storage.FileStorage;
+import scheduleflow.storage.StateCodec;
 
 /**
- * Verifies task candidates, deadline limits and stable identity without I/O or a live clock.
+ * Verifies task candidates, deadline limits and stable identity with isolated storage and fixed time.
  */
 @Isolated
 class TaskServiceTest {
@@ -39,6 +45,57 @@ class TaskServiceTest {
     private static final Commitment LECTURE = new Commitment(3, "Lecture", DayOfWeek.MONDAY,
             LocalTime.of(10, 0), 120);
     private final TaskService service = new TaskService();
+
+    // @@author ernestgoh-god
+    @Test
+    void reviseRemaining_knownTask_replacesOnlyEstimateAndPreservesMetadata() {
+        Task first = new Task(2, "First", DEADLINE, 30);
+        Task target = new Task(8, "Target", DEADLINE, 60);
+        Snapshot source = new Snapshot(List.of(first, target), List.of(LECTURE), 10, 11);
+
+        Snapshot candidate = service.reviseRemaining(source, 8, 90);
+
+        assertEquals(List.of(first, new Task(8, "Target", DEADLINE, 90)), candidate.tasks());
+        assertEquals(source.commitments(), candidate.commitments());
+        assertEquals(source.studyHours(), candidate.studyHours());
+        assertEquals(10, candidate.nextTaskId());
+        assertEquals(11, candidate.nextCommitmentId());
+        assertEquals(List.of(first, target), source.tasks());
+        assertSame(source, service.reviseRemaining(source, 8, 60));
+    }
+
+    @Test
+    void reviseRemaining_invalidTaskOrEstimate_rejectsWithoutChangingSource() {
+        Task task = new Task(2, "Target", DEADLINE, 60);
+        Snapshot source = new Snapshot(List.of(task), List.of(LECTURE), 3, 4);
+
+        assertEquals("state", assertThrows(NullPointerException.class,
+                () -> service.reviseRemaining(null, 2, 30)).getMessage());
+        assertEquals("Unknown task ID: T9", assertThrows(ValidationException.class,
+                () -> service.reviseRemaining(source, 9, 30)).getMessage());
+        for (int remaining : new int[] {0, -30}) {
+            assertThrows(ValidationException.class, () -> service.reviseRemaining(source, 2, remaining));
+        }
+        assertEquals(List.of(task), source.tasks());
+        assertEquals(3, source.nextTaskId());
+    }
+
+    @Test
+    void reviseRemaining_savedCandidateReloadsAndChangesPlanningDemand(@TempDir Path directory) throws Exception {
+        Task task = new Task(2, "Target", NOW.withHour(8).withMinute(30), 60);
+        Snapshot source = new Snapshot(List.of(task), List.of(), 3, 1);
+        Snapshot revised = service.reviseRemaining(source, 2, 90);
+        FileStorage storage = new FileStorage(directory.resolve("data/scheduleflow.txt"), new StateCodec());
+
+        storage.save(revised);
+        Snapshot restored = storage.load();
+
+        assertEquals(revised, restored);
+        EarliestDeadlinePlanner planner = new EarliestDeadlinePlanner();
+        assertEquals(30, planner.generate(source, NOW).unallocated().getFirst().minutes());
+        assertEquals(60, planner.generate(restored, NOW).unallocated().getFirst().minutes());
+    }
+    // @@author nickpatt
 
     @Test
     void methods_nullDependencies_reportNamedPreconditions() {
@@ -56,7 +113,7 @@ class TaskServiceTest {
         Snapshot original = Snapshot.empty();
 
         assertThrows(ValidationException.class, () -> service.add(original, "Draft", deadline, 30, NOW));
-        assertEquals(deadline, service.add(original, "Draft", deadline, 30, NOW.plusDays(1))
+        assertEquals(Optional.of(deadline), service.add(original, "Draft", deadline, 30, NOW.plusDays(1))
                 .tasks().getFirst().deadline());
         assertEquals(Snapshot.empty(), original);
     }
@@ -67,7 +124,7 @@ class TaskServiceTest {
         Snapshot original = new Snapshot(List.of(existing), List.of(LECTURE), 5, 8);
 
         assertThrows(ValidationException.class, () -> service.add(original, "Bad/name", DEADLINE, 30, NOW));
-        assertThrows(ValidationException.class, () -> service.add(original, "Draft", DEADLINE, 45, NOW));
+        assertThrows(ValidationException.class, () -> service.add(original, "Draft", DEADLINE, 0, NOW));
         assertThrows(ValidationException.class, () -> service.add(original, "Draft", NOW, 30, NOW));
         assertEquals(new Snapshot(List.of(existing), List.of(LECTURE), 5, 8), original);
         assertEquals(5, service.add(original, "Retry", DEADLINE, 30, NOW).tasks().getLast().id());
@@ -97,7 +154,7 @@ class TaskServiceTest {
         for (Executable addition : List.<Executable>of(
                 () -> service.add(original, "Private task/invalid", DEADLINE, 30, NOW),
                 () -> service.add(original, "Private task", NOW, 30, NOW),
-                () -> service.add(original, "Private task", DEADLINE, 45, NOW),
+                () -> service.add(original, "Private task", DEADLINE, 0, NOW),
                 () -> service.add(original, "Private task", NOW.plusYears(2), 30, NOW),
                 () -> service.add(new Snapshot(List.of(), List.of(), Integer.MAX_VALUE, 1),
                         "Private task", DEADLINE, 30, NOW))) {
@@ -186,7 +243,7 @@ class TaskServiceTest {
     @Test
     void add_invalidDurations_rejectsWithoutChanges() {
         Snapshot original = Snapshot.empty();
-        for (int minutes : new int[] {-30, 0, 1, 45, Integer.MAX_VALUE}) {
+        for (int minutes : new int[] {-30, 0, Integer.MIN_VALUE}) {
             assertThrows(ValidationException.class, () -> service.add(original, "Draft", DEADLINE, minutes, NOW));
             assertEquals(Snapshot.empty(), original);
         }
@@ -214,12 +271,13 @@ class TaskServiceTest {
     @Test
     void add_deadlineBoundaries_acceptsNextMinuteAndExactHorizon() {
         for (LocalDateTime deadline : List.of(NOW.plusMinutes(1), TimeRules.horizonEnd(NOW))) {
-            assertEquals(deadline, service.add(Snapshot.empty(), "Draft", deadline, 30, NOW)
+            assertEquals(Optional.of(deadline), service.add(Snapshot.empty(), "Draft", deadline, 30, NOW)
                     .tasks().getFirst().deadline());
         }
         LocalDateTime preciseNow = NOW.plusSeconds(1).plusNanos(1);
         assertThrows(ValidationException.class, () -> service.add(Snapshot.empty(), "Draft", NOW, 30, preciseNow));
-        assertEquals(NOW.plusMinutes(1), service.add(Snapshot.empty(), "Draft", NOW.plusMinutes(1), 30, preciseNow)
+        assertEquals(Optional.of(NOW.plusMinutes(1)), service.add(Snapshot.empty(), "Draft", NOW.plusMinutes(1),
+                30, preciseNow)
                 .tasks().getFirst().deadline());
     }
 
@@ -228,7 +286,7 @@ class TaskServiceTest {
         LocalDateTime leapNow = LocalDateTime.of(2028, 2, 29, 12, 0);
         LocalDateTime horizon = LocalDateTime.of(2029, 2, 28, 0, 0);
 
-        assertEquals(horizon, service.add(Snapshot.empty(), "Draft", horizon, 30, leapNow)
+        assertEquals(Optional.of(horizon), service.add(Snapshot.empty(), "Draft", horizon, 30, leapNow)
                 .tasks().getFirst().deadline());
         assertThrows(ValidationException.class,
                 () -> service.add(Snapshot.empty(), "Draft", horizon.plusMinutes(1), 30, leapNow));
@@ -309,7 +367,7 @@ class TaskServiceTest {
                 new TaskEdit(Optional.of("  Renamed  "), Optional.of(DEADLINE.plusDays(1)), false))) {
             Snapshot candidate = service.edit(source, original.id(), edit, NOW);
             Task expected = new Task(original.id(), edit.name().orElse(original.name()),
-                    edit.deadline().orElse(original.deadline()), original.remainingMinutes());
+                    edit.deadline().or(() -> original.deadline()), original.remainingMinutes(), original.priority());
             assertEquals(new Snapshot(List.of(source.tasks().getFirst(), expected, source.tasks().getLast()),
                     source.commitments(), source.nextTaskId(), source.nextCommitmentId(), source.studyHours()),
                     candidate);
@@ -342,7 +400,6 @@ class TaskServiceTest {
         Snapshot source = editSource();
         List<TaskEdit> invalid = new ArrayList<>();
         invalid.add(new TaskEdit(Optional.empty(), Optional.empty(), false));
-        invalid.add(new TaskEdit(Optional.empty(), Optional.empty(), true));
         invalid.add(new TaskEdit(Optional.of("Valid"), Optional.of(DEADLINE), true));
         for (String name : List.of("", "   ", "Bad/name", "Bad\tname", "Bad\nname")) {
             invalid.add(new TaskEdit(Optional.of(name), Optional.of(DEADLINE.plusDays(1)), false));
@@ -385,7 +442,7 @@ class TaskServiceTest {
                 LocalDateTime.of(2028, 2, 29, 12, 0))) {
             LocalDateTime nextMinute = now.withSecond(0).withNano(0).plusMinutes(1);
             for (LocalDateTime deadline : List.of(nextMinute, TimeRules.horizonEnd(now))) {
-                assertEquals(deadline, service.edit(source, 2,
+                assertEquals(Optional.of(deadline), service.edit(source, 2,
                         new TaskEdit(Optional.empty(), Optional.of(deadline), false), now)
                         .tasks().get(1).deadline());
             }
@@ -398,7 +455,8 @@ class TaskServiceTest {
         LocalDateTime movingDeadline = TimeRules.horizonEnd(NOW).plusDays(1);
         TaskEdit edit = new TaskEdit(Optional.empty(), Optional.of(movingDeadline), false);
         assertThrows(ValidationException.class, () -> service.edit(source, 2, edit, NOW));
-        assertEquals(movingDeadline, service.edit(source, 2, edit, NOW.plusDays(1)).tasks().get(1).deadline());
+        assertEquals(Optional.of(movingDeadline),
+                service.edit(source, 2, edit, NOW.plusDays(1)).tasks().get(1).deadline());
     }
 
     @Test
@@ -415,6 +473,149 @@ class TaskServiceTest {
                 "Starting task edit", "Task edit rejected; source snapshot unchanged"),
                 records.stream().map(LogRecord::getMessage).toList());
         assertPrivateStageRecords(records);
+    }
+
+    @Test
+    void add_wholeMinuteBoundariesAndAbsentDeadline_preservesHoursAndCounter() {
+        Snapshot source = Snapshot.empty().withStudyHours(editSource().studyHours());
+        for (int minutes : new int[] {1, 45, Integer.MAX_VALUE}) {
+            Snapshot dated = service.add(source, "Draft", DEADLINE, minutes, NOW);
+            Snapshot undated = service.addWithoutDeadline(source, "  Draft  ", minutes);
+            assertEquals(new Task(1, "Draft", DEADLINE, minutes), dated.tasks().getFirst());
+            assertEquals(Task.withoutDeadline(1, "Draft", minutes), undated.tasks().getFirst());
+            assertSame(source.studyHours(), dated.studyHours());
+            assertSame(source.studyHours(), undated.studyHours());
+            assertEquals(2, undated.nextTaskId());
+            assertEquals(1, undated.nextCommitmentId());
+        }
+        for (int minutes : new int[] {0, -1, Integer.MIN_VALUE}) {
+            assertThrows(ValidationException.class, () -> service.addWithoutDeadline(source, "A", minutes));
+        }
+        assertThrows(ValidationException.class, () -> service.addWithoutDeadline(editSource(), "A", 1));
+        assertThrows(ValidationException.class, () -> service.addWithoutDeadline(source, "Bad/name", 1));
+        assertThrows(ValidationException.class, () -> service.add(source, "A", null, 1, NOW));
+        assertEquals(List.of(), source.tasks());
+    }
+
+    @Test
+    void lifecycle_mixedSnapshot_preservesMetadataPositionHoursAndExhaustedCounters() {
+        Snapshot base = editSource();
+        Task target = new Task(2, "Draft", Optional.of(NOW.minusYears(1)), 45, TaskPriority.HIGH);
+        Snapshot source = new Snapshot(List.of(base.tasks().getFirst(), target, base.tasks().getLast()),
+                base.commitments(), base.nextTaskId(), base.nextCommitmentId(), base.studyHours());
+        Snapshot progressed = service.recordWork(source, 2, 15);
+        Snapshot revised = service.reviseRemaining(progressed, 2, Integer.MAX_VALUE);
+        Snapshot completed = service.complete(revised, 2);
+        Snapshot reopened = service.reopen(completed, 2, 1);
+        for (Snapshot candidate : List.of(progressed, revised, completed, reopened)) {
+            assertSame(source.tasks().getFirst(), candidate.tasks().getFirst());
+            assertSame(source.tasks().getLast(), candidate.tasks().getLast());
+            assertEquals(source.commitments(), candidate.commitments());
+            assertSame(source.studyHours(), candidate.studyHours());
+            assertEquals(source.nextTaskId(), candidate.nextTaskId());
+            assertEquals(source.nextCommitmentId(), candidate.nextCommitmentId());
+            Task changed = candidate.tasks().get(1);
+            assertEquals(target.id(), changed.id());
+            assertEquals(target.name(), changed.name());
+            assertEquals(target.deadline(), changed.deadline());
+            assertEquals(target.priority(), changed.priority());
+            assertThrows(UnsupportedOperationException.class, () -> candidate.tasks().clear());
+        }
+        assertEquals(45, source.tasks().get(1).remainingMinutes());
+        assertEquals(30, progressed.tasks().get(1).remainingMinutes());
+        assertEquals(Integer.MAX_VALUE, revised.tasks().get(1).remainingMinutes());
+        assertEquals(0, completed.tasks().get(1).remainingMinutes());
+        assertEquals(1, reopened.tasks().get(1).remainingMinutes());
+        assertEquals(0, service.recordWork(source, 2, 45).tasks().get(1).remainingMinutes());
+    }
+
+    @Test
+    void progress_percentagesFloorAndLargeValues_creditExactReportedWork() {
+        Snapshot source = service.addWithoutDeadline(Snapshot.empty(), "Draft", Integer.MAX_VALUE);
+        for (int percentage : new int[] {0, 1, 50, 99, 100}) {
+            int done = (int) ((long) Integer.MAX_VALUE * percentage / 100);
+            assertEquals(Integer.MAX_VALUE - done,
+                    service.recordSessionProgress(source, 1, Integer.MAX_VALUE, percentage)
+                            .tasks().getFirst().remainingMinutes());
+        }
+        assertEquals(Integer.MAX_VALUE - 1,
+                service.recordSessionProgress(source, 1, 3, 50).tasks().getFirst().remainingMinutes());
+        Snapshot small = service.addWithoutDeadline(Snapshot.empty(), "Small", 45);
+        assertEquals(15, service.recordSessionProgress(small, 1, 60, 50).tasks().getFirst().remainingMinutes());
+        assertThrows(ValidationException.class, () -> service.recordSessionProgress(small, 1, 60, 100));
+        assertEquals(45, small.tasks().getFirst().remainingMinutes());
+    }
+
+    @Test
+    void lifecycle_noOps_returnIdenticalSource() {
+        Snapshot source = service.addWithoutDeadline(Snapshot.empty(), "Draft", 45);
+        assertSame(source, service.recordWork(source, 1, 0));
+        assertSame(source, service.recordSessionProgress(source, 1, 60, 0));
+        assertSame(source, service.recordSessionProgress(source, 1, 1, 99));
+        assertSame(source, service.reviseRemaining(source, 1, 45));
+        Snapshot completed = service.complete(source, 1);
+        assertSame(completed, service.complete(completed, 1));
+        assertSame(source, service.edit(source, 1, new TaskEdit(Optional.empty(), Optional.empty(), true), NOW));
+    }
+
+    @Test
+    void lifecycle_invalidInputs_rejectWithoutChangingSource() {
+        Snapshot source = service.addWithoutDeadline(Snapshot.empty(), "Draft", 45);
+        Snapshot complete = service.complete(source, 1);
+        for (int done : new int[] {-1, Integer.MIN_VALUE, 46, Integer.MAX_VALUE}) {
+            assertThrows(ValidationException.class, () -> service.recordWork(source, 1, done));
+        }
+        for (int remaining : new int[] {0, -1, Integer.MIN_VALUE}) {
+            assertThrows(ValidationException.class, () -> service.reviseRemaining(source, 1, remaining));
+            assertThrows(ValidationException.class, () -> service.reopen(complete, 1, remaining));
+        }
+        for (int session : new int[] {0, -1, Integer.MIN_VALUE}) {
+            assertThrows(ValidationException.class, () -> service.recordSessionProgress(source, 1, session, 50));
+        }
+        for (int percentage : new int[] {-1, 101, Integer.MIN_VALUE, Integer.MAX_VALUE}) {
+            assertThrows(ValidationException.class, () -> service.recordSessionProgress(source, 1, 60, percentage));
+        }
+        assertThrows(ValidationException.class, () -> service.recordWork(complete, 1, 0));
+        assertThrows(ValidationException.class, () -> service.recordWork(complete, 1, 1));
+        assertThrows(ValidationException.class, () -> service.recordSessionProgress(complete, 1, 1, 0));
+        assertThrows(ValidationException.class, () -> service.reviseRemaining(complete, 1, 45));
+        assertThrows(ValidationException.class, () -> service.reopen(source, 1, 45));
+        for (int id : new int[] {-1, 0, 2, Integer.MAX_VALUE}) {
+            assertThrows(ValidationException.class, () -> service.recordWork(source, id, 0));
+            assertThrows(ValidationException.class, () -> service.recordSessionProgress(source, id, 1, 0));
+            assertThrows(ValidationException.class, () -> service.reviseRemaining(source, id, 1));
+            assertThrows(ValidationException.class, () -> service.complete(source, id));
+            assertThrows(ValidationException.class, () -> service.reopen(complete, id, 1));
+        }
+        assertEquals(45, source.tasks().getFirst().remainingMinutes());
+        assertEquals(0, complete.tasks().getFirst().remainingMinutes());
+    }
+
+    @Test
+    void lifecycle_nullSources_reportNamedPrecondition() {
+        for (Executable operation : List.<Executable>of(
+                () -> service.addWithoutDeadline(null, "Draft", 1),
+                () -> service.recordWork(null, 1, 0),
+                () -> service.recordSessionProgress(null, 1, 1, 0),
+                () -> service.reviseRemaining(null, 1, 1),
+                () -> service.complete(null, 1), () -> service.reopen(null, 1, 1))) {
+            assertEquals("state", assertThrows(NullPointerException.class, operation).getMessage());
+        }
+    }
+
+    @Test
+    void edit_optionalDeadlineAndCompletion_preservesStatusAndPriority() {
+        Task task = new Task(1, "Draft", Optional.of(NOW.minusYears(1)), 0, TaskPriority.LOW);
+        Snapshot source = new Snapshot(List.of(task), List.of(), 2, 1, editSource().studyHours());
+        Snapshot cleared = service.edit(source, 1, new TaskEdit(Optional.of("Renamed"), Optional.empty(), true), NOW);
+        assertEquals(new Task(1, "Renamed", Optional.empty(), 0, TaskPriority.LOW), cleared.tasks().getFirst());
+        assertSame(source.studyHours(), cleared.studyHours());
+        assertSame(cleared, service.edit(cleared, 1, new TaskEdit(Optional.empty(), Optional.empty(), true), NOW));
+        Snapshot dated = service.edit(cleared, 1, new TaskEdit(Optional.empty(), Optional.of(DEADLINE), false), NOW);
+        assertEquals(new Task(1, "Renamed", Optional.of(DEADLINE), 0, TaskPriority.LOW), dated.tasks().getFirst());
+        assertThrows(ValidationException.class, () -> service.edit(cleared, 1,
+                new TaskEdit(Optional.of("Invalid change"), Optional.of(NOW), false), NOW));
+        assertEquals(task, source.tasks().getFirst());
     }
 
     /** Creates an unsorted mixed snapshot with exhausted counters and both kinds of custom hours. */

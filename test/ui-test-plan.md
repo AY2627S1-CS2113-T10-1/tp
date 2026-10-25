@@ -1,11 +1,19 @@
 # ScheduleFlow UI test plan
 
-Issue #40 progress grammar has parser-level JUnit coverage. Packaged progress
-acceptance remains planned until task-service integration, dispatcher
-transactions and Printing's confirmation are implemented. Existing active
-scenarios continue to exercise the unchanged console commands.
+Issue #40 progress grammar, service candidates, Printing confirmations and
+dispatcher transactions have JUnit coverage. UI-030 exercises both progress
+forms, exact rounded credit, zero credit, invalid requests, plan invalidation
+and retained completion across two saved restarts. Fixed-clock dispatcher
+tests verify no-op plan preservation and failed-save rollback/retry.
 
-All nineteen maintained process scenarios are active. They exercise the packaged
+Issue #41 remaining-work parsing, service candidates, renderer output,
+saved-candidate reload, planning demand, successful dispatch, no-op behavior and
+save-failure rollback have JUnit coverage. UI-019 checks the packaged command's
+exact output, invalid values, plan invalidation, replanning and saved data after
+two restarts. Save failure is covered by an isolated dispatcher fake because
+process-level fault injection is unavailable.
+
+All twenty-four maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -23,12 +31,17 @@ after deletion. Repeated loading of valid overdue records preserves the original
 file bytes. These direct JUnit checks complement the active console scenarios
 and Printing's restart and rollback tests.
 
-Issue #68's UI-022 starts with a fixed version 5 file, checks the same schedule
+Issue #68's UI-031 starts with a fixed version 6 file, checks the same schedule
 on two process launches, then confirms a successful task deletion clears it.
 Fixed-clock JUnit additionally generates and saves a plan through the command,
 compares its schedule before and after restart, verifies failed plan saves keep
 the prior plan, and rejects corrupt plan rows before the first prompt. Codec
-tests cover partial work, reserved breaks, literal pipes and legacy snapshots.
+tests cover exact credited work, optional deadlines, large rounded capacities,
+recurrence metadata, reserved breaks, literal pipes and legacy snapshots/plans.
+UI-032 restores a version 6 recurring-task plan with partial-slot work and checks
+that progress invalidates the saved plan without losing template metadata.
+Fixed-clock tests also generate new recurring occurrences and save their source
+and plan together; injected plan-save failure preserves IDs, cursors and the old plan.
 
 Save's defensive-check tests also verify null snapshots are rejected before
 file changes, and capture opt-in storage diagnostics for success, corrupt input
@@ -86,13 +99,37 @@ timeouts and expected output; Java 25 and isolated workspace data were retained.
 
 ## Active packaged scenarios
 
-Task name/deadline edit API cases are covered by deterministic JUnit tests only.
-They are not process-active until task-edit CLI wiring and rendering are integrated;
-the new renderer method is an unwired skeleton, not acceptance coverage. All current
-active fixture expectations remain unchanged.
+Task editing and weekly task recurrence have parser/dispatcher/renderer
+implementations and fixed-clock JUnit coverage. The maintained process fixtures
+are listed below; their inputs use historical saved tasks or empty task lists
+to avoid near-future deadlines expiring. Eligible occurrence generation,
+original releases, rolling horizons, no-op edits, failures and retry IDs use
+fixed-clock JUnit tests. No production clock flag is introduced.
+The inherited scenarios retain their expected outputs. PR #84's domain
+lifecycle and exact-minute changes are merged and preserved alongside #39/#67.
+
+Task edit, deadline clear/absence, progress/session percentages, revised remaining,
+completion and reopening APIs have deterministic JUnit coverage. The two progress
+forms have exact renderer output, dispatcher transaction tests and UI-030
+acceptance. Changed candidates save once before live publication; zero-credit
+no-ops preserve the plan without saving. Completion/reopening confirmations are
+unit-tested, but their console commands remain deferred.
+
+Compatibility checks cover optional deadlines in existing add/list/remainder
+output, exact plan work totals (not rounded capacity), 45-minute work versus
+60-minute reservation, partial 30/15 allocation, completed-task exclusion, long
+arithmetic, custom hours, identity no-ops and legacy/v2-v5 save round trips.
+Tasks now accept positive whole-minute additions; commitments retain the positive
+30-minute rule, including UI-006's rejected commitment `d/45`. All existing
+slot-aligned fixture responses remain unchanged. UI-020 retains PR #84's
+optional/completed restored-data compatibility case and exact-minute restart checks.
 
 | ID | Coverage | Status |
 | --- | --- | --- |
+| UI-030 | Minute/session progress, rounded and zero credit, invalid values, completion, plan invalidation and two saved restarts | Active |
+| UI-021 | Unavailable study period: custom hours, add/delete plan invalidation, restart and released interval | Active |
+| UI-020 | Restored optional/completed tasks, exact work and saved restart | Active |
+| UI-019 | Remaining-time revision, validation, plan invalidation and two saved restarts | Active |
 | UI-018 | One-time commitments: exact-date overlap, validation, restart, edit by date and deletion | Active |
 | UI-017 | One-date recurrence skips, validation, version 4 restart and released overlap | Active |
 | UI-001 | Missing file, empty lists and absent plan | Active |
@@ -102,7 +139,8 @@ active fixture expectations remain unchanged.
 | UI-005 | Strict syntax, usage hints and recovery including `exit extra` | Active |
 | UI-006 | Blank lines, duration/alignment/overlap errors, unknown IDs and retry IDs | Active |
 | UI-007 | Unicode save/restart and plan invalidation after deletion | Active |
-| UI-022 | Saved version 5 schedule survives restart and is invalidated by task deletion | Active |
+| UI-031 | Saved version 6 schedule survives restart and is invalidated by task deletion | Active |
+| UI-032 | Saved recurrence and exact work survive restart; progress invalidates the plan | Active |
 | UI-008 | Truncated saved record stops startup with status 1 | Active |
 | UI-009 | Restored overdue/out-of-horizon tasks, numeric listing, deletion and restart | Active |
 | UI-010 | Exhausted task and commitment ID sequences reject additions without overflow | Active |
@@ -112,6 +150,18 @@ active fixture expectations remain unchanged.
 | UI-014 | Partial commitment edits, unchanged IDs, rejection, plan invalidation and Unicode restart | Active |
 | UI-015 | Study hours precedence, validation, resets, plan invalidation and saved restarts | Active |
 | UI-016 | Inclusive recurring-commitment bounds, actual-occurrence overlap and version 3 restart | Active |
+
+UI-021 verifies issue #48 through the existing one-time commitment commands.
+It configures a date's study window, generates an empty plan, adds an unavailable
+period and checks plan invalidation. Restart confirms the period and hours are
+saved; deletion clears another plan, and a further restart confirms release and
+that IDs are not reused. These process checks do not claim to verify task
+relocation: fixed-time `EarliestDeadlinePlannerTest` acceptance tests cover
+reallocation around a newly blocked study session, deletion restoring time,
+partial and fully blocked deadline capacity, and a real saved/reloaded block
+with date-specific hours. `ScheduleServiceTest` checks BUSY projection, frozen
+old plans and the absence of the one-time block the following week.
+Existing UI-018 covers malformed inputs, conflicts and rejected-addition IDs.
 
 UI-015 asserts reset confirmations name the restored source and its endpoints.
 UI-016 adds nonoverlapping semester series at the same weekly time, rejects a
@@ -128,6 +178,9 @@ range syntax and skipping a one-time entry, then checks adjacency, the separate
 list section, restart persistence, `on/` edits, deletion and unconsumed IDs.
 Plan and schedule blocking for one-time dates is covered by fixed-clock JUnit
 tests because packaged runs cannot control the current date.
+UI-019 starts with a fixed overdue task so its unallocated totals stay stable
+regardless of the launch date. It verifies the revised estimate is visible to
+planning and survives two separate application restarts.
 Usage-hint expectations in UI-005 and UI-014 include the new `on/` syntax.
 
 The original eight scenarios retain their exact expectations. UI-009 through
@@ -155,22 +208,78 @@ dependent scenarios; ready active cases must run even if another component is
 unfinished. Exit 0 means active scenarios passed, exit 1 means FAILED, and
 exit 2 means BLOCKED. A planned or diagnostic scaffold case is never a pass.
 
+## Planned multi-date unavailability (follow-up to issue #48)
+
+The separate `test/ui-unavailable-ranges.planned.json` file holds proposed
+exact inputs and outputs. It is excluded from the main release fixture, which
+requires every maintained release case to be active. Both range modes are parsed
+into transport records with deterministic JUnit coverage. The commitment service
+operations are implemented with JUnit coverage. The batch renderer is tested
+for exact counts, new ID/date rows, leap day, Unicode, midnight, framing and
+invalid batches.
+The dispatcher skeletons still throw explicitly, so no range case can run yet
+and none is a feature pass. New
+command-record tests cover only their implemented transport/reference contracts.
+
+| ID | Proposed acceptance coverage | Status |
+| --- | --- | --- |
+| UI-022 | Continuous three-date expansion, confirmation, invalidation and restart | Planned |
+| UI-023 | Daily inclusive windows, confirmation, restart and independent deletion | Planned |
+| UI-024 | Invalid ordering, alignment, overnight windows, syntax and retained retry IDs | Planned |
+| UI-025 | Conflict on a later continuous segment rejects the whole batch | Planned |
+| UI-026 | Conflict on a later daily window rejects the whole batch | Planned |
+| UI-027 | Midnight-exclusive and same-day continuous ends, adjacency and leap-day daily expansion | Planned |
+
+Run the separate file using
+`node .agents/skills/test-ui/scripts/run-ui-tests.mjs --fixtures test/ui-unavailable-ranges.planned.json`.
+With all six cases planned it executes none and returns exit 2 (BLOCKED: no
+active scenarios), not success. Activate cases as their dependencies are
+implemented and move verified cases to the main fixture. Existing 22 active
+scenarios must continue passing throughout integration.
+
+The Developer Guide's handoff contains the corresponding owner-specific JUnit
+matrix, including injected save failure, whole-batch rollback and ID exhaustion.
+Two active planner tests supply the expected dated records manually through
+the existing one-time API to verify allocation/projection compatibility for
+continuous and daily representations. `CommitmentServiceTest` separately
+verifies the implemented batch creation, rollback and ID limits. Exact
+range-command parsing has JUnit coverage; transaction acceptance remains
+unexecuted until dispatch is implemented. The planned fixtures retain their
+exact expectations.
+
+## Issue #40 console acceptance
+
+Progress grammar, candidate transactions, exact work and Printing output are
+implemented. UI-030 uses a restored overdue task to avoid live-date assumptions.
+It verifies direct credit, floor rounding for a session, zero credit, rejection
+of excess credit and unknown IDs, invalidation after changes and persisted
+partial/completed estimates. Completion/reopening commands remain unwired.
+Save failure and unchanged-plan identity are checked with fixed-clock dispatcher
+JUnit tests rather than process fault injection.
+
+| ID | Coverage | Status |
+| --- | --- | --- |
+| UI-030 | Minute/session progress, exact credit, save/restart and plan invalidation | Active |
+
 ## Planned issue #55 console acceptance
 
 The continuous-work allocator and frozen BREAK projection have direct JUnit
 coverage in the planning package. They are enabled through the configured
 planner constructor only. The original console planner retains unrestricted
 allocation; existing active fixtures and their exact outputs remain applicable.
-The explicit BREAK renderer branch is an unwired throwing skeleton, not a
-feature pass. No #55 process case is ready to activate yet, and no speculative
+The BREAK renderer prints supplied intervals and has direct JUnit coverage,
+including a configured planner/projection example and preserved adjacent rows.
+No #55 process case is ready to activate yet, and no speculative
 command grammar or output has been added to `ui-scenarios.json`.
 
 After Printing and Save integrate the documented contract, add and activate:
 
 | ID | Coverage | Status |
 | --- | --- | --- |
-| UI-016 | Set/show/reset policy, invalid values, save/restart and plan invalidation/rollback | Planned; grammar, settings persistence and confirmations pending |
-| UI-017 | Cross-task limits, commitments below/at/2x/3x limit, fixed breaks and BREAK rows | Planned; configured console planner and rendering pending |
+| UI-028 | Set/show/reset policy, invalid values, save/restart and plan invalidation/rollback | Planned; grammar, settings persistence and confirmations pending |
+| UI-029 | Cross-task limits, commitments below/at/2x/3x limit, fixed breaks and BREAK rows | Planned; configured console planner pending |
+| UI-024 | Set/show/reset policy, invalid values, save/restart and plan invalidation/rollback | Planned; grammar, settings persistence and confirmations pending |
+| UI-025 | Cross-task limits, commitments below/at/2x/3x limit, fixed breaks and BREAK rows | Planned; configured console planner pending |
 
 Use fixed-clock dispatcher JUnit tests for exact schedule times. Packaged
 acceptance must keep isolated saved data and deterministic output; an expected

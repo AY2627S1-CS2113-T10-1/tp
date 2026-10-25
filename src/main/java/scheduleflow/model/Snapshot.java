@@ -1,5 +1,6 @@
 package scheduleflow.model;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -16,9 +17,17 @@ import scheduleflow.common.ValidationException;
  * @param nextTaskId positive counter strictly greater than every stored task ID
  * @param nextCommitmentId positive counter strictly greater than every stored commitment ID
  * @param studyHours recurring weekday windows and calendar-date overrides
+ * @param recurringTasks weekly templates with persisted processing cursors
+ * @param nextRecurringTaskId counter above all live and retained provenance template IDs
  */
 public record Snapshot(List<Task> tasks, List<Commitment> commitments, int nextTaskId, int nextCommitmentId,
-        StudyHours studyHours) {
+        StudyHours studyHours, List<RecurringTask> recurringTasks, int nextRecurringTaskId) {
+    /** Retains the study-hours constructor with empty recurrence and its initial counter. */
+    public Snapshot(List<Task> tasks, List<Commitment> commitments, int nextTaskId, int nextCommitmentId,
+            StudyHours studyHours) {
+        this(tasks, commitments, nextTaskId, nextCommitmentId, studyHours, List.of(), 1);
+    }
+
     /** Retains the original constructor for callers using default study hours. */
     public Snapshot(List<Task> tasks, List<Commitment> commitments, int nextTaskId, int nextCommitmentId) {
         this(tasks, commitments, nextTaskId, nextCommitmentId, new StudyHours(Map.of()));
@@ -29,12 +38,13 @@ public record Snapshot(List<Task> tasks, List<Commitment> commitments, int nextT
      * Performs no I/O and does not reset counters when either list becomes empty.
      *
      * @throws ValidationException if lists or elements are null, IDs or counters are invalid,
-     *     or weekly commitments overlap
+     *     weekly commitments overlap, or recurring templates/provenance are inconsistent
      */
     public Snapshot {
         Objects.requireNonNull(studyHours, "studyHours");
-        if (tasks == null || commitments == null || tasks.stream().anyMatch(Objects::isNull)
-                || commitments.stream().anyMatch(Objects::isNull)) {
+        if (tasks == null || commitments == null || recurringTasks == null || tasks.stream().anyMatch(Objects::isNull)
+                || commitments.stream().anyMatch(Objects::isNull)
+                || recurringTasks.stream().anyMatch(Objects::isNull)) {
             throw new ValidationException("Snapshot lists and their elements must not be null.");
         }
         tasks = List.copyOf(tasks);
@@ -42,15 +52,58 @@ public record Snapshot(List<Task> tasks, List<Commitment> commitments, int nextT
         validateTaskIds(tasks, nextTaskId);
         validateCommitmentIds(commitments, nextCommitmentId);
         validateOverlaps(commitments);
+        recurringTasks = List.copyOf(recurringTasks);
+        validateRecurrence(tasks, recurringTasks, nextRecurringTaskId);
     }
 
     /** Returns a candidate changing only study hours. */
     public Snapshot withStudyHours(StudyHours hours) {
-        return new Snapshot(tasks, commitments, nextTaskId, nextCommitmentId, hours);
+        return new Snapshot(tasks, commitments, nextTaskId, nextCommitmentId, hours,
+                recurringTasks, nextRecurringTaskId);
+    }
+
+    /** Returns a task candidate preserving settings, templates and recurrence history. */
+    public Snapshot withTasks(List<Task> replacements, int nextId) {
+        return new Snapshot(replacements, commitments, nextId, nextCommitmentId, studyHours,
+                recurringTasks, nextRecurringTaskId);
+    }
+
+    /** Returns a commitment candidate preserving settings and recurrence history. */
+    public Snapshot withCommitments(List<Commitment> replacements, int nextId) {
+        return new Snapshot(tasks, replacements, nextTaskId, nextId, studyHours, recurringTasks, nextRecurringTaskId);
+    }
+
+    /** Validates logical uniqueness and cursor coverage, allowing retained provenance after template deletion. */
+    private static void validateRecurrence(List<Task> tasks, List<RecurringTask> templates, int nextId) {
+        if (nextId <= 0) {
+            throw new ValidationException("Next recurring task ID must be positive.");
+        }
+        Map<Integer, RecurringTask> byId = new HashMap<>();
+        for (RecurringTask template : templates) {
+            if (template.id() >= nextId || byId.putIfAbsent(template.id(), template) != null) {
+                throw new ValidationException("Duplicate recurring task ID or invalid next recurring task ID.");
+            }
+        }
+        Set<TaskOccurrence> occurrences = new HashSet<>();
+        for (Task task : tasks) {
+            if (task.occurrence().isEmpty()) {
+                continue;
+            }
+            TaskOccurrence occurrence = task.occurrence().get();
+            if (occurrence.templateId() >= nextId || !occurrences.add(occurrence)) {
+                throw new ValidationException("Duplicate occurrence or invalid retained template ID counter.");
+            }
+            RecurringTask template = byId.get(occurrence.templateId());
+            if (template != null && (!template.includes(occurrence.originalDeadline())
+                    || template.generatedThrough().isEmpty()
+                    || occurrence.originalDeadline().isAfter(template.generatedThrough().get()))) {
+                throw new ValidationException("Occurrence must belong to its template and be covered by its cursor.");
+            }
+        }
     }
 
     /**
-     * Returns a new store with empty immutable lists and both next IDs set to one.
+     * Returns a new store with empty immutable lists and all three next IDs set to one.
      *
      * @return first-launch state; existing counters must instead be restored from storage
      */

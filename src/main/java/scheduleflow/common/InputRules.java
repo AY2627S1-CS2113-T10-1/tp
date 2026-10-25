@@ -21,6 +21,15 @@ public final class InputRules {
     private InputRules() {
     }
 
+    // @@author nickpatt
+    /** Requires exact nonnegative task minutes; zero represents a retained completed task. */
+    public static void requireTaskMinutes(int minutes) {
+        if (minutes < 0) {
+            throw new ValidationException("Task remaining minutes must be nonnegative.");
+        }
+    }
+    // @@author
+
     /**
      * Returns a stripped, nonblank name while preserving internal spaces and Unicode.
      * Rejects null, slash and ISO controls even when a control occurs at an edge.

@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import scheduleflow.common.ValidationException;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
@@ -17,11 +18,15 @@ import scheduleflow.planning.UnallocatedWork;
 
 // @@author ernestgoh-god
 /**
- * Encodes a frozen plan after its source snapshot in version 5 of the saved-data file.
- * Older snapshot-only files remain readable through {@link StateCodec}.
+ * Encodes a frozen plan and its complete source snapshot in file version 6.
+ * Version 5 snapshot-only recurrence files remain distinct from the earlier saved-plan prototype.
  */
 final class PlanCodec {
-    private static final String PLAN_HEADER = "SCHEDULEFLOW|5";
+    /** Separates saved plans from version 5's recurring-task snapshots. */
+    private static final String PLAN_HEADER = "SCHEDULEFLOW|6";
+    /** Reads files written by the earlier, unmerged saved-plan implementation. */
+    private static final String LEGACY_PLAN_HEADER = "SCHEDULEFLOW|5";
+    /** Preserves existing snapshot validation for embedded source records. */
     private final StateCodec snapshots;
 
     /** Creates a plan codec without reading or writing saved data. */
@@ -33,22 +38,24 @@ final class PlanCodec {
      * Encodes the exact generated result and its source in one complete file.
      *
      * @param plan validated frozen plan
-     * @return version 5 text with LF endings and a final newline
+     * @return version 6 text with LF endings and a final newline
      */
     String encode(Plan plan) {
         Objects.requireNonNull(plan, "plan");
-        String source = snapshots.encodeVersionFour(plan.source());
-        StringBuilder text = new StringBuilder(PLAN_HEADER).append(source.substring("SCHEDULEFLOW|4".length()));
+        String source = snapshots.encodeForPlan(plan.source());
+        StringBuilder text = new StringBuilder(PLAN_HEADER).append(source.substring("SCHEDULEFLOW|5".length()));
         text.append("PLAN|").append(plan.generatedAt()).append('|').append(plan.horizonEnd()).append('|')
                 .append(plan.sessions().size()).append('|').append(plan.unallocated().size()).append('|')
                 .append(plan.breaks().size()).append('\n');
         for (StudySession session : plan.sessions()) {
             text.append("SESSION|").append(session.taskId()).append('|').append(session.start()).append('|')
-                    .append(session.end()).append('\n');
+                    .append(session.end()).append('|').append(session.workMinutes()).append('\n');
         }
         for (UnallocatedWork work : plan.unallocated()) {
-            text.append("UNALLOCATED|").append(work.taskId()).append('|').append(work.deadline()).append('|')
-                    .append(work.minutes()).append('|').append(work.reason()).append('|').append(work.taskName())
+            text.append("UNALLOCATED|").append(work.taskId()).append('|')
+                    .append(work.deadline().map(LocalDateTime::toString).orElse("NONE")).append('|')
+                    .append(work.minutes()).append('|').append(work.capacityMinutes()).append('|')
+                    .append(work.reason()).append('|').append(work.taskName())
                     .append('\n');
         }
         for (ScheduleEntry entry : plan.breaks()) {
@@ -57,8 +64,16 @@ final class PlanCodec {
         return text.toString();
     }
 
+    /** Identifies current plans or legacy plans whose two counters distinguish them from recurrence files. */
+    static boolean hasSavedPlan(String text) {
+        List<String> firstLines = text.lines().limit(2).toList();
+        return !firstLines.isEmpty() && (firstLines.getFirst().equals(PLAN_HEADER)
+                || (firstLines.getFirst().equals(LEGACY_PLAN_HEADER) && firstLines.size() == 2
+                && firstLines.get(1).split("\\|", -1).length == 3));
+    }
+
     /**
-     * Decodes a complete version 5 file, rejecting missing, extra or invalid plan rows.
+     * Decodes a current or legacy plan, rejecting missing, extra or invalid plan rows.
      *
      * @param text complete saved file
      * @return validated frozen plan with its exact source snapshot
@@ -69,9 +84,10 @@ final class PlanCodec {
             throw new StorageException("Saved plan must not be null.");
         }
         List<String> lines = text.lines().toList();
-        if (lines.isEmpty() || !lines.getFirst().equals(PLAN_HEADER)) {
-            throw new StorageException("Saved plan requires file version 5.");
+        if (!hasSavedPlan(text)) {
+            throw new StorageException("Saved plan requires file version 6 or a legacy saved-plan file.");
         }
+        boolean legacy = lines.getFirst().equals(LEGACY_PLAN_HEADER);
         int planLine = -1;
         for (int i = 2; i < lines.size(); i++) {
             if (lines.get(i).startsWith("PLAN|")) {
@@ -83,7 +99,7 @@ final class PlanCodec {
             throw new StorageException("Saved plan metadata is missing.");
         }
         List<String> sourceLines = new ArrayList<>(lines.subList(0, planLine));
-        sourceLines.set(0, "SCHEDULEFLOW|4");
+        sourceLines.set(0, legacy ? "SCHEDULEFLOW|4" : "SCHEDULEFLOW|5");
         Snapshot source = snapshots.decode(String.join("\n", sourceLines) + "\n");
         try {
             String[] metadata = exactFields(lines.get(planLine), 6, "PLAN");
@@ -97,16 +113,11 @@ final class PlanCodec {
             int row = planLine + 1;
             List<StudySession> sessionRows = new ArrayList<>();
             for (int i = 0; i < sessions; i++) {
-                String[] fields = exactFields(lines.get(row++), 4, "SESSION");
-                sessionRows.add(new StudySession(Integer.parseInt(fields[1]), LocalDateTime.parse(fields[2]),
-                        LocalDateTime.parse(fields[3])));
+                sessionRows.add(decodeSession(lines.get(row++), legacy));
             }
             List<UnallocatedWork> remainderRows = new ArrayList<>();
             for (int i = 0; i < unallocated; i++) {
-                String[] fields = namedFields(lines.get(row++), 6, "UNALLOCATED");
-                remainderRows.add(new UnallocatedWork(Integer.parseInt(fields[1]), fields[5],
-                        LocalDateTime.parse(fields[2]), Integer.parseInt(fields[3]),
-                        UnallocatedReason.valueOf(fields[4])));
+                remainderRows.add(decodeUnallocated(lines.get(row++), legacy));
             }
             List<ScheduleEntry> breakRows = new ArrayList<>();
             for (int i = 0; i < breaks; i++) {
@@ -121,6 +132,29 @@ final class PlanCodec {
         } catch (IllegalArgumentException | DateTimeException | ValidationException exception) {
             throw new StorageException("Invalid saved plan: " + exception.getMessage(), exception);
         }
+    }
+
+    /** Restores exact credited work; legacy sessions credited their entire reserved interval. */
+    private StudySession decodeSession(String line, boolean legacy) throws StorageException {
+        String[] fields = exactFields(line, legacy ? 4 : 5, "SESSION");
+        int taskId = Integer.parseInt(fields[1]);
+        LocalDateTime start = LocalDateTime.parse(fields[2]);
+        LocalDateTime end = LocalDateTime.parse(fields[3]);
+        return legacy ? new StudySession(taskId, start, end)
+                : new StudySession(taskId, start, end, Integer.parseInt(fields[4]));
+    }
+
+    /** Restores optional deadlines, exact remainders and their overflow-safe rounded capacity. */
+    private UnallocatedWork decodeUnallocated(String line, boolean legacy) throws StorageException {
+        String[] fields = namedFields(line, legacy ? 6 : 7, "UNALLOCATED");
+        if (legacy) {
+            return new UnallocatedWork(Integer.parseInt(fields[1]), fields[5], LocalDateTime.parse(fields[2]),
+                    Integer.parseInt(fields[3]), UnallocatedReason.valueOf(fields[4]));
+        }
+        Optional<LocalDateTime> deadline = fields[2].equals("NONE") ? Optional.empty()
+                : Optional.of(LocalDateTime.parse(fields[2]));
+        return new UnallocatedWork(Integer.parseInt(fields[1]), fields[6], deadline,
+                Integer.parseInt(fields[3]), Long.parseLong(fields[4]), UnallocatedReason.valueOf(fields[5]));
     }
 
     /** Rejects rows that cannot describe the embedded source or the saved planning range. */
