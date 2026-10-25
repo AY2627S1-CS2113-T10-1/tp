@@ -17,6 +17,7 @@ Study hours default to **08:00–22:00 every day**, including weekends. You can 
 - [Command format](#command-format)
 - [Tasks](#tasks)
   - [Adding a task](#adding-a-task)
+  - [Recording progress](#recording-progress)
   - [Editing a task](#editing-a-task)
   - [Weekly recurring tasks](#weekly-recurring-tasks)
   - [Listing tasks](#listing-tasks)
@@ -118,18 +119,17 @@ Examples below are independent unless a sequence is explicitly described. Use ex
 
 Task addition, editing, deletion and weekly recurring templates are available at
 the console. You can revise a task's remaining-work estimate with `task remaining`.
-PR #84's domain lifecycle and exact-minute changes are merged. Deadline clearing,
-whole-minute progress, completion/reopening and adding without a deadline are
-implemented as internal Java service APIs, but are not working console commands.
+You can record completed work with either form of `task progress`.
+Deadline clearing, explicit completion/reopening and adding without a deadline
+are implemented as internal Java service APIs, but have no console commands.
 Console addition still requires a deadline, and editing accepts only a name and/or
-concrete deadline. The parser and dispatcher recognize the two progress forms
-below, but their confirmation awaits Printing and Ka How's confirmation. They
-cannot yet save progress; completion and reopening are not wired at the console.
+concrete deadline. Progress saves changed estimates and retains a completed
+record when its remaining work reaches zero.
 
 The domain retains completed records with zero remaining, preserves IDs and
 requires positive work to reopen them. Session percentage progress credits the
 floor of session minutes times percentage / 100; no timer subtracts work.
-These operations cannot yet be completed from the console. Loaded undated tasks
+Explicit reopening is not yet available from the console. Loaded undated tasks
 display `No deadline`; loaded completed tasks remain listed with `0 min` and
 receive no planning sessions or unallocated rows. No separate status/completed
 list rendering or priority commands are available yet.
@@ -153,12 +153,8 @@ reduce that estimate. Slot capacity rounds up: 45 minutes needs 60 minutes of
 schedule space, but remains 45 minutes of actual work. If only 30 minutes fits,
 the unallocated work is 15 minutes (requiring another 30-minute slot).
 
-> **Issue #40 in progress:** `task progress T1 done/30` reports 30 whole minutes
-> of work, while `task progress T1 session/60 percent/50` reports 50% of a
-> 60-minute session (30 minutes credited). A percentage describes that session,
-> not the whole task. Until the printing confirmation is implemented, the
-> application responds `Error: Task progress is awaiting printing.` and leaves
-> saved data, the live task and any generated plan unchanged.
+Use [progress](#recording-progress) to subtract completed work from an estimate.
+A percentage describes the reported session, not the whole task.
 
 To revise a task's remaining-work estimate without recording completed work, use:
 
@@ -173,6 +169,39 @@ plan; run `plan` again to reflect it. Repeating the same value
 reports the stored estimate without saving or clearing the plan. Unknown IDs,
 invalid values, attempts to revise a completed task and failed saves leave
 saved data and the current plan unchanged.
+
+### Recording progress
+
+```text
+task progress TNUMBER done/MINUTES
+task progress TNUMBER session/MINUTES percent/PERCENT
+```
+
+For an existing task with 90 minutes remaining:
+
+```text
+scheduleflow> task progress T1 done/30
+Recorded progress for T1: CS2113 draft | Credited: 30 min | Remaining: 60 min
+scheduleflow> task progress T1 session/61 percent/25
+Recorded progress for T1: CS2113 draft | Credited: 15 min | Remaining: 45 min
+```
+
+Direct progress accepts zero or more whole minutes up to the remaining estimate.
+A session requires positive whole minutes and an integer percentage from 0 to
+100. Credit is rounded down to whole minutes: 25% of 61 minutes credits 15.
+Both forms report the actual credit and new estimate; no timer runs automatically.
+Use ordinary decimal numbers without signs or leading zeroes.
+
+A changed estimate saves automatically and clears the current plan. Run `plan`
+again to schedule the remaining work. Zero credit, including a percentage that
+rounds to zero, reports the unchanged estimate without saving or clearing the
+plan. Unknown IDs, overreported work, invalid input and failed saves preserve
+the existing data and plan. Saved progress survives restarting.
+
+Crediting all remaining work retains the task with `0 min`; further progress
+is rejected until it is reopened through the Java API. There is no console
+reopening command yet. Progress also works on generated recurring-task
+occurrences without changing their template or original release date.
 
 ### Adding a task
 
@@ -299,9 +328,9 @@ that task, not its template or original release time. Template editing and
 daily/monthly recurrence are not supported.
 
 Generated tasks use the same exact remaining-work and lifecycle model as ordinary
-tasks. Their estimates can be revised with `task remaining`; the internal progress,
-completion and reopening APIs preserve their provenance. Progress at the console
-remains pending the same Printing confirmation as for ordinary tasks.
+tasks. Their estimates can be revised with `task remaining`, and completed work
+can be recorded with `task progress`; both preserve their provenance. Explicit
+completion and reopening remain internal Java APIs.
 
 ### Deleting a task
 
@@ -311,7 +340,8 @@ task delete TNUMBER
 
 Deletes the task permanently. Use this command to remove completed or unwanted
 work. Use `task edit` to correct a name/deadline without replacing the ID.
-There is no undo or retained-completion command at the console.
+There is no undo. To retain a completed record instead of deleting it, use
+`task progress` to credit all its remaining work.
 
 ```text
 scheduleflow> task delete T1
@@ -673,7 +703,9 @@ included date, leaving other hours available. Each generated period will have
 its own commitment ID for independent editing/deletion. The full request will
 be rejected if any period conflicts with an existing commitment.
 
-For now, use the existing single-date `commitment add ... on/DATE` commands.
+The batch confirmation is implemented and unit-tested, but parsing and dispatch
+are still pending. For now, use the existing single-date
+`commitment add ... on/DATE` commands.
 The [Developer Guide handoff](DeveloperGuide.md#multi-date-unavailable-periods-implementation-handoff-planned)
 contains proposed outputs, owner responsibilities and acceptance tests.
 
@@ -685,8 +717,9 @@ for a fixed consecutive break. Commitments remain fixed even if they exceed
 the limit; a longer commitment does not increase the required break duration.
 
 This feature is currently available only through the Java planning API.
-Settings commands, saving those settings and break-row display are awaiting
-integration. The console's existing `plan` command does not enforce these
+Break rows supplied by the planning API display as `HH:mm - HH:mm | [BREAK]`.
+Settings commands and saving those settings are awaiting integration.
+The console's existing `plan` command does not enforce these
 limits yet; there is no supported command to configure them.
 
 ### Planning hours and date range
@@ -766,6 +799,7 @@ The schedule displays the latest plan's full configured window in chronological 
 | `[BUSY]` | A recurring commitment, showing its commitment ID and name. |
 | `[FREE]` | Time eligible for planning that was not assigned to a task or blocked by a commitment. |
 | `[UNPLANNED]` | Time before the planning cutoff on the day the plan was generated. It is not available study time in this plan. |
+| `[BREAK]` | A supplied rest interval from the configured Java planning API; the console cannot configure this policy yet. |
 
 A commitment remains `[BUSY]` even when it occurred before the planning cutoff. Adjacent entries are combined only when their label, ID, and name match, so separate commitments remain separate rows.
 
@@ -889,12 +923,15 @@ Run `plan` again after changes.
 Delete completed tasks using `task delete TNUMBER`. Correct commitments with
 `commitment edit CNUMBER` and one or more fields; the ID is preserved. To correct
 a task's name or deadline, use `task edit TNUMBER` with `n/` and/or `due/`;
-the ID is preserved. Task completion commands are not supported yet. For
-partially completed work, use `task remaining` with your revised estimate.
+the ID is preserved. Record completed work with `task progress`; crediting all
+remaining minutes retains the task at zero. Explicit completion/reopening
+commands are not supported yet. Use `task remaining` to correct an estimate
+without recording completed work.
 
 ### Why did my schedule disappear?
 
-A successful task or commitment addition, deletion, task edit, template change, remaining-work revision, commitment edit or
+A successful task or commitment addition, deletion, task edit, template change,
+progress update, remaining-work revision, commitment edit or
 occurrence skip, or a study-hours set or reset, clears the current plan. Plans
 also disappear when the application restarts. Run `plan` to generate another one.
 
@@ -936,6 +973,8 @@ these storage logs do not include your task names or saved file contents.
 | List tasks | `task list` |
 | Delete a task | `task delete TNUMBER` |
 | Revise a task's remaining time | `task remaining TNUMBER remaining/MINUTES` |
+| Record completed minutes | `task progress TNUMBER done/MINUTES` |
+| Record session progress | `task progress TNUMBER session/MINUTES percent/PERCENT` |
 | Add a weekly commitment | `commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD]` |
 | Add a one-time commitment | `commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES` |
 | List commitments | `commitment list` |

@@ -18,6 +18,7 @@ import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
+import scheduleflow.commitment.CommitmentService;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
@@ -28,6 +29,7 @@ import scheduleflow.planning.ScheduleEntry;
 import scheduleflow.planning.ScheduleService;
 import scheduleflow.planning.ScheduleView;
 import scheduleflow.planning.SlotKind;
+import scheduleflow.planning.StudyPolicy;
 import scheduleflow.planning.StudySession;
 import scheduleflow.planning.TimeRules;
 import scheduleflow.planning.UnallocatedReason;
@@ -43,6 +45,101 @@ class TextRendererTest {
     private static final LocalDate DATE = LocalDate.of(2026, 9, 21);
     private static final LocalDateTime NOW = DATE.atTime(7, 0);
     private final TextRenderer renderer = new TextRenderer();
+
+    @Test
+    void unavailablePeriodsAdded_continuousBatch_matchesHandoffAndPreservesInput() {
+        LocalDate first = LocalDate.of(2026, 10, 26);
+        List<Commitment> added = new ArrayList<>(List.of(
+                oneTime(1, "Trip", first, LocalTime.of(15, 0), 540),
+                oneTime(2, "Trip", first.plusDays(1), LocalTime.MIDNIGHT, 1440),
+                oneTime(3, "Trip", first.plusDays(2), LocalTime.MIDNIGHT, 660)));
+        List<Commitment> original = List.copyOf(added);
+        String expected = "Blocked 3 unavailable periods."
+                + "\nC1 | 2026-10-26 | 15:00 - 24:00 | Trip"
+                + "\nC2 | 2026-10-27 | 00:00 - 24:00 | Trip"
+                + "\nC3 | 2026-10-28 | 00:00 - 11:00 | Trip"
+                + "\nSaved unavailable periods. Run plan to regenerate.";
+        assertOutput(expected, renderer.unavailablePeriodsAdded(added));
+        assertOutput(expected, renderer.unavailablePeriodsAdded(added));
+        assertEquals(original, added);
+    }
+
+    @Test
+    void unavailablePeriodsAdded_dailyServiceBatch_includesOnlyNewIdsAndUnicodeNames() {
+        LocalDate first = LocalDate.of(2028, 2, 28);
+        Snapshot source = new Snapshot(List.of(),
+                List.of(new Commitment(2, "Existing", DayOfWeek.MONDAY, LocalTime.of(9, 0), 30)), 1, 3);
+        Snapshot candidate = new CommitmentService().addDailyBlocks(source, LONG_NAME, first,
+                first.plusDays(2), LocalTime.of(15, 0), LocalTime.of(17, 0));
+        List<Commitment> added = candidate.commitments().stream()
+                .filter(commitment -> commitment.id() >= source.nextCommitmentId()).toList();
+        assertOutput("Blocked 3 unavailable periods."
+                + "\nC3 | 2028-02-28 | 15:00 - 17:00 | " + LONG_NAME
+                + "\nC4 | 2028-02-29 | 15:00 - 17:00 | " + LONG_NAME
+                + "\nC5 | 2028-03-01 | 15:00 - 17:00 | " + LONG_NAME
+                + "\nSaved unavailable periods. Run plan to regenerate.", renderer.unavailablePeriodsAdded(added));
+        assertEquals(1, source.commitments().size());
+        assertEquals(4, candidate.commitments().size());
+    }
+
+    @Test
+    void unavailablePeriodsAdded_singlePeriod_formatsSingularAndBoundaryYears() {
+        for (LocalDate date : List.of(LocalDate.of(1, 1, 1), LocalDate.of(9999, 12, 31))) {
+            Commitment added = oneTime(10, LONG_NAME, date, LocalTime.of(23, 30), 30);
+            assertOutput("Blocked 1 unavailable period.\nC10 | " + date + " | 23:30 - 24:00 | " + LONG_NAME
+                    + "\nSaved unavailable periods. Run plan to regenerate.",
+                    renderer.unavailablePeriodsAdded(List.of(added)));
+        }
+    }
+
+    @Test
+    void unavailablePeriodsAdded_invalidBatch_rejectsWithoutChangingInput() {
+        assertEquals("added", assertThrows(NullPointerException.class,
+                () -> renderer.unavailablePeriodsAdded(null)).getMessage());
+        Commitment dated = oneTime(1, "Trip", DATE, LocalTime.NOON, 60);
+        List<Commitment> withNull = Arrays.asList(dated, null);
+        assertEquals("added element", assertThrows(NullPointerException.class,
+                () -> renderer.unavailablePeriodsAdded(withNull)).getMessage());
+        assertEquals(Arrays.asList(dated, null), withNull);
+        assertThrows(IllegalArgumentException.class, () -> renderer.unavailablePeriodsAdded(List.of()));
+        Commitment weekly = new Commitment(2, "Class", DayOfWeek.MONDAY, LocalTime.of(9, 0), 30);
+        assertThrows(IllegalArgumentException.class,
+                () -> renderer.unavailablePeriodsAdded(List.of(dated, weekly)));
+    }
+
+    @Test
+    void taskProgressUpdated_exactCreditAndRemaining_formatsZeroPartialAndCompletedWork() {
+        Task active = Task.withoutDeadline(10, LONG_NAME, 45);
+        assertOutput("Recorded progress for T10: " + LONG_NAME + " | Credited: 15 min | Remaining: 45 min",
+                renderer.taskProgressUpdated(active, 15));
+        assertOutput("Recorded progress for T10: " + LONG_NAME + " | Credited: 0 min | Remaining: 45 min",
+                renderer.taskProgressUpdated(active, 0));
+        Task completed = Task.withoutDeadline(10, LONG_NAME, 0);
+        assertOutput("Recorded progress for T10: " + LONG_NAME + " | Credited: 45 min | Remaining: 0 min",
+                renderer.taskProgressUpdated(completed, 45));
+        assertOutput("Recorded progress for T10: " + LONG_NAME
+                + " | Credited: 2147483647 min | Remaining: 0 min",
+                renderer.taskProgressUpdated(completed, Integer.MAX_VALUE));
+        assertEquals(45, active.remainingMinutes());
+        assertEquals(0, completed.remainingMinutes());
+        assertThrows(IllegalArgumentException.class, () -> renderer.taskProgressUpdated(active, -1));
+        assertEquals("task", assertThrows(NullPointerException.class,
+                () -> renderer.taskProgressUpdated(null, 0)).getMessage());
+    }
+
+    @Test
+    void taskLifecycleMessages_validatedRecords_preserveIdentityAndExactRemainingWork() {
+        Task completed = new Task(10, LONG_NAME, DEADLINE, 0);
+        Task reopened = Task.withoutDeadline(10, LONG_NAME, 1);
+        assertOutput("Completed T10: " + LONG_NAME, renderer.taskCompleted(completed));
+        assertOutput("Reopened T10: " + LONG_NAME + " | Remaining: 1 min", renderer.taskReopened(reopened));
+        assertEquals(0, completed.remainingMinutes());
+        assertEquals(1, reopened.remainingMinutes());
+        assertEquals("task", assertThrows(NullPointerException.class,
+                () -> renderer.taskCompleted(null)).getMessage());
+        assertEquals("task", assertThrows(NullPointerException.class,
+                () -> renderer.taskReopened(null)).getMessage());
+    }
 
     @Test
     void recurringTasks_exactMessages_preserveDefinitionsAndFraming() {
@@ -164,6 +261,7 @@ class TextRendererTest {
                 // @@author ernestgoh-god
                 "task remaining TNUMBER remaining/MINUTES",
                 // @@author ka-how
+                "task progress TNUMBER done/MINUTES", "task progress TNUMBER session/MINUTES percent/PERCENT",
                 "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
                         + " [from/YYYY-MM-DD until/YYYY-MM-DD]",
                 "commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES", "commitment list",
@@ -495,6 +593,41 @@ class TextRendererTest {
     }
 
     @Test
+    void schedule_configuredPlanner_rendersFrozenBreakWithoutChangingAllocation() {
+        Task task = new Task(1, LONG_NAME, DATE.atTime(12, 0), 150);
+        Snapshot source = new Snapshot(List.of(task), List.of(), 2, 1);
+        Plan plan = new EarliestDeadlinePlanner(new StudyPolicy(90, 30)).generate(source, NOW);
+        ScheduleView view = new ScheduleService().forDate(plan, DATE);
+        assertOutput("=== Schedule for Monday (2026-09-21) ===\nGenerated at: 2026-09-21 07:00"
+                + "\n08:00 - 09:30 | [TASK] T1: " + LONG_NAME + " (90 min)"
+                + "\n09:30 - 10:00 | [BREAK]"
+                + "\n10:00 - 11:00 | [TASK] T1: " + LONG_NAME + " (60 min)"
+                + "\n11:00 - 22:00 | [FREE]", renderer.schedule(view));
+        assertEquals(List.of(new ScheduleEntry(DATE.atTime(9, 30), DATE.atTime(10, 0),
+                SlotKind.BREAK, "", "")), plan.breaks());
+        assertEquals(150, source.tasks().getFirst().remainingMinutes());
+    }
+
+    @Test
+    void schedule_adjacentBreaks_retainsSuppliedBoundariesAndFooter() {
+        List<ScheduleEntry> entries = List.of(createEntry(8, 0, 8, 30, SlotKind.UNPLANNED, "", ""),
+                createEntry(8, 30, 9, 0, SlotKind.BREAK, "", ""),
+                createEntry(9, 0, 9, 30, SlotKind.BREAK, "", ""),
+                createEntry(9, 30, 22, 0, SlotKind.FREE, "", ""));
+        Task task = new Task(1, "Draft", DATE.atTime(9, 30), 30);
+        ScheduleView view = new ScheduleView(DATE, NOW, entries,
+                List.of(createWork(task, 30, UnallocatedReason.INSUFFICIENT_CAPACITY)));
+        String expected = "=== Schedule for Monday (2026-09-21) ===\nGenerated at: 2026-09-21 07:00"
+                + "\n08:00 - 08:30 | [UNPLANNED]\n08:30 - 09:00 | [BREAK]\n09:00 - 09:30 | [BREAK]"
+                + "\n09:30 - 22:00 | [FREE]\nUNPLANNED periods were before the planning cutoff."
+                + "\n\nUnallocated work for the whole plan:"
+                + "\nT1: Draft | Unallocated: 30 min | Reason: insufficient time before deadline";
+        assertOutput(expected, renderer.schedule(view));
+        assertOutput(expected, renderer.schedule(view));
+        assertEquals(entries, view.entries());
+    }
+
+    @Test
     void schedule_leapDay_usesViewDateAndOriginalGenerationDate() {
         LocalDate leapDay = LocalDate.of(2024, 2, 29);
         LocalDateTime generatedAt = LocalDateTime.of(2024, 2, 28, 21, 45);
@@ -521,6 +654,11 @@ class TextRendererTest {
         assertOutput("=== Schedule for Monday (2026-09-21) ===\nGenerated at: 2026-09-21 22:00"
                 + "\n08:00 - 22:00 | [UNPLANNED]\nUNPLANNED periods were before the planning cutoff.",
                 renderer.schedule(unplanned));
+    }
+
+    /** Creates a validated dated commitment without clock or storage dependencies. */
+    private Commitment oneTime(int id, String name, LocalDate date, LocalTime start, int minutes) {
+        return new Commitment(id, name, date.getDayOfWeek(), start, minutes, date, date);
     }
 
     /**

@@ -52,35 +52,50 @@ public final class TextRenderer {
     public TextRenderer() {
     }
 
-    // @@author GabrielYuSP
+    // @@author ka-how
     /**
-     * Reserves the exact batch confirmation specified for issue #48; no existing route calls it.
+     * Confirms only the newly saved unavailable periods in the supplied chronological order.
      *
      * @param added nonempty chronological list of newly persisted one-time commitments
-     * @return batch count, individual IDs and date/time rows, and regeneration guidance once implemented
-     * @throws UnsupportedOperationException until Printing implements the response
+     * @return batch count, individual IDs and date/time rows, and regeneration guidance
+     * @throws NullPointerException if the list or an element is null
+     * @throws IllegalArgumentException if the list is empty or contains a weekly commitment
      */
     public String unavailablePeriodsAdded(List<Commitment> added) {
-        // TODO(ka-how): implement TextRenderer.unavailablePeriodsAdded using the planned UI fixtures.
-        throw new UnsupportedOperationException("Unavailable range rendering is not implemented yet.");
+        requireElements(added, "added");
+        if (added.isEmpty() || added.stream().anyMatch(commitment -> !commitment.isOneTime())) {
+            throw new IllegalArgumentException("Expected newly saved one-time unavailable periods.");
+        }
+        LOGGER.log(Level.FINE, "Formatting unavailable periods response");
+        StringJoiner lines = new StringJoiner("\n");
+        lines.add("Blocked " + added.size() + " unavailable period" + (added.size() == 1 ? "." : "s."));
+        for (Commitment commitment : added) {
+            lines.add(commitment.displayId() + " | " + DATE.format(commitment.startDate())
+                    + " | " + formatCommitmentTimes(commitment) + " | " + commitment.name());
+        }
+        return finish(lines.add("Saved unavailable periods. Run plan to regenerate.").toString());
     }
-    // @@author
-    // @@author ka-how
 
-    // @@author ernestgoh-god
     /**
-     * Reserves the confirmation for recorded task progress.
+     * Reports actual credited work and the resulting estimate, including zero-credit no-ops.
      *
      * @param task validated candidate task after progress, before persistence
      * @param creditedMinutes whole minutes credited, including percentage rounding
-     * @return confirmation text once Printing implements this method
-     * @throws UnsupportedOperationException until Printing supplies the response
+     * @return confirmation without claiming that an unchanged estimate was saved again
+     * @throws NullPointerException if task is null
+     * @throws IllegalArgumentException if credited minutes are negative
      */
     public String taskProgressUpdated(Task task, int creditedMinutes) {
-        // TODO(ka-how): implement task progress confirmation and exact-output tests.
-        throw new UnsupportedOperationException("Task progress rendering is not implemented yet.");
+        Objects.requireNonNull(task, "task");
+        if (creditedMinutes < 0) {
+            throw new IllegalArgumentException("Credited minutes must not be negative.");
+        }
+        LOGGER.log(Level.FINE, "Formatting task progress response");
+        return finish("Recorded progress for " + task.displayId() + ": " + task.name()
+                + " | Credited: " + creditedMinutes + " min | Remaining: " + task.remainingMinutes() + " min");
     }
 
+    // @@author ernestgoh-god
     /**
      * Reports a validated remaining-work estimate without implying that unchanged values were saved again.
      *
@@ -115,6 +130,9 @@ public final class TextRenderer {
                 // @@author ernestgoh-god
                 "task remaining TNUMBER remaining/MINUTES - Revise a task's remaining time.",
                 // @@author ka-how
+                "task progress TNUMBER done/MINUTES - Record whole minutes of completed work.",
+                "task progress TNUMBER session/MINUTES percent/PERCENT"
+                        + " - Credit a percentage of a session, rounded down to whole minutes.",
                 "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
                         + " [from/YYYY-MM-DD until/YYYY-MM-DD] - Add a weekly commitment.",
                 // @@author
@@ -226,22 +244,32 @@ public final class TextRenderer {
                 + " min | Until: " + task.until().map(DATE::format).orElse("No end date");
     }
 
+    // @@author ka-how
     /**
-     * Reserves an unwired completion confirmation.
-     * @throws UnsupportedOperationException always, pending Task rendering
+     * Confirms retained completion without implying that the task was deleted.
+     *
+     * @param task validated completed task with zero remaining work
+     * @return confirmation retaining the task's ID and name
+     * @throws NullPointerException if task is null
      */
     public String taskCompleted(Task task) {
-        // TODO(Tasks): implement TextRenderer.taskCompleted
-        throw new UnsupportedOperationException("Task completion rendering is not implemented yet.");
+        Objects.requireNonNull(task, "task");
+        LOGGER.log(Level.FINE, "Formatting task completion response");
+        return finish("Completed " + task.displayId() + ": " + task.name());
     }
 
     /**
-     * Reserves an unwired reopening confirmation.
-     * @throws UnsupportedOperationException always, pending Task rendering
+     * Confirms reopening using the task's revised remaining-work estimate.
+     *
+     * @param task validated reopened task with positive remaining work
+     * @return confirmation retaining the task's ID, name and exact estimate
+     * @throws NullPointerException if task is null
      */
     public String taskReopened(Task task) {
-        // TODO(Tasks): implement TextRenderer.taskReopened
-        throw new UnsupportedOperationException("Task reopening rendering is not implemented yet.");
+        Objects.requireNonNull(task, "task");
+        LOGGER.log(Level.FINE, "Formatting task reopening response");
+        return finish("Reopened " + task.displayId() + ": " + task.name()
+                + " | Remaining: " + task.remainingMinutes() + " min");
     }
 
     // @@author
@@ -573,9 +601,7 @@ public final class TextRenderer {
             case BUSY -> range + " " + entry.reference() + ": " + entry.name();
             case TASK -> range + " " + entry.reference() + ": " + entry.name()
                     + " (" + Duration.between(entry.start(), entry.end()).toMinutes() + " min)";
-            case FREE, UNPLANNED -> range;
-            // TODO(Printing): implement TextRenderer.formatScheduleRow BREAK output for issue #55.
-            case BREAK -> throw new UnsupportedOperationException("Break rendering awaits Printing integration.");
+            case FREE, UNPLANNED, BREAK -> range;
         };
     }
 
