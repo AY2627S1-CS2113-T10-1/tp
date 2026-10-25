@@ -19,9 +19,11 @@ import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 import scheduleflow.model.TaskOccurrence;
 import scheduleflow.model.TaskPriority;
+import scheduleflow.planning.EarliestDeadlinePlanner;
 import scheduleflow.planning.Plan;
 import scheduleflow.planning.ScheduleEntry;
 import scheduleflow.planning.SlotKind;
+import scheduleflow.planning.StudyPolicy;
 import scheduleflow.planning.StudySession;
 import scheduleflow.planning.TimeRules;
 import scheduleflow.planning.UnallocatedReason;
@@ -33,6 +35,21 @@ class PlanCodecTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 10, 5, 7, 0);
     private final StateCodec snapshots = new StateCodec();
     private final PlanCodec plans = new PlanCodec(snapshots);
+
+    @Test
+    void encodeAndDecode_storedPolicyAndBreaks_usesDistinctVersionAndRetainsExactPlan() throws StorageException {
+        Snapshot source = new Snapshot(List.of(new Task(1, "Work", NOW.withHour(12), 180)), List.of(), 2, 1)
+                .withStudyPolicy(Optional.of(new StudyPolicy(60, 30)));
+        Plan plan = new EarliestDeadlinePlanner().generate(source, NOW);
+        String text = plans.encode(plan);
+        assertTrue(text.startsWith("SCHEDULEFLOW|8\n"));
+        assertTrue(text.contains("POLICY|60|30\n"));
+        assertEquals(plan, plans.decode(text));
+        assertEquals(source, snapshots.decode(text));
+        assertEquals(2, plans.decode(text).breaks().size());
+        assertThrows(StorageException.class, () -> plans.decode(text.replace("POLICY|60|30\n", "")));
+        assertThrows(StorageException.class, () -> plans.decode(text.replace("POLICY|60|30", "POLICY|60|0")));
+    }
 
     @Test
     void encodeAndDecode_partialPlanWithBreakAndPipeName_preservesExactResult() throws StorageException {

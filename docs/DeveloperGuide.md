@@ -322,14 +322,15 @@ work; 30 capacity leaves 15 exact work and 30 unallocated capacity. Source
 estimates are never decremented. Totals must use long streams. Only the final
 session for a task can contain padding, and zero-work sessions are not created.
 
-### Continuous work and fixed breaks (issue #55, Planning API only)
+### Continuous work and fixed breaks (issue #55)
 
-The Optimizer implementation is available through
-`new EarliestDeadlinePlanner(new StudyPolicy(90, 30))`. `StudyPolicy` validates
-positive multiples of 30 minutes for the continuous-work limit and required
-break. No numeric default is selected yet. The original no-argument planner
-and `Planner.generate(Snapshot, LocalDateTime)` remain usable, with the original
-unrestricted behavior until settings are integrated. No #55 command exists yet.
+The console supports `policy set max/MINUTES break/MINUTES`, `policy show`
+and `policy reset`. `StudyPolicy` validates positive multiples of 30 minutes.
+`Snapshot.studyPolicy()` is an explicit optional: absent means unrestricted
+planning, preserving legacy behavior without inventing numeric defaults.
+The no-argument planner reads the stored policy on each generation. The explicit
+`EarliestDeadlinePlanner(StudyPolicy)` constructor remains available as a fallback
+for API clients whose snapshot has no policy; a stored policy takes precedence.
 
 Allocation now walks slots chronologically, choosing dated unfinished tasks by
 deadline, priority and numeric ID, then undated tasks by priority and ID. This
@@ -359,32 +360,23 @@ time. An interrupted break can therefore appear as separate partial rows, and
 a break may end at a deadline even if the task ultimately remains unallocated.
 `ScheduleService` projects frozen break rows without recomputing the policy.
 
-Integration handoff (ownership-marked comments are present at the relevant code):
+`CommandParser` transports integer minutes without constructing domain settings.
+The dispatcher creates `StudyPolicy`, obtains a policy-only candidate and formats
+the response before saving. Changed settings are saved before publication and
+plan invalidation. Equal sets and an already-unrestricted reset return the same
+snapshot, skip saving and preserve the current plan. Failures preserve both the
+stored settings and saved plan. `policy show` is read-only. All task, commitment,
+hours and recurrence candidates preserve the optional setting.
 
-- **Printing/parsing:** agree on set/show/reset command grammar and defaults;
-  transport integer minutes and use `StudyPolicy` for domain validation. Update
-  `Command`, `CommandParser`, help, settings responses and dispatcher tests.
-- **Printing/dispatch:** obtain the current policy for each generation and use
-  the configured planner constructor. Settings changes must save before publication
-  and plan invalidation, preserving both settings and plan on failure. The existing
-  injected planner remains unchanged until this integration is implemented.
-- **Printing/rendering, implemented:** `TextRenderer.formatScheduleRow` prints
-  supplied break intervals, for example `09:30 - 10:00 | [BREAK]`, without a
-  reference, name or duration suffix. It preserves boundaries and never allocates
-  breaks. Renderer tests exercise a configured planner through projection and
-  formatting, plus adjacent supplied break rows with cutoff notes and remainders.
-- **Save:** coordinate adding settings to `Snapshot`, codec versioning and legacy
-  defaults. Ensure task, commitment and hours mutations preserve them. This change
-  does not modify the snapshot or saved format; #68 persists the resulting frozen breaks.
-
-Fixed-time JUnit tests cover cross-task limits, exact and 2x/3x commitment
-overruns, adjacent commitments, interrupted and partially elapsed breaks,
-pre-window commitments, cutoff rounding, overnight rest, deadline capacity,
-minute conservation, deterministic generation and frozen schedule projection.
-Record tests cover duration validation, anonymous break rows, immutable lists,
-ordering and the original plan constructor. #55 console acceptance remains
-planned until commands and persistence are integrated; existing
-active process scenarios exercise the no-argument planner.
+The existing continuous-work algorithm and BREAK renderer retain their original
+owners. Ernest's scoped changes supply commands, settings persistence and the
+connection from the source snapshot to the planner's existing work counter.
+Fixed-time JUnit verifies configured console generation and exact breaks,
+constructor fallback, cross-task/commitment limits, overnight rest and failure
+rollback. UI-028 verifies set/show/reset, invalid values and saved restarts;
+UI-029 restores a fixed policy-bearing plan to verify packaged BREAK output and
+invalidation without relying on the live clock. Actual allocation under settings
+is verified by fixed-clock application and planner tests.
 
 ### Configurable study hours
 
@@ -569,8 +561,8 @@ materialization makes no source changes.
 
 #### Recurrence storage format
 
-Version 5 is selected only if a template, occurrence provenance or allocated R
-counter requires it. Otherwise writes use version 2, 3 or 4 according to commitment
+For snapshot-only saves without a policy, version 5 is selected if a template,
+occurrence provenance or allocated R counter requires it. Otherwise writes use version 2, 3 or 4 according to commitment
 fields; version 2 is the minimum for `TASK2`. Versions 1 through 4 remain readable.
 Loading old versions does not write or migrate files automatically.
 Version 5 stores names last (including literal pipes) and uses these rows:
@@ -613,7 +605,7 @@ commands, generation and persistence. PR #84 is merged: exact work, optional
 deadlines, stored priorities and domain completion/reopening coexist with
 recurrence in the unified model and v5 codec. Issue #40 console progress is
 connected through the existing parser and dispatcher with its implemented
-Printing confirmation. Completion/reopening commands, deadline
+Printing confirmation. Reopening commands and deadline
 clearing, undated addition, priority operations and search are not wired console
 features. Do not restore throwing Task edit/recurrence renderers or discard the
 existing commitment/hours formats.
@@ -665,11 +657,12 @@ no-ops preserve the snapshot and plan. Negative renderer credit is programmer
 misuse and raises `IllegalArgumentException`; task validation stays in TaskService.
 `taskCompleted(Task)` prints `Completed TNUMBER: NAME` and `taskReopened(Task)`
 prints `Reopened TNUMBER: NAME | Remaining: N min` for validated lifecycle
-results. These two formatters are unit-tested but have no console routes yet.
+results. The completion formatter is connected to `task complete`; the reopening
+formatter remains an internal API for the separate #56 command.
 `taskEdited(Task)` is wired for issue #39's concrete-deadline/name edits.
 `taskRemainingUpdated(Task)` formats issue #41's active remaining-time command.
-Weekly recurrence commands are also implemented; no completion/reopening console
-commands are available.
+Weekly recurrence commands and completion are implemented; reopening remains
+unavailable at the console.
 Existing renderer compatibility changes only display `No deadline` in add/list
 output and undated remainder rows, use an undated capacity-shortfall reason, and
 sum exact session work in plan summaries. Existing schedule interval durations
@@ -687,7 +680,25 @@ and partial credit, completion, maximum credit, Unicode, null inputs and framing
 Dispatcher tests cover successful progress publication, exact rounded credit,
 replanning, no-ops, save failure and retry. UI-030 verifies both progress forms,
 invalid requests, plan invalidation and retained completion across two restarts.
-Completion/reopening commands remain deferred.
+Completion is connected through `task complete`; reopening remains deferred under #56.
+
+### Completion and completed-task view (issues #52 and #65)
+
+`Command.CompleteTask` and `ListCompletedTasks` add exact, case-sensitive grammar
+for `task complete TNUMBER` and `task list completed`. Parsing validates the ID
+shape and overflow; `TaskService.complete` retains domain validation and returns
+an immutable zero-work candidate. The dispatcher formats the existing
+`TextRenderer.taskCompleted` confirmation, saves a changed candidate, then
+publishes it. Repeated completion returns the same source and does not save or
+invalidate a plan. Failed saves preserve the snapshot and its saved plan.
+
+The completed view filters the service's numeric-ID list and shares row formatting
+with the original full list. No data or plan changes occur during listing.
+Nickhil's completion model/service and Ka How's completion formatter retain their
+authorship. Scoped Ernest tags cover the new parser, wiring and completed view.
+JUnit covers grammar boundaries, exact list text, save ordering, failed retries,
+plan exclusion and no-ops. UI-033 covers completion, validation and saved restart.
+Issue #56 reopening remains separate; no reopening command is introduced here.
 
 ### Basic saving and loading
 
@@ -741,8 +752,8 @@ rows are also valid in versions 3 and 4, which add commitment bounds and skips,
 and in version 5, which adds recurring templates and occurrence rows as described
 above. Tasks and commitments retain stored order; HOURS rows sort by target.
 Loading legacy data is read-only; the next snapshot save writes extended
-version 2, 3, 4 or 5. Generating a plan instead writes version 6 as described
-below. FileStorage constructors and atomic replacement behavior are unchanged.
+version 2, 3, 4 or 5. Generating a plan instead writes version 6, or version 8
+with a stored policy, as described below. FileStorage constructors and atomic replacement behavior are unchanged.
 
 `StateCodecTest` covers the format and validation, including `TASK2` records
 alongside bounded version 3 and skipped version 4 commitments. Planner tests
@@ -765,11 +776,25 @@ each candidate before `AppState.commit` and success output. `AppTest` verifies
 restart and rollback alongside the storage tests. Use one writer per file;
 atomic replacement does not promise durability after power loss.
 
+### Stored study policy format (issue #55)
+
+A snapshot with configured settings writes `SCHEDULEFLOW|7`, the full version 5
+source layout plus exactly one `POLICY|maxContinuousMinutes|breakMinutes` row.
+Missing, duplicate, nonpositive, unaligned and overflowing values reject the whole
+file. Old snapshots load with an empty policy without rewriting data. Resetting
+settings returns snapshot-only writes to versions 2-5 as appropriate.
+Policy-bearing frozen plans use version 8 with the full version 7 source layout;
+version 6 plans and all earlier supported formats remain readable. Constructors
+retain their existing overloads and default to an empty policy. `withTasks`,
+`withCommitments`, `withStudyHours` and recurring-task operations retain settings.
+Only a policy command changes them.
+
 ### Automatic saved schedules (issue #68)
 
-`PlanCodec` writes `SCHEDULEFLOW|6`, keeping version 5 available for upstream's
-recurring-task snapshots. The embedded source always uses the full version 5
-layout: three NEXT counters, extended tasks, occurrence provenance, templates,
+`PlanCodec` writes `SCHEDULEFLOW|6` without a study policy or `SCHEDULEFLOW|8`
+with one. Version 5 remains available for recurring-task snapshots. The embedded
+source uses the full version 5 layout (version 7 when a policy is present):
+three NEXT counters, extended tasks, occurrence provenance, templates,
 processing cursors, commitment bounds/skips and study hours. One
 `PLAN|generatedAt|horizonEnd|sessionCount|unallocatedCount|breakCount` row follows,
 then the counted rows:
@@ -784,9 +809,10 @@ Session work preserves partial-slot padding, and unallocated capacity is a long
 so rounding an `Integer.MAX_VALUE` estimate cannot overflow. Names remain last
 so literal pipes survive. Decoding validates the source, row counts, references,
 ordering, horizon and individual planning-record contracts without regenerating
-or rescheduling. Versions 1-5 remain readable. The earlier branch's version 5
+or rescheduling. Snapshot versions 1-5 and saved-plan version 6 remain readable.
+The earlier branch's version 5
 saved plans are distinguished by their two NEXT counters and read using the old
-version 4 source layout; new saves always use version 6 for plans.
+version 4 source layout; new saves use version 6 or 8 for plans.
 
 `FileStorage.savePlan` writes the source and result in one atomic replacement.
 `save` removes any prior plan while saving a mutation. At startup, `App` loads
@@ -960,7 +986,7 @@ Schedules display `ScheduleView` metadata and entries in their supplied order.
 TASK minutes come from that row's endpoints, rather than the task's whole
 estimate. BUSY retains its reference and name; FREE, UNPLANNED and BREAK have
 only their labels. BREAK is renderable through the planning API; the default
-console planner still has no study-policy setting. Any UNPLANNED row adds the
+console planner uses the stored study policy when present. Any UNPLANNED row adds the
 cutoff note. A nonempty remainder list adds a
 blank line and the whole-plan footer. The formatter never allocates, clips,
 merges, repairs or reorders schedule rows, and never recalculates generation

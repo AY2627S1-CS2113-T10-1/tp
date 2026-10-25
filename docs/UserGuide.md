@@ -18,6 +18,7 @@ Study hours default to **08:00–22:00 every day**, including weekends. You can 
 - [Tasks](#tasks)
   - [Adding a task](#adding-a-task)
   - [Recording progress](#recording-progress)
+  - [Completing and viewing completed tasks](#completing-and-viewing-completed-tasks)
   - [Editing a task](#editing-a-task)
   - [Weekly recurring tasks](#weekly-recurring-tasks)
   - [Listing tasks](#listing-tasks)
@@ -119,9 +120,10 @@ Examples below are independent unless a sequence is explicitly described. Use ex
 
 Task addition, editing, deletion and weekly recurring templates are available at
 the console. You can revise a task's remaining-work estimate with `task remaining`.
-You can record completed work with either form of `task progress`.
-Deadline clearing, explicit completion/reopening and adding without a deadline
-are implemented as internal Java service APIs, but have no console commands.
+You can record completed work with either form of `task progress`, mark a task
+complete with `task complete`, and view completed records with `task list completed`.
+Deadline clearing, reopening and adding without a deadline are implemented as
+internal Java service APIs, but have no console commands.
 Console addition still requires a deadline, and editing accepts only a name and/or
 concrete deadline. Progress saves changed estimates and retains a completed
 record when its remaining work reaches zero.
@@ -131,8 +133,8 @@ requires positive work to reopen them. Session percentage progress credits the
 floor of session minutes times percentage / 100; no timer subtracts work.
 Explicit reopening is not yet available from the console. Loaded undated tasks
 display `No deadline`; loaded completed tasks remain listed with `0 min` and
-receive no planning sessions or unallocated rows. No separate status/completed
-list rendering or priority commands are available yet.
+receive no planning sessions or unallocated rows. The completed-only list is
+available through `task list completed`; priority commands remain unavailable.
 
 ### Recording duration (tasks and commitments)
 
@@ -330,7 +332,31 @@ daily/monthly recurrence are not supported.
 Generated tasks use the same exact remaining-work and lifecycle model as ordinary
 tasks. Their estimates can be revised with `task remaining`, and completed work
 can be recorded with `task progress`; both preserve their provenance. Explicit
-completion and reopening remain internal Java APIs.
+completion is available through `task complete`; reopening remains an internal Java API.
+
+### Completing and viewing completed tasks
+
+Use `task complete TNUMBER` to retain a task with zero remaining work. Completion
+saves automatically and clears the current plan; run `plan` again to exclude
+that task from study sessions. Repeating completion is harmless and preserves
+the existing plan without another save. Unknown IDs and failed saves leave the
+records and plan unchanged.
+
+```text
+scheduleflow> task complete T1
+Completed T1: CS2113 draft
+scheduleflow> task list completed
+=== Completed Tasks ===
+ID | Name | Duration | Deadline
+T1 | CS2113 draft | 0 min | 2026-11-20 18:00
+Total: 1 task(s).
+```
+
+`task list completed` shows only completed tasks, sorted by numeric ID. It prints
+`No completed tasks found.` when empty. `task list` continues to show all stored
+tasks. Both lists preserve data and the current plan. Names, deadlines, priorities
+and recurring-task provenance survive completion and restart. Reopening a task
+is tracked separately in issue #56 and has no console command yet.
 
 ### Deleting a task
 
@@ -341,7 +367,7 @@ task delete TNUMBER
 Deletes the task permanently. Use this command to remove completed or unwanted
 work. Use `task edit` to correct a name/deadline without replacing the ID.
 There is no undo. To retain a completed record instead of deleting it, use
-`task progress` to credit all its remaining work.
+`task complete TNUMBER`, or `task progress` to credit all its remaining work.
 
 ```text
 scheduleflow> task delete T1
@@ -709,18 +735,34 @@ single-date `commitment add ... on/DATE` commands.
 The [Developer Guide handoff](DeveloperGuide.md#multi-date-unavailable-periods-implementation-handoff-planned)
 contains proposed outputs, owner responsibilities and acceptance tests.
 
-### Session limits and breaks (planned console feature)
+### Session limits and breaks
 
-Issue #55's planning algorithm supports a continuous-work limit counting both
-study tasks and commitments. Once the limit is reached, further study waits
-for a fixed consecutive break. Commitments remain fixed even if they exceed
-the limit; a longer commitment does not increase the required break duration.
+Set a maximum continuous-work duration and the consecutive break required before
+further study. Both values must be positive whole multiples of 30 minutes.
 
-This feature is currently available only through the Java planning API.
-Break rows supplied by the planning API display as `HH:mm - HH:mm | [BREAK]`.
-Settings commands and saving those settings are awaiting integration.
-The console's existing `plan` command does not enforce these
-limits yet; there is no supported command to configure them.
+```text
+scheduleflow> policy set max/90 break/30
+Study policy: Maximum continuous work: 90 min | Required break: 30 min
+Saved study policy. Run plan to regenerate.
+scheduleflow> policy show
+Study policy: Maximum continuous work: 90 min | Required break: 30 min
+scheduleflow> policy reset
+Study policy: unrestricted (no session limit or required break).
+Saved study policy. Run plan to regenerate.
+```
+
+Settings save automatically and survive restarting. Changing them clears the
+saved plan; run `plan` to generate a schedule using the new values. Repeating a
+set with the same values, or resetting an already-unrestricted policy, prints
+`Study policy unchanged.` and preserves the plan. Invalid input and failed saves
+preserve both settings and the current plan. `policy show` changes nothing.
+
+The continuous-work limit counts study tasks and fixed commitments together.
+At the limit, further study waits for the configured consecutive break, shown
+as `HH:mm - HH:mm | [BREAK]`. Commitments stay fixed even when they exceed the
+limit; one configured break still suffices afterward. Natural idle time can
+satisfy the break. Study-session padding counts as occupied time. With no stored
+policy, including when opening an older file, planning remains unrestricted.
 
 ### Planning hours and date range
 
@@ -857,7 +899,7 @@ No current plan. Run plan to generate one.
 
 A selected date must fall within the current plan's date range. An out-of-range request reports the earliest and latest allowed dates; it does not produce an empty schedule. Run `plan` again when you need a fresh range.
 
-**Plans remain fixed until regenerated.** Viewing a schedule later, including after a restart, does not move its sessions or update its generation time. Successful changes to tasks, recurring-task templates, commitments or study hours clear the saved plan; failed commands preserve it.
+**Plans remain fixed until regenerated.** Viewing a schedule later, including after a restart, does not move its sessions or update its generation time. Successful changes to tasks, recurring-task templates, commitments, study hours or policy settings clear the saved plan; failed commands preserve it.
 
 ## Help and exit
 
@@ -892,9 +934,10 @@ template ID counter require it. Ordinary tasks use `TASK2` rows, including in
 version 5; generated tasks use `OCCURRENCE` rows with exact remaining minutes,
 optional deadlines, priority and original template/deadline provenance. Templates,
 generation cursors, custom study hours and all ID counters are preserved.
-Generating a plan writes version 6, containing the complete source data and the
-exact schedule, including credited work, generation time, unallocated work and
-breaks. Versions 1 through 5 remain readable; loading does not rewrite them.
+Configured study policies use version 7 snapshots. Generating a plan writes
+version 6 without a policy or version 8 with one, containing the complete source
+data and the exact schedule, including credited work, generation time,
+unallocated work and breaks. Versions 1 through 6 remain readable; loading does not rewrite them.
 Snapshot-only saves use at least version 2. Older executables cannot read version 5, and older
 applications without `TASK2` support cannot read those extended rows. See the
 [Developer Guide](DeveloperGuide.md#basic-saving-and-loading) for the precise
@@ -903,8 +946,8 @@ tasks or moving sessions during startup.
 
 - **Location:** `data/scheduleflow.txt`, relative to the folder from which you launch the application. Launch from the same folder to use the same data.
 - **First launch:** If the file is absent, the app starts empty. The first successful change or `plan` creates the saved data.
-- **Saved plans:** The latest generated schedule, generation time, sessions and unallocated work survive restarting. Successful changes to tasks, commitments or study hours clear it; run `plan` again afterward.
-- **Compatibility:** Older releases cannot read a file after this release saves a plan. Keep a backup before opening the same data folder with an older JAR.
+- **Saved plans:** The latest generated schedule, generation time, sessions and unallocated work survive restarting. Successful changes to tasks, commitments, study hours or policy settings clear it; run `plan` again afterward.
+- **Compatibility:** Older releases cannot read the new policy or saved-plan formats. Keep a backup before opening the same data folder with an older JAR.
 - **Failed save:** The change is rejected. Existing tasks, commitments, ID counters, saved data, and the current plan remain unchanged. Resolve the reported file or folder problem, then retry.
 - **Invalid or unreadable file:** The app reports an error and stops before accepting commands. It preserves the file instead of silently starting empty or loading only part of it.
 - **Overdue tasks:** Valid saved tasks remain available after their deadlines pass. Replanning reports their work as unallocated with reason `deadline passed`.
@@ -928,15 +971,14 @@ Delete completed tasks using `task delete TNUMBER`. Correct commitments with
 `commitment edit CNUMBER` and one or more fields; the ID is preserved. To correct
 a task's name or deadline, use `task edit TNUMBER` with `n/` and/or `due/`;
 the ID is preserved. Record completed work with `task progress`; crediting all
-remaining minutes retains the task at zero. Explicit completion/reopening
-commands are not supported yet. Use `task remaining` to correct an estimate
+remaining minutes retains the task at zero. Use `task complete` to mark a task complete directly. A reopening command is not supported yet. Use `task remaining` to correct an estimate
 without recording completed work.
 
 ### Why did my schedule disappear?
 
 A successful task or commitment addition, deletion, task edit, template change,
 progress update, remaining-work revision, commitment edit or
-occurrence skip, or a study-hours set or reset, clears the current plan. Plans
+occurrence skip, a study-hours set or reset, or a changed study policy clears the current plan. Plans
 remain available after restarting until a successful change invalidates them.
 Run `plan` to generate another one.
 
@@ -978,6 +1020,11 @@ these storage logs do not include your task names or saved file contents.
 | List tasks | `task list` |
 | Delete a task | `task delete TNUMBER` |
 | Revise a task's remaining time | `task remaining TNUMBER remaining/MINUTES` |
+| Set study policy | `policy set max/MINUTES break/MINUTES` |
+| View study policy | `policy show` |
+| Reset study policy | `policy reset` |
+| Complete a task | `task complete TNUMBER` |
+| View completed tasks | `task list completed` |
 | Record completed minutes | `task progress TNUMBER done/MINUTES` |
 | Record session progress | `task progress TNUMBER session/MINUTES percent/PERCENT` |
 | Add a weekly commitment | `commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD]` |

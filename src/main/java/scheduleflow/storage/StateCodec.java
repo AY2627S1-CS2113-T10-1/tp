@@ -27,13 +27,12 @@ import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 import scheduleflow.model.TaskOccurrence;
 import scheduleflow.model.TaskPriority;
+import scheduleflow.planning.StudyPolicy;
 
 /**
  * Converts snapshots to and from the versioned text format without accessing saved files.
  */
 public final class StateCodec {
-    // TODO(Save): implement issue #55 policy persistence with Snapshot and legacy-file defaults.
-    // Coordinate defaults and preserve policy through all task, commitment and study-hours mutations.
     // @@author ernestgoh-god
     /**
      * Records conversion stages at FINE level without including stored values or exception messages.
@@ -54,7 +53,7 @@ public final class StateCodec {
 
     // @@author ernestgoh-god
     /**
-     * Encodes extended tasks in versions 2-4, or version 5 when recurrence or its history is present.
+     * Encodes extended snapshots, using version 5 for recurrence or version 7 for a stored study policy.
      * Stores names last so names containing pipes do not need escaping.
      *
      * @param state validated immutable snapshot to encode in its existing list order
@@ -66,7 +65,7 @@ public final class StateCodec {
     }
 
     // @@author ernestgoh-god
-    /** Encodes a plan's source using the complete version 5 layout, including all recurrence counters. */
+    /** Encodes a plan's complete source, including recurrence counters and any version 7 study policy. */
     String encodeForPlan(Snapshot state) {
         return encodeSnapshot(state, true);
     }
@@ -81,17 +80,18 @@ public final class StateCodec {
         boolean hasSkippedOccurrences = state.commitments().stream()
                 .anyMatch(commitment -> !commitment.skippedDates().isEmpty());
         // @@author ernestgoh-god
-        boolean hasRecurrence = fullRecordLayout || !state.recurringTasks().isEmpty()
+        boolean includeRecurrenceFields = fullRecordLayout || state.studyPolicy().isPresent()
+                || !state.recurringTasks().isEmpty()
                 || state.nextRecurringTaskId() != 1
                 || state.tasks().stream().anyMatch(task -> task.occurrence().isPresent());
-        // @@author nickpatt
-        String version = hasRecurrence ? "SCHEDULEFLOW|5" : hasSkippedOccurrences ? "SCHEDULEFLOW|4"
+        String version = state.studyPolicy().isPresent() ? "SCHEDULEFLOW|7"
+                : includeRecurrenceFields ? "SCHEDULEFLOW|5" : hasSkippedOccurrences ? "SCHEDULEFLOW|4"
                 : hasDateBoundedCommitments ? "SCHEDULEFLOW|3"
                 : "SCHEDULEFLOW|2";
         // @@author ernestgoh-god
         StringBuilder text = new StringBuilder(version).append('\n');
         text.append("NEXT|").append(state.nextTaskId()).append('|').append(state.nextCommitmentId());
-        if (hasRecurrence) {
+        if (includeRecurrenceFields) {
             text.append('|').append(state.nextRecurringTaskId());
         }
         text.append('\n');
@@ -118,11 +118,11 @@ public final class StateCodec {
             text.append("COMMITMENT|").append(commitment.id()).append('|').append(commitment.day()).append('|')
                     .append(commitment.start()).append('|').append(commitment.durationMinutes()).append('|');
             // @@author Darren50
-            if (hasDateBoundedCommitments || hasSkippedOccurrences || hasRecurrence) {
+            if (hasDateBoundedCommitments || hasSkippedOccurrences || includeRecurrenceFields) {
                 text.append(commitment.startDate() == null ? "-" : commitment.startDate()).append('|')
                         .append(commitment.endDate() == null ? "-" : commitment.endDate()).append('|');
             }
-            if (hasSkippedOccurrences || hasRecurrence) {
+            if (hasSkippedOccurrences || includeRecurrenceFields) {
                 text.append(encodeSkippedDates(commitment.skippedDates())).append('|');
             }
             // @@author ernestgoh-god
@@ -130,9 +130,12 @@ public final class StateCodec {
         }
         new TreeMap<>(state.studyHours().windows()).forEach((target, window) -> text.append("HOURS|")
                 .append(target).append('|').append(window.start()).append('|').append(window.end()).append('\n'));
+        state.studyPolicy().ifPresent(policy -> text.append("POLICY|").append(policy.maxContinuousMinutes())
+                .append('|').append(policy.breakMinutes()).append('\n'));
         String encoded = text.toString();
         assert encoded.lines().count() == 2L + state.tasks().size() + state.commitments().size()
                 + state.studyHours().windows().size() + state.recurringTasks().size()
+                + (state.studyPolicy().isPresent() ? 1 : 0)
                 : "Encoding must produce a header, counters and one line per record";
         LOGGER.log(Level.FINE, "Snapshot encoding completed");
         return encoded;
@@ -160,8 +163,11 @@ public final class StateCodec {
         try {
             validateHeader(lines);
             LOGGER.log(Level.FINE, "Saved data header validated; reading counters and records");
+            // @@author ernestgoh-god
+            boolean supportsPolicy = lines.getFirst().equals("SCHEDULEFLOW|7");
+            boolean supportsRecurrence = supportsPolicy || lines.getFirst().equals("SCHEDULEFLOW|5");
+            Optional<StudyPolicy> studyPolicy = Optional.empty();
             // @@author nickpatt
-            boolean supportsRecurrence = lines.getFirst().equals("SCHEDULEFLOW|5");
             String[] counters = splitFields(lines.get(1), supportsRecurrence ? 4 : 3);
             // @@author ernestgoh-god
             if (!counters[0].equals("NEXT")) {
@@ -176,7 +182,16 @@ public final class StateCodec {
                 // @@author Darren50
                 boolean supportsExtensions = !lines.getFirst().equals(HEADER);
                 // @@author nickpatt
-                if (supportsRecurrence && (line.startsWith("RECURRING|") || line.startsWith("OCCURRENCE|"))) {
+                // @@author ernestgoh-god
+                if (supportsPolicy && line.startsWith("POLICY|")) {
+                    if (studyPolicy.isPresent()) {
+                        throw new StorageException("Duplicate study policy record.");
+                    }
+                    String[] fields = splitFields(line, 3);
+                    studyPolicy = Optional.of(new StudyPolicy(Integer.parseInt(fields[1]),
+                            Integer.parseInt(fields[2])));
+                // @@author nickpatt
+                } else if (supportsRecurrence && (line.startsWith("RECURRING|") || line.startsWith("OCCURRENCE|"))) {
                     decodeRecurrence(line, tasks, recurringTasks);
                 } else if (supportsExtensions && line.startsWith("HOURS|")) {
                     decodeHours(line, windows);
@@ -195,13 +210,17 @@ public final class StateCodec {
                 }
                 // @@author ernestgoh-god
             }
+            if (supportsPolicy && studyPolicy.isEmpty()) {
+                throw new StorageException("Missing study policy record.");
+            }
             assert (long) tasks.size() + commitments.size() + windows.size() + recurringTasks.size()
+                    + (studyPolicy.isPresent() ? 1 : 0)
                     == lines.size() - 2L
                     : "Every saved record line must decode to exactly one record";
             LOGGER.log(Level.FINE, "Saved records decoded; validating snapshot invariants");
             Snapshot decoded = new Snapshot(tasks, commitments,
                     Integer.parseInt(counters[1]), Integer.parseInt(counters[2]), new StudyHours(windows),
-                    recurringTasks, supportsRecurrence ? Integer.parseInt(counters[3]) : 1);
+                    recurringTasks, supportsRecurrence ? Integer.parseInt(counters[3]) : 1, studyPolicy);
             LOGGER.log(Level.FINE, "Saved data decoding completed");
             return decoded;
         } catch (StorageException exception) {
@@ -225,7 +244,8 @@ public final class StateCodec {
         if (!lines.getFirst().equals(HEADER) && !lines.getFirst().equals("SCHEDULEFLOW|2")
                 && !lines.getFirst().equals("SCHEDULEFLOW|3")
                 && !lines.getFirst().equals("SCHEDULEFLOW|4")
-                && !lines.getFirst().equals("SCHEDULEFLOW|5")) {
+                && !lines.getFirst().equals("SCHEDULEFLOW|5")
+                && !lines.getFirst().equals("SCHEDULEFLOW|7")) {
             throw new StorageException("Unsupported file version: "
                     + lines.getFirst().substring("SCHEDULEFLOW|".length()));
         }

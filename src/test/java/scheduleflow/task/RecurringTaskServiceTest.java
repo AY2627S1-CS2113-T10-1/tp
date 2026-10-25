@@ -16,12 +16,33 @@ import scheduleflow.common.ValidationException;
 import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
+import scheduleflow.planning.StudyPolicy;
 import scheduleflow.planning.TimeRules;
 
 /** Verifies deterministic bounded generation, atomic exhaustion and persistent deletion history. */
 class RecurringTaskServiceTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 9, 21, 7, 0);
     private final RecurringTaskService service = new RecurringTaskService();
+
+    // @@author ernestgoh-god
+    @Test
+    void mutations_storedPolicy_preservesSettingThroughAddMaterializationAndDeletion() {
+        Optional<StudyPolicy> policy = Optional.of(new StudyPolicy(90, 30));
+        Snapshot source = Snapshot.empty().withStudyPolicy(policy);
+        Snapshot added = service.add(source, "Weekly", NOW.plusDays(1), 60,
+                Optional.of(NOW.plusDays(8).toLocalDate()), NOW);
+        assertEquals(policy, added.studyPolicy());
+        assertEquals(policy, service.delete(added, 1).studyPolicy());
+        RecurringTask pending = new RecurringTask(1, "Pending", NOW.plusDays(1),
+                Optional.of(NOW.plusDays(1).toLocalDate()), 30, Optional.empty());
+        Snapshot unprocessed = new Snapshot(List.of(), List.of(), 1, 1, source.studyHours(), List.of(pending), 2,
+                policy);
+        Snapshot generated = service.materialize(unprocessed, NOW);
+        assertEquals(policy, generated.studyPolicy());
+        assertEquals(1, generated.tasks().size());
+        assertSame(generated, service.materialize(generated, NOW));
+    }
+    // @@author
 
     @Test
     void materialize_ties_assignsChronologicalThenNumericTemplateIds() {

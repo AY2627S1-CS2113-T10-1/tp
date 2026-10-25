@@ -21,8 +21,6 @@ import scheduleflow.task.TaskEdit;
  * Parses the complete case-sensitive command grammar without inspecting application state.
  */
 public final class CommandParser {
-    // TODO(Printing): implement issue #55 settings commands after agreeing on set/show/reset grammar.
-    // Transport integer minutes; StudyPolicy owns positive half-hour duration validation.
     /**
      * Records recognition and syntax-checking stages without logging raw command text.
      */
@@ -31,6 +29,11 @@ public final class CommandParser {
     private static final String HELP_USAGE = "Type help to see available commands";
     private static final String TASK_ADD_USAGE = "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES";
     private static final String TASK_DELETE_USAGE = "task delete TNUMBER";
+    // @@author ernestgoh-god
+    private static final String TASK_LIST_USAGE = "task list OR task list completed";
+    private static final String TASK_COMPLETE_USAGE = "task complete TNUMBER";
+    private static final String POLICY_USAGE = "policy set max/MINUTES break/MINUTES OR policy show OR policy reset";
+    // @@author ka-how
     // @@author nickpatt
     private static final String TASK_EDIT_USAGE = "task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]";
     private static final String TASK_RECUR_USAGE = "task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES"
@@ -83,6 +86,10 @@ public final class CommandParser {
     private static final DateTimeFormatter HOURS_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT)
             .withResolverStyle(ResolverStyle.STRICT);
     private static final String POSITIVE_INT_TOKEN = "[1-9][0-9]*";
+    // @@author ernestgoh-god
+    private static final Pattern POLICY_SET_PATTERN = Pattern.compile(
+            "policy +set +max/(?<max>0|" + POSITIVE_INT_TOKEN + ") +break/(?<break>0|" + POSITIVE_INT_TOKEN + ")");
+    // @@author ka-how
 
     /**
      * Matches name text while excluding slash so extra prefixes cannot be swallowed into a multiword name.
@@ -107,6 +114,10 @@ public final class CommandParser {
                     + DATE_RANGE_PATTERN);
     private static final Pattern TASK_DELETE_PATTERN = Pattern.compile(
             "task +delete +T(?<id>" + POSITIVE_INT_TOKEN + ")");
+    // @@author ernestgoh-god
+    private static final Pattern TASK_COMPLETE_PATTERN = Pattern.compile(
+            "task +complete +T(?<id>" + POSITIVE_INT_TOKEN + ")");
+    // @@author ka-how
     // @@author nickpatt
     private static final Pattern TASK_EDIT_PATTERN = Pattern.compile(
             "task +edit +T(?<id>" + POSITIVE_INT_TOKEN + ")"
@@ -254,7 +265,12 @@ public final class CommandParser {
             Command result = switch (command) {
                 case "help" -> parseNoArguments(input, command, new Command.Help());
                 case "task add" -> parseAddTask(input);
-                case "task list" -> parseNoArguments(input, command, new Command.ListTasks());
+                // @@author ernestgoh-god
+                case "task list" -> parseTaskList(input);
+                case "task complete" -> new Command.CompleteTask(Integer.parseInt(
+                        match(TASK_COMPLETE_PATTERN, input, usage).group("id")));
+                case "policy" -> parsePolicy(input);
+                // @@author ka-how
                 case "task delete" -> new Command.DeleteTask(Integer.parseInt(
                         match(TASK_DELETE_PATTERN, input, usage).group("id")));
                 // @@author nickpatt
@@ -313,6 +329,11 @@ public final class CommandParser {
         return switch (command) {
             case "task add" -> TASK_ADD_USAGE;
             case "task delete" -> TASK_DELETE_USAGE;
+            // @@author ernestgoh-god
+            case "task list" -> TASK_LIST_USAGE;
+            case "task complete" -> TASK_COMPLETE_USAGE;
+            case "policy" -> POLICY_USAGE;
+            // @@author ka-how
             // @@author nickpatt
             case "task edit" -> TASK_EDIT_USAGE;
             case "task recur" -> TASK_RECUR_USAGE;
@@ -332,7 +353,7 @@ public final class CommandParser {
             case "commitment delete" -> COMMITMENT_DELETE_USAGE;
             case "schedule" -> SCHEDULE_USAGE;
             case "hours" -> HOURS_USAGE;
-            case "help", "task list", "commitment list", "plan", "exit" -> command;
+            case "help", "commitment list", "plan", "exit" -> command;
             default -> HELP_USAGE;
         };
     }
@@ -346,6 +367,34 @@ public final class CommandParser {
         }
         return result;
     }
+
+    // @@author ernestgoh-god
+    /** Selects the existing full list or completed-only view without accepting other trailing words. */
+    private Command parseTaskList(String input) throws ParseException {
+        String normalized = input.replaceAll(" +", " ");
+        if (normalized.equals("task list")) {
+            return new Command.ListTasks();
+        }
+        if (normalized.equals("task list completed")) {
+            return new Command.ListCompletedTasks();
+        }
+        throw new ParseException("Invalid command format or missing fields", TASK_LIST_USAGE);
+    }
+
+    /** Parses settings without allocating a policy, reading saved data or changing application state. */
+    private Command parsePolicy(String input) throws ParseException {
+        String normalized = input.replaceAll(" +", " ");
+        if (normalized.equals("policy show")) {
+            return new Command.ShowStudyPolicy();
+        }
+        if (normalized.equals("policy reset")) {
+            return new Command.ResetStudyPolicy();
+        }
+        Matcher fields = match(POLICY_SET_PATTERN, input, POLICY_USAGE);
+        return new Command.SetStudyPolicy(Integer.parseInt(fields.group("max")),
+                Integer.parseInt(fields.group("break")));
+    }
+    // @@author ka-how
 
     /**
      * Extracts task fields after a complete grammar match, leaving business rules to the service.

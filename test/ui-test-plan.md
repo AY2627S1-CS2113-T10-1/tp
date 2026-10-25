@@ -13,7 +13,7 @@ exact output, invalid values, plan invalidation, replanning and saved data after
 two restarts. Save failure is covered by an isolated dispatcher fake because
 process-level fault injection is unavailable.
 
-All twenty-four maintained process scenarios are active. They exercise the packaged
+All twenty-seven maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -112,8 +112,9 @@ Task edit, deadline clear/absence, progress/session percentages, revised remaini
 completion and reopening APIs have deterministic JUnit coverage. The two progress
 forms have exact renderer output, dispatcher transaction tests and UI-030
 acceptance. Changed candidates save once before live publication; zero-credit
-no-ops preserve the plan without saving. Completion/reopening confirmations are
-unit-tested, but their console commands remain deferred.
+no-ops preserve the plan without saving. Completion is connected and exercised
+by UI-033; reopening confirmations are unit-tested but the #56 command remains
+deferred.
 
 Compatibility checks cover optional deadlines in existing add/list/remainder
 output, exact plan work totals (not rounded capacity), 45-minute work versus
@@ -141,6 +142,7 @@ optional/completed restored-data compatibility case and exact-minute restart che
 | UI-007 | Unicode save/restart and plan invalidation after deletion | Active |
 | UI-031 | Saved version 6 schedule survives restart and is invalidated by task deletion | Active |
 | UI-032 | Saved recurrence and exact work survive restart; progress invalidates the plan | Active |
+| UI-033 | Complete tasks, view only completed records, reject unknown IDs and retain completion across restart | Active |
 | UI-008 | Truncated saved record stops startup with status 1 | Active |
 | UI-009 | Restored overdue/out-of-horizon tasks, numeric listing, deletion and restart | Active |
 | UI-010 | Exhausted task and commitment ID sequences reject additions without overflow | Active |
@@ -253,7 +255,7 @@ Progress grammar, candidate transactions, exact work and Printing output are
 implemented. UI-030 uses a restored overdue task to avoid live-date assumptions.
 It verifies direct credit, floor rounding for a session, zero credit, rejection
 of excess credit and unknown IDs, invalidation after changes and persisted
-partial/completed estimates. Completion/reopening commands remain unwired.
+partial/completed estimates. Completion is connected through `task complete`; reopening (#56) remains unwired.
 Save failure and unchanged-plan identity are checked with fixed-clock dispatcher
 JUnit tests rather than process fault injection.
 
@@ -261,31 +263,23 @@ JUnit tests rather than process fault injection.
 | --- | --- | --- |
 | UI-030 | Minute/session progress, exact credit, save/restart and plan invalidation | Active |
 
-## Planned issue #55 console acceptance
+## Issue #55 console acceptance
 
-The continuous-work allocator and frozen BREAK projection have direct JUnit
-coverage in the planning package. They are enabled through the configured
-planner constructor only. The original console planner retains unrestricted
-allocation; existing active fixtures and their exact outputs remain applicable.
-The BREAK renderer prints supplied intervals and has direct JUnit coverage,
-including a configured planner/projection example and preserved adjacent rows.
-No #55 process case is ready to activate yet, and no speculative
-command grammar or output has been added to `ui-scenarios.json`.
-
-After Printing and Save integrate the documented contract, add and activate:
+UI-028 exercises policy set/show/reset, nonpositive and unaligned durations,
+unchanged settings and three saved sessions. UI-029 starts with a fixed version 8
+plan and checks frozen BREAK rows, policy restoration and invalidation after a
+changed setting. These process cases use deterministic text and isolated data.
+Fixed-clock application and planner tests verify that console settings actually
+control allocation, including exact break times and source-policy precedence.
+Existing configured-planner tests retain their cross-task, fixed-commitment,
+interrupted-break, deadline and overnight-rest coverage. Dispatcher fakes verify
+save failure preserves old settings/source/plan and no-ops make no save call.
 
 | ID | Coverage | Status |
 | --- | --- | --- |
-| UI-028 | Set/show/reset policy, invalid values, save/restart and plan invalidation/rollback | Planned; grammar, settings persistence and confirmations pending |
-| UI-029 | Cross-task limits, commitments below/at/2x/3x limit, fixed breaks and BREAK rows | Planned; configured console planner pending |
-| UI-024 | Set/show/reset policy, invalid values, save/restart and plan invalidation/rollback | Planned; grammar, settings persistence and confirmations pending |
-| UI-025 | Cross-task limits, commitments below/at/2x/3x limit, fixed breaks and BREAK rows | Planned; configured console planner pending |
+| UI-028 | Set/show/reset policy, invalid values, no-ops and saved restarts | Active |
+| UI-029 | Frozen policy schedule, BREAK rows, restart and policy-change invalidation | Active |
 
-Use fixed-clock dispatcher JUnit tests for exact schedule times. Packaged
-acceptance must keep isolated saved data and deterministic output; an expected
-stub exception must never count as acceptance. Planner coverage includes
-partial-rest interruption, natural rest before the cutoff, overnight rest,
-deadline remainders and conservation of source work estimates.
 
 ## Fixed-clock acceptance and remaining checks
 
@@ -319,3 +313,11 @@ forced flushing from the committed Save module. These fixtures use the actual
 committed codec (plain names last and full weekday names). Printing preserves
 that module; contract-format interoperability remains a Save-owner handoff.
 See the Developer Guide for the exact differences.
+
+## Issues #52 and #65 console acceptance
+
+UI-033 starts with an overdue saved task, verifies an empty completed view,
+rejects an unknown completion ID, completes the task, lists it, regenerates an
+empty plan and repeats completion. Restart retains the zero-work record.
+Deterministic dispatcher tests verify the no-op preserves plan identity and
+injected save failure preserves the old disk/source/plan before retry.

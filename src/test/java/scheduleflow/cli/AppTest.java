@@ -150,6 +150,36 @@ class AppTest {
 
     // @@author ernestgoh-god
     @Test
+    void run_policySetPlanAndRestart_enforcesBreaksAndResetsWithoutLosingTasks() throws Exception {
+        Path file = directory.resolve("data/scheduleflow.txt");
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        storage.save(new Snapshot(List.of(new Task(1, "Work", NOW.withHour(12), 180)), List.of(), 2, 1));
+        Result first = run("policy set max/60 break/30\nplan\nschedule today\nexit\n", storage);
+        assertEquals(0, first.status());
+        assertTrue(first.output().contains("09:00 - 09:30 | [BREAK]"));
+        assertTrue(first.output().contains("10:30 - 11:00 | [BREAK]"));
+        Snapshot configured = storage.load();
+        Plan savedPlan = storage.loadPlan(configured).orElseThrow();
+        assertEquals(3, savedPlan.sessions().size());
+        assertTrue(Files.readString(file).startsWith("SCHEDULEFLOW|8\n"));
+        byte[] bytes = Files.readAllBytes(file);
+
+        Result restart = run("policy show\nschedule today\nexit\n", new FileStorage(file, new StateCodec()));
+        assertEquals(0, restart.status());
+        assertTrue(restart.output().contains("Study policy: Maximum continuous work: 60 min | Required break: 30 min"));
+        assertTrue(restart.output().contains("09:00 - 09:30 | [BREAK]"));
+        assertArrayEquals(bytes, Files.readAllBytes(file));
+        assertEquals(savedPlan, storage.loadPlan(configured).orElseThrow());
+
+        assertEquals(0, run("policy reset\nexit\n", storage).status());
+        Snapshot reset = storage.load();
+        assertTrue(reset.studyPolicy().isEmpty());
+        assertEquals(configured.tasks(), reset.tasks());
+        assertTrue(storage.loadPlan(reset).isEmpty());
+        assertTrue(Files.readString(file).startsWith("SCHEDULEFLOW|2\n"));
+    }
+
+    @Test
     void run_generatedScheduleAfterRestart_displaysIdenticalFrozenOutput() throws Exception {
         Path file = directory.resolve("data/scheduleflow.txt");
         Result first = run(ADD_TASK + "\nplan\nschedule today\nexit\n", new FileStorage(file, new StateCodec()));

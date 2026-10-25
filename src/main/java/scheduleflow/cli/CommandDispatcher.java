@@ -8,8 +8,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import scheduleflow.common.ValidationException;
 import scheduleflow.commitment.CommitmentService;
+import scheduleflow.common.ValidationException;
 import scheduleflow.model.Commitment;
 import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
@@ -19,6 +19,7 @@ import scheduleflow.model.Task;
 import scheduleflow.planning.Plan;
 import scheduleflow.planning.Planner;
 import scheduleflow.planning.ScheduleService;
+import scheduleflow.planning.StudyPolicy;
 import scheduleflow.storage.Storage;
 import scheduleflow.storage.StorageException;
 import scheduleflow.task.RecurringTaskService;
@@ -28,8 +29,6 @@ import scheduleflow.task.TaskService;
  * Routes parsed commands and owns the candidate, save, commit, response transaction order.
  */
 public final class CommandDispatcher {
-    // TODO(Printing): implement issue #55 settings transactions and construct the planner with StudyPolicy.
-    // Save settings before publication/invalidation; keep the old settings and plan on save failure.
     /**
      * Records command stages and save boundaries without including record names.
      */
@@ -124,6 +123,15 @@ public final class CommandDispatcher {
                     state.snapshot().studyHours().forTarget(hours.target()));
             case Command.AddTask add -> addTask(add, state, now);
             case Command.ListTasks ignored -> renderer.tasks(tasks.list(state.snapshot()));
+            // @@author ernestgoh-god
+            case Command.ListCompletedTasks ignored -> renderer.completedTasks(tasks.list(state.snapshot()).stream()
+                    .filter(task -> task.remainingMinutes() == 0).toList());
+            case Command.CompleteTask complete -> completeTask(complete.id(), state);
+            case Command.ShowStudyPolicy ignored -> renderer.studyPolicy(state.snapshot().studyPolicy());
+            case Command.SetStudyPolicy settings -> changePolicy(Optional.of(
+                    new StudyPolicy(settings.maxContinuousMinutes(), settings.breakMinutes())), state);
+            case Command.ResetStudyPolicy ignored -> changePolicy(Optional.empty(), state);
+            // @@author ka-how
             case Command.DeleteTask delete -> deleteTask(delete.id(), state);
             // @@author nickpatt
             case Command.EditTask edit -> editTask(edit, state, now);
@@ -193,6 +201,33 @@ public final class CommandDispatcher {
         saveAndCommit(candidate, state);
         return renderer.taskDeleted(removed);
     }
+
+    // @@author ernestgoh-god
+    /** Saves changed completion before publication; repeated completion preserves disk and the current plan. */
+    private String completeTask(int id, AppState state) throws StorageException {
+        LOGGER.log(Level.FINE, "Preparing task completion");
+        Snapshot original = state.snapshot();
+        Snapshot candidate = tasks.complete(original, id);
+        Task completed = candidate.tasks().stream().filter(task -> task.id() == id).findFirst().orElseThrow();
+        String output = renderer.taskCompleted(completed);
+        if (candidate != original) {
+            saveAndCommit(candidate, state);
+        }
+        return output;
+    }
+
+    /** Saves a changed policy before publication and plan invalidation; normalized no-ops preserve the plan. */
+    private String changePolicy(Optional<StudyPolicy> policy, AppState state) throws StorageException {
+        LOGGER.log(Level.FINE, "Preparing study policy change");
+        Snapshot candidate = state.snapshot().withStudyPolicy(policy);
+        boolean changed = candidate != state.snapshot();
+        String output = renderer.studyPolicyUpdated(policy, changed);
+        if (changed) {
+            saveAndCommit(candidate, state);
+        }
+        return output;
+    }
+    // @@author ka-how
 
     // @@author nickpatt
     /** Saves changed details before publication; normalized no-ops preserve both disk and current plan. */

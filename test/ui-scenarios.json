@@ -2,6 +2,228 @@
   "version": 1,
   "cases": [
     {
+      "id": "UI-028",
+      "aim": "Study policy settings validate, retain no-ops and survive set/reset restarts",
+      "status": "active",
+      "setup": "Empty isolated store; legacy unrestricted defaults",
+      "sessions": [
+        {
+          "startup": "",
+          "steps": [
+            {
+              "input": "policy show",
+              "output": "Study policy: unrestricted (no session limit or required break)."
+            },
+            {
+              "input": "policy set max/60 break/30",
+              "output": "Study policy: Maximum continuous work: 60 min | Required break: 30 min\nSaved study policy. Run plan to regenerate."
+            },
+            {
+              "input": "plan",
+              "output": "No tasks to schedule."
+            },
+            {
+              "input": "policy set max/60 break/30",
+              "output": "Study policy: Maximum continuous work: 60 min | Required break: 30 min\nStudy policy unchanged."
+            },
+            {
+              "input": "policy set max/45 break/30",
+              "output": "Error: Study limit and break duration must be positive multiples of 30 minutes."
+            },
+            {
+              "input": "policy show",
+              "output": "Study policy: Maximum continuous work: 60 min | Required break: 30 min"
+            },
+            {
+              "input": "exit",
+              "output": "Goodbye for now!",
+              "exitCode": 0
+            }
+          ]
+        },
+        {
+          "startup": "",
+          "steps": [
+            {
+              "input": "policy show",
+              "output": "Study policy: Maximum continuous work: 60 min | Required break: 30 min"
+            },
+            {
+              "input": "policy reset",
+              "output": "Study policy: unrestricted (no session limit or required break).\nSaved study policy. Run plan to regenerate."
+            },
+            {
+              "input": "policy reset",
+              "output": "Study policy: unrestricted (no session limit or required break).\nStudy policy unchanged."
+            },
+            {
+              "input": "policy set max/90 break/0",
+              "output": "Error: Study limit and break duration must be positive multiples of 30 minutes."
+            },
+            {
+              "input": "policy show",
+              "output": "Study policy: unrestricted (no session limit or required break)."
+            },
+            {
+              "input": "exit",
+              "output": "Goodbye for now!",
+              "exitCode": 0
+            }
+          ]
+        },
+        {
+          "startup": "",
+          "steps": [
+            {
+              "input": "policy show",
+              "output": "Study policy: unrestricted (no session limit or required break)."
+            },
+            {
+              "input": "exit",
+              "output": "Goodbye for now!",
+              "exitCode": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "UI-029",
+      "aim": "A policy-bearing saved plan restores exact BREAK rows and clears only after a changed policy",
+      "status": "active",
+      "setup": "Fixed version 8 plan; real allocation under settings is covered by fixed-clock JUnit",
+      "files": {
+        "data/scheduleflow.txt": "SCHEDULEFLOW|8\nNEXT|2|1|1\nTASK2|1|2026-10-24T12:00|180|NORMAL|Work\nPOLICY|60|30\nPLAN|2026-10-24T07:00|2027-10-24T00:00|3|0|2\nSESSION|1|2026-10-24T08:00|2026-10-24T09:00|60\nSESSION|1|2026-10-24T09:30|2026-10-24T10:30|60\nSESSION|1|2026-10-24T11:00|2026-10-24T12:00|60\nBREAK|2026-10-24T09:00|2026-10-24T09:30\nBREAK|2026-10-24T10:30|2026-10-24T11:00\n"
+      },
+      "sessions": [
+        {
+          "startup": "",
+          "steps": [
+            {
+              "input": "policy show",
+              "output": "Study policy: Maximum continuous work: 60 min | Required break: 30 min"
+            },
+            {
+              "input": "schedule 2026-10-24",
+              "output": "=== Schedule for Saturday (2026-10-24) ===\nGenerated at: 2026-10-24 07:00\n08:00 - 09:00 | [TASK] T1: Work (60 min)\n09:00 - 09:30 | [BREAK]\n09:30 - 10:30 | [TASK] T1: Work (60 min)\n10:30 - 11:00 | [BREAK]\n11:00 - 12:00 | [TASK] T1: Work (60 min)\n12:00 - 22:00 | [FREE]"
+            },
+            {
+              "input": "exit",
+              "output": "Goodbye for now!",
+              "exitCode": 0
+            }
+          ]
+        },
+        {
+          "startup": "",
+          "steps": [
+            {
+              "input": "schedule 2026-10-24",
+              "output": "=== Schedule for Saturday (2026-10-24) ===\nGenerated at: 2026-10-24 07:00\n08:00 - 09:00 | [TASK] T1: Work (60 min)\n09:00 - 09:30 | [BREAK]\n09:30 - 10:30 | [TASK] T1: Work (60 min)\n10:30 - 11:00 | [BREAK]\n11:00 - 12:00 | [TASK] T1: Work (60 min)\n12:00 - 22:00 | [FREE]"
+            },
+            {
+              "input": "policy set max/90 break/30",
+              "output": "Study policy: Maximum continuous work: 90 min | Required break: 30 min\nSaved study policy. Run plan to regenerate."
+            },
+            {
+              "input": "schedule 2026-10-24",
+              "output": "No current plan. Run plan to generate one."
+            },
+            {
+              "input": "exit",
+              "output": "Goodbye for now!",
+              "exitCode": 0
+            }
+          ]
+        },
+        {
+          "startup": "",
+          "steps": [
+            {
+              "input": "policy show",
+              "output": "Study policy: Maximum continuous work: 90 min | Required break: 30 min"
+            },
+            {
+              "input": "schedule 2026-10-24",
+              "output": "No current plan. Run plan to generate one."
+            },
+            {
+              "input": "exit",
+              "output": "Goodbye for now!",
+              "exitCode": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "UI-033",
+      "aim": "Complete a task and view retained completed records across restart",
+      "status": "active",
+      "setup": "Legacy overdue task; isolated data and deterministic outputs",
+      "files": {
+        "data/scheduleflow.txt": "SCHEDULEFLOW|1\nNEXT|3|1\nTASK|2|2000-01-01T09:00|60|Draft\n"
+      },
+      "sessions": [
+        {
+          "startup": "",
+          "steps": [
+            {
+              "input": "task list completed",
+              "output": "No completed tasks found."
+            },
+            {
+              "input": "task complete T9",
+              "output": "Error: Unknown task ID: T9"
+            },
+            {
+              "input": "task complete T2",
+              "output": "Completed T2: Draft"
+            },
+            {
+              "input": "task list completed",
+              "output": "=== Completed Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 0 min | 2000-01-01 09:00\nTotal: 1 task(s)."
+            },
+            {
+              "input": "plan",
+              "output": "Study plan generated successfully! Type 'schedule today' to view your sessions."
+            },
+            {
+              "input": "task complete T2",
+              "output": "Completed T2: Draft"
+            },
+            {
+              "input": "exit",
+              "output": "Goodbye for now!",
+              "exitCode": 0
+            }
+          ]
+        },
+        {
+          "startup": "",
+          "steps": [
+            {
+              "input": "task list completed",
+              "output": "=== Completed Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 0 min | 2000-01-01 09:00\nTotal: 1 task(s)."
+            },
+            {
+              "input": "task remaining T2 remaining/30",
+              "output": "Error: Reopen the completed task before revising remaining work."
+            },
+            {
+              "input": "task list completed",
+              "output": "=== Completed Tasks ===\nID | Name | Duration | Deadline\nT2 | Draft | 0 min | 2000-01-01 09:00\nTotal: 1 task(s)."
+            },
+            {
+              "input": "exit",
+              "output": "Goodbye for now!",
+              "exitCode": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "UI-032",
       "aim": "Saved recurrence, exact work and reserved breaks survive restart; progress invalidates only the plan",
       "status": "active",
@@ -448,7 +670,7 @@
         { "input": "task add n/A due/2026-02-30 0900 d/30", "output": "Error: Invalid date or time\nExpected: task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES" },
         { "input": "task add n/A n/B due/2026-10-06 0900 d/30", "output": "Error: Invalid command format or missing fields\nExpected: task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES" },
         { "input": "task delete 1", "output": "Error: Invalid command format or missing fields\nExpected: task delete TNUMBER" },
-        { "input": "task list extra", "output": "Error: This command accepts no arguments\nExpected: task list" },
+        { "input": "task list extra", "output": "Error: Invalid command format or missing fields\nExpected: task list OR task list completed" },
         { "input": "commitment add n/A day/mon start/1000 d/30", "output": "Error: Invalid command format or missing fields\nExpected: commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD] OR commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES" },
         { "input": "schedule 2026-02-30", "output": "Error: Invalid date or time\nExpected: schedule today OR schedule YYYY-MM-DD" },
         { "input": "exit extra", "output": "Error: This command accepts no arguments\nExpected: exit" },

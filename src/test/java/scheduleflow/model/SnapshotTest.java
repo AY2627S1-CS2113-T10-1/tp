@@ -1,6 +1,7 @@
 package scheduleflow.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -10,13 +11,33 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import scheduleflow.common.ValidationException;
+import scheduleflow.planning.StudyPolicy;
 
 /**
  * Verifies persisted identity integrity and immutable ownership of lists.
  */
 class SnapshotTest {
+    // @@author ernestgoh-god
+    @Test
+    void withStudyPolicy_legacyDefaultAndCopies_preserveSettingsAndNoopIdentity() {
+        Snapshot original = Snapshot.empty();
+        assertTrue(original.studyPolicy().isEmpty());
+        Optional<StudyPolicy> policy = Optional.of(new StudyPolicy(60, 30));
+        Snapshot configured = original.withStudyPolicy(policy);
+        assertSame(configured, configured.withStudyPolicy(policy));
+        assertEquals(policy, configured.withTasks(List.of(task(1)), 2).studyPolicy());
+        assertEquals(policy, configured.withCommitments(List.of(commitment(1, 10)), 2).studyPolicy());
+        assertEquals(policy, configured.withStudyHours(original.studyHours()).studyPolicy());
+        assertEquals(original, configured.withStudyPolicy(Optional.empty()));
+        assertThrows(NullPointerException.class, () -> original.withStudyPolicy(null));
+        assertThrows(NullPointerException.class, () -> new Snapshot(List.of(), List.of(), 1, 1,
+                original.studyHours(), List.of(), 1, null));
+    }
+    // @@author
+
     @Test
     void empty_initialCountersAndLists() {
         Snapshot snapshot = Snapshot.empty();

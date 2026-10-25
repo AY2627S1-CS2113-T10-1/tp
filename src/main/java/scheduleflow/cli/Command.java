@@ -13,6 +13,20 @@ import scheduleflow.task.TaskEdit;
  * Defines the complete command vocabulary as immutable transport values.
  */
 public sealed interface Command {
+    // @@author ernestgoh-god
+    /** Carries policy durations while leaving half-hour validation to StudyPolicy. */
+    record SetStudyPolicy(int maxContinuousMinutes, int breakMinutes) implements Command {
+    }
+
+    /** Requests the currently stored policy or unrestricted default. */
+    record ShowStudyPolicy() implements Command {
+    }
+
+    /** Requests unrestricted planning without changing any other records. */
+    record ResetStudyPolicy() implements Command {
+    }
+    // @@author ka-how
+
     // @@author GabrielYuSP
     /** Carries an inclusive start and exclusive end for a continuous unavailable interval. */
     record AddContinuousBlock(String name, LocalDateTime start, LocalDateTime end) implements Command {
@@ -92,6 +106,16 @@ public sealed interface Command {
      */
     record ListTasks() implements Command {
     }
+
+    // @@author ernestgoh-god
+    /** Requests retained tasks whose remaining work is zero. */
+    record ListCompletedTasks() implements Command {
+    }
+
+    /** Requests completion of an existing task without deleting its identity or metadata. */
+    record CompleteTask(int id) implements Command {
+    }
+    // @@author ka-how
 
     /**
      * Carries the numeric suffix of a task ID.
