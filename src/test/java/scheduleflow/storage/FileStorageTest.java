@@ -37,7 +37,6 @@ import scheduleflow.planning.Plan;
 import scheduleflow.planning.TimeRules;
 import scheduleflow.task.TaskService;
 
-// @@author ernestgoh-god
 /**
  * Demonstrates saving and restoring real files in isolated temporary folders.
  */
@@ -46,7 +45,6 @@ class FileStorageTest {
     @TempDir
     private Path directory;
 
-    // @@author nickpatt
     @Test
     void saveAndLoad_recurrence_preservesBytesAndDoesNotRecreateDeletedTemplates() throws Exception {
         LocalDateTime first = LocalDateTime.of(2026, 10, 26, 18, 0);
@@ -134,7 +132,6 @@ class FileStorageTest {
         assertEquals(5, completed.nextTaskId());
         assertEquals(2, completed.nextCommitmentId());
     }
-    // @@author ernestgoh-god
 
     @Test
     void savePlan_restartRestoresFrozenResultAndMutationRemovesIt() throws Exception {
@@ -481,4 +478,3 @@ class FileStorageTest {
         }
     }
 }
-// @@author

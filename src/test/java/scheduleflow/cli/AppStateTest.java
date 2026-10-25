@@ -1,4 +1,4 @@
-//@@author ka-how
+// @@author ka-how
 package scheduleflow.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -98,3 +98,4 @@ class AppStateTest {
         return new Plan(now, TimeRules.horizonEnd(now), snapshot, List.of(), List.of());
     }
 }
+// @@author

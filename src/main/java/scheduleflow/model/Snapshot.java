@@ -25,7 +25,6 @@ import scheduleflow.planning.StudyPolicy;
  */
 public record Snapshot(List<Task> tasks, List<Commitment> commitments, int nextTaskId, int nextCommitmentId,
         StudyHours studyHours, List<RecurringTask> recurringTasks, int nextRecurringTaskId,
-        // @@author ernestgoh-god
         Optional<StudyPolicy> studyPolicy) {
     /** Preserves existing callers and legacy data with unrestricted planning. */
     public Snapshot(List<Task> tasks, List<Commitment> commitments, int nextTaskId, int nextCommitmentId,
@@ -33,7 +32,6 @@ public record Snapshot(List<Task> tasks, List<Commitment> commitments, int nextT
         this(tasks, commitments, nextTaskId, nextCommitmentId, studyHours, recurringTasks, nextRecurringTaskId,
                 Optional.empty());
     }
-    // @@author
     /** Retains the study-hours constructor with empty recurrence and its initial counter. */
     public Snapshot(List<Task> tasks, List<Commitment> commitments, int nextTaskId, int nextCommitmentId,
             StudyHours studyHours) {
@@ -54,9 +52,7 @@ public record Snapshot(List<Task> tasks, List<Commitment> commitments, int nextT
      */
     public Snapshot {
         Objects.requireNonNull(studyHours, "studyHours");
-        // @@author ernestgoh-god
         Objects.requireNonNull(studyPolicy, "studyPolicy");
-        // @@author
         if (tasks == null || commitments == null || recurringTasks == null || tasks.stream().anyMatch(Objects::isNull)
                 || commitments.stream().anyMatch(Objects::isNull)
                 || recurringTasks.stream().anyMatch(Objects::isNull)) {
@@ -74,28 +70,21 @@ public record Snapshot(List<Task> tasks, List<Commitment> commitments, int nextT
     /** Returns a candidate changing only study hours. */
     public Snapshot withStudyHours(StudyHours hours) {
         return new Snapshot(tasks, commitments, nextTaskId, nextCommitmentId, hours,
-                // @@author ernestgoh-god
                 recurringTasks, nextRecurringTaskId, studyPolicy);
-        // @@author
     }
 
     /** Returns a task candidate preserving settings, templates and recurrence history. */
     public Snapshot withTasks(List<Task> replacements, int nextId) {
         return new Snapshot(replacements, commitments, nextId, nextCommitmentId, studyHours,
-                // @@author ernestgoh-god
                 recurringTasks, nextRecurringTaskId, studyPolicy);
-        // @@author
     }
 
     /** Returns a commitment candidate preserving settings and recurrence history. */
     public Snapshot withCommitments(List<Commitment> replacements, int nextId) {
-        // @@author ernestgoh-god
         return new Snapshot(tasks, replacements, nextTaskId, nextId, studyHours, recurringTasks,
                 nextRecurringTaskId, studyPolicy);
-        // @@author
     }
 
-    // @@author ernestgoh-god
     /** Returns a policy-only candidate, or this snapshot when the requested setting is unchanged. */
     public Snapshot withStudyPolicy(Optional<StudyPolicy> policy) {
         Objects.requireNonNull(policy, "policy");
@@ -105,7 +94,6 @@ public record Snapshot(List<Task> tasks, List<Commitment> commitments, int nextT
         return new Snapshot(tasks, commitments, nextTaskId, nextCommitmentId, studyHours, recurringTasks,
                 nextRecurringTaskId, policy);
     }
-    // @@author
 
     /** Validates logical uniqueness and cursor coverage, allowing retained provenance after template deletion. */
     private static void validateRecurrence(List<Task> tasks, List<RecurringTask> templates, int nextId) {

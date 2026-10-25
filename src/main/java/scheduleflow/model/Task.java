@@ -8,7 +8,6 @@ import java.util.logging.Logger;
 import scheduleflow.common.InputRules;
 import scheduleflow.common.ValidationException;
 
-// @@author nickpatt
 /**
  * Stores exact remaining work, independent of any generated plan; zero means retained completion.
  * A past deadline remains structurally valid so saved tasks can be restored.
@@ -26,7 +25,6 @@ public record Task(int id, String name, Optional<LocalDateTime> deadline, int re
      * Records opt-in structural validation stages without task values or exception payloads.
      */
     private static final Logger LOGGER = Logger.getLogger(Task.class.getName());
-    // @@author
 
     /** Creates an ordinary task with an optional deadline and explicit priority. */
     public Task(int id, String name, Optional<LocalDateTime> deadline, int remainingMinutes,
@@ -48,15 +46,12 @@ public record Task(int id, String name, Optional<LocalDateTime> deadline, int re
      */
     public Task {
         Objects.requireNonNull(occurrence, "occurrence");
-        // @@author nickpatt
         LOGGER.log(Level.FINE, "Starting task structural validation");
         try {
-            // @@author
             if (id <= 0) {
                 throw new ValidationException("Task ID must be positive.");
             }
             name = InputRules.normalizeName(name);
-            // @@author nickpatt
             LOGGER.log(Level.FINE, "Task identity and name validated; checking deadline structure");
             Objects.requireNonNull(deadline, "deadline");
             Objects.requireNonNull(priority, "priority");
@@ -71,10 +66,8 @@ public record Task(int id, String name, Optional<LocalDateTime> deadline, int re
             LOGGER.log(Level.FINE, "Task structural validation rejected");
             throw exception;
         }
-        // @@author
     }
 
-    // @@author nickpatt
     /** Preserves the concrete-deadline constructor and its rejection of null deadlines. */
     public Task(int id, String name, LocalDateTime deadline, int remainingMinutes) {
         this(id, name, Optional.of(requireDeadline(deadline)), remainingMinutes, TaskPriority.NORMAL);
@@ -92,7 +85,6 @@ public record Task(int id, String name, Optional<LocalDateTime> deadline, int re
         }
         return deadline;
     }
-    // @@author
 
     /**
      * Returns the stable task identifier with no zero padding.
@@ -100,9 +92,7 @@ public record Task(int id, String name, Optional<LocalDateTime> deadline, int re
      * @return {@code T} followed by this task's numeric ID, independent of list position
      */
     public String displayId() {
-        // @@author nickpatt
         assert id > 0 : "A stored task must retain a positive ID";
-        // @@author
         return "T" + id;
     }
 }

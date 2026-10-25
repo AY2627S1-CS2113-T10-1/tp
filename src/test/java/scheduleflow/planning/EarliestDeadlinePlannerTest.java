@@ -39,7 +39,6 @@ class EarliestDeadlinePlannerTest {
     private static final int STUDY_MINUTES_PER_DAY = 14 * 60;
     private final EarliestDeadlinePlanner planner = new EarliestDeadlinePlanner();
 
-    // @@author ernestgoh-god
     @Test
     void generate_storedPolicy_enforcesBreaksAndOverridesConstructorFallback() {
         Snapshot base = new Snapshot(List.of(new Task(1, "Work", MONDAY.atTime(12, 0), 180)), List.of(), 2, 1);
@@ -56,9 +55,7 @@ class EarliestDeadlinePlannerTest {
         assertTrue(planner.generate(base, EARLY_MORNING).breaks().isEmpty());
         assertEquals(1, planner.generate(base, EARLY_MORNING).sessions().size());
     }
-    // @@author
 
-    // @@author GabrielYuSP
     @Test
     void generate_customHours_respectsDatePriorityRecurrenceAndCommitments() {
         Snapshot initial = snapshot(List.of(task(1, "Draft", MONDAY.plusDays(8).atStartOfDay(), 180)),
@@ -91,7 +88,6 @@ class EarliestDeadlinePlannerTest {
         assertTrue(planner.generate(source, MONDAY.atTime(15, 0)).sessions().isEmpty());
     }
 
-    // @@author Darren50
     @Test
     void generate_oneTimeCommitment_blocksOnlyItsExactDate() {
         Commitment meeting = new Commitment(1, "Meeting", DayOfWeek.MONDAY, LocalTime.of(8, 0), 90,
@@ -107,7 +103,6 @@ class EarliestDeadlinePlannerTest {
                 nextPlan.sessions());
     }
 
-    // @@author
     @Test
     void generate_emptySnapshot_returnsCompletePlanWithSource() {
         Commitment commitment = new Commitment(1, "Lecture", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60);
@@ -272,7 +267,6 @@ class EarliestDeadlinePlannerTest {
         assertEquals(availableMinutes + 30, source.tasks().getFirst().remainingMinutes());
     }
 
-    // @@author GabrielYuSP
     @Test
     void generate_unavailableStudyPeriod_replansAroundBlockAndDeletionRestoresTime() {
         Snapshot original = snapshot(List.of(task(1, "Draft", MONDAY.atTime(12, 0), 90)), List.of());
@@ -411,9 +405,7 @@ class EarliestDeadlinePlannerTest {
             assertEquals(date.atTime(17, 0), busy.getFirst().end());
         }
     }
-    // @@author
 
-    // @@author nickpatt
     @Test
     void generate_lifecycleCandidates_consumesRevisedWorkWithoutChangingFrozenPlan() {
         TaskService tasks = new TaskService();
@@ -451,7 +443,6 @@ class EarliestDeadlinePlannerTest {
         assertSame(partialSource.studyHours(), partial.source().studyHours());
     }
 
-    // @@author ernestgoh-god
     @Test
     void generate_policyWithExactWork_keepsPaddingAndBreaksSeparateFromCreditedMinutes() {
         Task active = task(1, "Draft", MONDAY.atTime(10, 0), 45);
@@ -465,7 +456,6 @@ class EarliestDeadlinePlannerTest {
         assertTrue(plan.unallocated().isEmpty());
         assertSame(source, plan.source());
     }
-    // @@author nickpatt
 
     @Test
     void generate_splitExactWork_onlyFinalSessionContainsPadding() {
@@ -516,7 +506,6 @@ class EarliestDeadlinePlannerTest {
         assertEquals(3L * 2147483670L,
                 allocatedCapacity + plan.unallocated().stream().mapToLong(UnallocatedWork::capacityMinutes).sum());
     }
-    // @@author
 
     @Test
     void generate_policy_splitsStudyAndReservesOnlyRequiredBreaks() {

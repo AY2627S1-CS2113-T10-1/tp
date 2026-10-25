@@ -1,4 +1,3 @@
-//@@author ka-how
 package scheduleflow.cli;
 
 import java.time.Clock;
@@ -63,10 +62,8 @@ public final class CommandDispatcher {
      */
     private final Clock clock;
 
-    // @@author nickpatt
     /** Materializes immutable weekly-task candidates using the same captured command time. */
     private final RecurringTaskService recurringTasks = new RecurringTaskService();
-    // @@author ka-how
 
     /**
      * Creates the CommandDispatcher dependencies without performing I/O.
@@ -107,14 +104,11 @@ public final class CommandDispatcher {
         LocalDateTime now = LocalDateTime.now(clock);
         LOGGER.log(Level.FINE, "Command time captured");
         String output = switch (command) {
-            // @@author GabrielYuSP
             // TODO(ernestgoh-god): implement both range routes with one save before publication and output.
             case Command.AddContinuousBlock ignored -> throw new UnsupportedOperationException(
                     "Continuous unavailable dispatch is not implemented yet.");
             case Command.AddDailyBlocks ignored -> throw new UnsupportedOperationException(
                     "Daily unavailable dispatch is not implemented yet.");
-            // @@author
-            // @@author ka-how
             case Command.Help ignored -> renderer.help();
             case Command.SetHours hours -> changeHours(hours.target(), state.snapshot().studyHours()
                     .withWindow(hours.target(), new StudyWindow(hours.start(), hours.end())), state);
@@ -123,7 +117,6 @@ public final class CommandDispatcher {
                     state.snapshot().studyHours().forTarget(hours.target()));
             case Command.AddTask add -> addTask(add, state, now);
             case Command.ListTasks ignored -> renderer.tasks(tasks.list(state.snapshot()));
-            // @@author ernestgoh-god
             case Command.ListCompletedTasks ignored -> renderer.completedTasks(tasks.list(state.snapshot()).stream()
                     .filter(task -> task.remainingMinutes() == 0).toList());
             case Command.CompleteTask complete -> completeTask(complete.id(), state);
@@ -131,24 +124,18 @@ public final class CommandDispatcher {
             case Command.SetStudyPolicy settings -> changePolicy(Optional.of(
                     new StudyPolicy(settings.maxContinuousMinutes(), settings.breakMinutes())), state);
             case Command.ResetStudyPolicy ignored -> changePolicy(Optional.empty(), state);
-            // @@author ka-how
             case Command.ReopenTask reopen -> reopenTask(reopen, state);
             case Command.DeleteTask delete -> deleteTask(delete.id(), state);
-            // @@author nickpatt
             case Command.EditTask edit -> editTask(edit, state, now);
             case Command.AddRecurringTask add -> addRecurringTask(add, state, now);
             case Command.ListRecurringTasks ignored -> renderer.recurringTasks(recurringTasks.list(state.snapshot()));
             case Command.DeleteRecurringTask delete -> deleteRecurringTask(delete.id(), state);
-            // @@author ernestgoh-god
             case Command.RecordTaskWork work -> recordTaskWork(work, state);
             case Command.RecordTaskSession session -> recordTaskSession(session, state);
             case Command.ReviseTaskRemaining revise -> reviseTaskRemaining(revise, state);
-            // @@author ka-how
             case Command.AddCommitment add -> addCommitment(add, state);
             case Command.EditCommitment edit -> editCommitment(edit, state);
-            // @@author
             case Command.SkipCommitment skip -> skipCommitment(skip, state);
-            // @@author ka-how
             case Command.ListCommitments ignored -> renderer.commitments(commitments.list(state.snapshot()));
             case Command.DeleteCommitment delete -> deleteCommitment(delete.id(), state);
             case Command.GeneratePlan ignored -> generatePlan(state, now);
@@ -161,7 +148,6 @@ public final class CommandDispatcher {
         return response;
     }
 
-    // @@author GabrielYuSP
     /** Saves hours before clearing a plan, preserving the live settings and plan if saving fails. */
     private String changeHours(String target, StudyHours hours, AppState state) throws StorageException {
         saveAndCommit(state.snapshot().withStudyHours(hours), state);
@@ -175,7 +161,6 @@ public final class CommandDispatcher {
         return renderer.hoursReset(target, hours);
     }
 
-    // @@author ka-how
     /**
      * Resolves the allocated ID from the validated candidate before saving and publishing it.
      */
@@ -222,7 +207,6 @@ public final class CommandDispatcher {
         return confirmation;
     }
 
-    // @@author ernestgoh-god
     /** Saves changed completion before publication; repeated completion preserves disk and the current plan. */
     private String completeTask(int id, AppState state) throws StorageException {
         LOGGER.log(Level.FINE, "Preparing task completion");
@@ -247,9 +231,7 @@ public final class CommandDispatcher {
         }
         return output;
     }
-    // @@author ka-how
 
-    // @@author nickpatt
     /** Saves changed details before publication; normalized no-ops preserve both disk and current plan. */
     private String editTask(Command.EditTask command, AppState state, LocalDateTime now) throws StorageException {
         Snapshot original = state.snapshot();
@@ -285,9 +267,7 @@ public final class CommandDispatcher {
         saveAndCommit(candidate, state);
         return confirmation;
     }
-    // @@author ka-how
 
-    // @@author ernestgoh-god
     /**
      * Prepares a whole-minute progress candidate without changing the live snapshot.
      *
@@ -376,7 +356,6 @@ public final class CommandDispatcher {
         }
         return confirmation;
     }
-    // @@author ka-how
 
     /**
      * Saves a validated weekly series before clearing the temporary plan or announcing success.
@@ -393,7 +372,6 @@ public final class CommandDispatcher {
         return renderer.commitmentAdded(added);
     }
 
-    //@@author Darren50
     /**
      * Saves the complete edit before publishing it, invalidating the plan or reporting success.
      */
@@ -416,7 +394,6 @@ public final class CommandDispatcher {
         saveAndCommit(candidate, state);
         return renderer.commitmentSkipped(updated, command.date());
     }
-    //@@author ka-how
 
     /**
      * Retains the validated original series so deletion output includes its stable ID and name.
@@ -459,21 +436,18 @@ public final class CommandDispatcher {
         LOGGER.log(Level.FINE, "Saved candidate committed");
     }
 
-    // @@author ernestgoh-god
     /**
      * Saves and replaces the frozen plan without changing stored task estimates.
      * A failed save leaves the current plan and saved file untouched.
      */
     private String generatePlan(AppState state, LocalDateTime now) throws StorageException {
         LOGGER.log(Level.FINE, "Generating frozen plan");
-        // @@author nickpatt
         Snapshot candidate = recurringTasks.materialize(state.snapshot(), now);
         Plan plan = Objects.requireNonNull(planner.generate(candidate, now), "generated plan");
         if (!plan.source().equals(candidate)) {
             throw new IllegalArgumentException("Generated plan must use the validated source snapshot.");
         }
         String output = renderer.plan(plan);
-        // @@author ernestgoh-god
         storage.savePlan(plan);
         if (candidate != state.snapshot()) {
             state.commit(candidate);
@@ -482,7 +456,6 @@ public final class CommandDispatcher {
         LOGGER.log(Level.FINE, "Saved plan published");
         return output;
     }
-    // @@author ka-how
 
     /**
      * Gives absent plans precedence over date-range validation and projects existing frozen plans.

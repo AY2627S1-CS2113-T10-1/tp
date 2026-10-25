@@ -1,4 +1,4 @@
-//@@author ka-how
+// @@author ka-how
 package scheduleflow.cli;
 
 import java.io.BufferedReader;
@@ -75,3 +75,4 @@ public final class ConsoleUi {
         LOGGER.log(Level.FINE, "Command response flushed");
     }
 }
+// @@author

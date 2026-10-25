@@ -13,7 +13,6 @@ import scheduleflow.common.ValidationException;
  */
 public record UnallocatedWork(int taskId, String taskName, Optional<LocalDateTime> deadline,
         int minutes, long capacityMinutes, UnallocatedReason reason) {
-    // @@author nickpatt
     /** Preserves concrete-deadline callers, rounding capacity without overflowing an int. */
     public UnallocatedWork(int taskId, String taskName, LocalDateTime deadline,
             int minutes, UnallocatedReason reason) {
@@ -25,7 +24,6 @@ public record UnallocatedWork(int taskId, String taskName, Optional<LocalDateTim
         }
     }
 
-    // @@author
     /**
      * Validates the remainder's own fields and normalizes its task name.
      */
@@ -34,7 +32,6 @@ public record UnallocatedWork(int taskId, String taskName, Optional<LocalDateTim
             throw new ValidationException("Unallocated work requires a positive task ID and reason.");
         }
         taskName = InputRules.normalizeName(taskName);
-        // @@author nickpatt
         Objects.requireNonNull(deadline, "deadline");
         if (minutes <= 0 || capacityMinutes != ((long) minutes + TimeRules.SLOT_MINUTES - 1)
                 / TimeRules.SLOT_MINUTES * TimeRules.SLOT_MINUTES) {
@@ -47,6 +44,5 @@ public record UnallocatedWork(int taskId, String taskName, Optional<LocalDateTim
                 || deadline.get().getYear() < 1 || deadline.get().getYear() > 9999)) {
             throw new ValidationException("Unallocated deadline must have minute precision.");
         }
-        // @@author
     }
 }

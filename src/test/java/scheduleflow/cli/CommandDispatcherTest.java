@@ -1,4 +1,3 @@
-//@@author ka-how
 package scheduleflow.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -159,7 +158,6 @@ class CommandDispatcherTest {
         assertEquals(1, storage.saveCalls);
     }
 
-    // @@author ernestgoh-god
     @Test
     void execute_policyChanges_savesBeforePublicationAndPreservesEverythingOnFailureOrNoop() throws Exception {
         Snapshot original = populatedSnapshot().withStudyPolicy(Optional.of(new StudyPolicy(60, 30)));
@@ -218,9 +216,7 @@ class CommandDispatcherTest {
             assertEquals(source.studyPolicy(), storage.saved.studyPolicy(), command.toString());
         }
     }
-    // @@author ka-how
 
-    // @@author ernestgoh-god
     @Test
     void execute_completionRetryAndNoop_preservesMetadataAndPlanUntilSaved() throws Exception {
         Snapshot original = populatedSnapshot();
@@ -272,7 +268,6 @@ class CommandDispatcherTest {
         assertEquals(0, storage.saveCalls);
         assertEquals(0, storage.planSaveCalls);
     }
-    // @@author ka-how
 
     @Test
     void execute_taskEdit_subsetsSaveBeforePublicationAndRetryAtomically() throws Exception {
@@ -399,9 +394,7 @@ class CommandDispatcherTest {
             Plan prior = new EarliestDeadlinePlanner().generate(original, NOW);
             state.replacePlan(prior);
             FakeStorage storage = new FakeStorage(original);
-            // @@author ernestgoh-god
             storage.savedPlan = Optional.of(prior);
-            // @@author ka-how
             storage.beforeSave = () -> {
                 assertSame(original, state.snapshot());
                 assertSame(prior, state.currentPlan().orElseThrow());
@@ -412,25 +405,20 @@ class CommandDispatcherTest {
                 assertTrue(source.recurringTasks().getFirst().generatedThrough().isPresent());
                 return new EarliestDeadlinePlanner().generate(source, now);
             };
-            // @@author ernestgoh-god
             storage.beforePlanSave = storage.beforeSave;
-            // @@author ka-how
             CommandDispatcher dispatcher = new CommandDispatcher(new TaskService(), new CommitmentService(), storage,
                     planner, new ScheduleService(), renderer, CLOCK);
             storage.failSave = true;
             assertThrows(StorageException.class, () -> dispatcher.execute(new Command.GeneratePlan(), state));
             assertSame(original, state.snapshot());
             assertSame(prior, state.currentPlan().orElseThrow());
-            // @@author ernestgoh-god
             assertSame(original, storage.saved);
             assertEquals(Optional.of(prior), storage.savedPlan);
             Snapshot attempted = storage.attempted;
-            // @@author ka-how
             storage.failSave = false;
             dispatcher.execute(new Command.GeneratePlan(), state);
             assertSame(storage.saved, state.snapshot());
             assertSame(state.snapshot(), state.currentPlan().orElseThrow().source());
-            // @@author ernestgoh-god
             assertEquals(attempted, storage.saved);
             assertEquals(0, storage.saveCalls);
             assertEquals(2, storage.planSaveCalls);
@@ -439,7 +427,6 @@ class CommandDispatcherTest {
             dispatcher.execute(new Command.GeneratePlan(), state);
             assertEquals(3, storage.planSaveCalls);
             assertEquals(0, storage.saveCalls);
-            // @@author ka-how
         }
     }
 
@@ -476,7 +463,6 @@ class CommandDispatcherTest {
                 base.studyHours(), List.of(template), 3);
     }
 
-    // @@author GabrielYuSP
     @Test
     void execute_hoursMutations_saveBeforeInvalidatingAndPreserveSettingsAcrossOtherChanges() throws Exception {
         FakeStorage storage = new FakeStorage(Snapshot.empty());
@@ -522,7 +508,6 @@ class CommandDispatcherTest {
                 dispatcher.execute(parser.parse("hours reset 2026-10-27"), state).output());
     }
 
-    // @@author ka-how
     @Test
     void execute_nullArguments_rejectsBeforeClockReadsOrSaves() {
         CountingClock clock = new CountingClock();
@@ -582,7 +567,6 @@ class CommandDispatcherTest {
         assertEquals(Snapshot.empty().tasks(), state.snapshot().tasks());
     }
 
-    //@@author Darren50
     @Test
     void execute_skipCommitment_savesExceptionAndInvalidatesPlan() throws Exception {
         Snapshot original = populatedSnapshot();
@@ -646,7 +630,6 @@ class CommandDispatcherTest {
                 dispatcher.execute(new Command.DeleteCommitment(3), state).output());
         assertEquals(List.of(2), state.snapshot().commitments().stream().map(Commitment::id).toList());
     }
-    //@@author ka-how
 
     @Test
     void execute_eachMutation_savesBeforePublishingAndClearsPlan() throws Exception {
@@ -907,7 +890,6 @@ class CommandDispatcherTest {
         assertSame(snapshot, state.snapshot());
     }
 
-    // @@author ka-how
     @Test
     void execute_progressCommands_saveBeforePublicationAndInvalidatePlan() throws Exception {
         Map<Command, Integer> expectedCredits = Map.of(new Command.RecordTaskWork(2, 15), 15,
@@ -988,7 +970,6 @@ class CommandDispatcherTest {
         }
     }
 
-    // @@author ernestgoh-god
     @Test
     void execute_invalidProgress_rejectsBeforeSavingOrChangingLiveState() {
         Snapshot original = populatedSnapshot();
@@ -1005,9 +986,7 @@ class CommandDispatcherTest {
             assertEquals(0, storage.saveCalls);
         }
     }
-    // @@author ka-how
 
-    //@@author Darren50
     @Test
     void execute_edit_replansAgainstReplacementAndKeepsPlanOnConflict() throws Exception {
         AppState state = new AppState(populatedSnapshot());
@@ -1031,7 +1010,6 @@ class CommandDispatcherTest {
         assertSame(original, storage.saved);
         assertEquals(saves, storage.saveCalls);
     }
-    //@@author ka-how
 
     /**
      * Wires the real service contracts with controlled storage and time.
@@ -1049,7 +1027,6 @@ class CommandDispatcherTest {
                 List.of(new Commitment(2, "Class", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60)), 3, 3);
     }
 
-    // @@author ernestgoh-god
     @Test
     void execute_reviseTaskRemaining_savesBeforePublicationAndInvalidatesPlan() throws Exception {
         Snapshot original = populatedSnapshot();
@@ -1123,7 +1100,6 @@ class CommandDispatcherTest {
         assertSame(original, state.snapshot());
         assertSame(plan, state.currentPlan().orElseThrow());
     }
-    // @@author ka-how
 
     /**
      * Supplies all mutation paths against the same initial records.
@@ -1177,12 +1153,10 @@ class CommandDispatcherTest {
      */
     private static final class FakeStorage implements Storage {
         private Snapshot saved;
-        // @@author ernestgoh-god
         private Optional<Plan> savedPlan = Optional.empty();
         private int planSaveCalls;
         /** Observes source/plan publication at the combined plan-save boundary. */
         private Runnable beforePlanSave = () -> { };
-        // @@author ka-how
         private Snapshot attempted;
         private int saveCalls;
         private boolean failSave;
@@ -1203,7 +1177,6 @@ class CommandDispatcherTest {
             return saved;
         }
 
-        // @@author ernestgoh-god
         @Override
         public Optional<Plan> loadPlan(Snapshot source) throws StorageException {
             if (!saved.equals(source)) {
@@ -1211,7 +1184,6 @@ class CommandDispatcherTest {
             }
             return savedPlan;
         }
-        // @@author ka-how
 
         @Override
         public void save(Snapshot state) throws StorageException {
@@ -1222,12 +1194,9 @@ class CommandDispatcherTest {
                 throw new StorageException("Save rejected");
             }
             saved = state;
-            // @@author ernestgoh-god
             savedPlan = Optional.empty();
-            // @@author ka-how
         }
 
-        // @@author ernestgoh-god
         @Override
         public void savePlan(Plan plan) throws StorageException {
             planSaveCalls++;
@@ -1239,7 +1208,6 @@ class CommandDispatcherTest {
             saved = plan.source();
             savedPlan = Optional.of(plan);
         }
-        // @@author ka-how
     }
 
     /**

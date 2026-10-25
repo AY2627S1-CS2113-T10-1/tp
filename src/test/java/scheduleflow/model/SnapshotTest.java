@@ -20,7 +20,6 @@ import scheduleflow.planning.StudyPolicy;
  * Verifies persisted identity integrity and immutable ownership of lists.
  */
 class SnapshotTest {
-    // @@author ernestgoh-god
     @Test
     void withStudyPolicy_legacyDefaultAndCopies_preserveSettingsAndNoopIdentity() {
         Snapshot original = Snapshot.empty();
@@ -36,7 +35,6 @@ class SnapshotTest {
         assertThrows(NullPointerException.class, () -> new Snapshot(List.of(), List.of(), 1, 1,
                 original.studyHours(), List.of(), 1, null));
     }
-    // @@author
 
     @Test
     void empty_initialCountersAndLists() {

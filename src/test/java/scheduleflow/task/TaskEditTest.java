@@ -1,4 +1,3 @@
-// @@author nickpatt
 package scheduleflow.task;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -29,4 +28,3 @@ class TaskEditTest {
         assertEquals(new TaskEdit(name, deadline, true), edit);
     }
 }
-// @@author

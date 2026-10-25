@@ -33,7 +33,6 @@ import scheduleflow.planning.StudyPolicy;
  * Converts snapshots to and from the versioned text format without accessing saved files.
  */
 public final class StateCodec {
-    // @@author ernestgoh-god
     /**
      * Records conversion stages at FINE level without including stored values or exception messages.
      */
@@ -43,7 +42,6 @@ public final class StateCodec {
      * Identifies the readable legacy format, which supplies default study hours and task priorities.
      */
     private static final String HEADER = "SCHEDULEFLOW|1";
-    // @@author
 
     /**
      * Creates the StateCodec dependencies without performing I/O.
@@ -51,7 +49,6 @@ public final class StateCodec {
     public StateCodec() {
     }
 
-    // @@author ernestgoh-god
     /**
      * Encodes extended snapshots, using version 5 for recurrence or version 7 for a stored study policy.
      * Stores names last so names containing pipes do not need escaping.
@@ -64,7 +61,6 @@ public final class StateCodec {
         return encodeSnapshot(state, false);
     }
 
-    // @@author ernestgoh-god
     /** Encodes a plan's complete source, including recurrence counters and any version 7 study policy. */
     String encodeForPlan(Snapshot state) {
         return encodeSnapshot(state, true);
@@ -74,12 +70,10 @@ public final class StateCodec {
     private String encodeSnapshot(Snapshot state, boolean fullRecordLayout) {
         Objects.requireNonNull(state, "state");
         LOGGER.log(Level.FINE, "Starting snapshot encoding");
-        // @@author Darren50
         boolean hasDateBoundedCommitments = state.commitments().stream()
                 .anyMatch(commitment -> commitment.startDate() != null);
         boolean hasSkippedOccurrences = state.commitments().stream()
                 .anyMatch(commitment -> !commitment.skippedDates().isEmpty());
-        // @@author ernestgoh-god
         boolean includeRecurrenceFields = fullRecordLayout || state.studyPolicy().isPresent()
                 || !state.recurringTasks().isEmpty()
                 || state.nextRecurringTaskId() != 1
@@ -88,7 +82,6 @@ public final class StateCodec {
                 : includeRecurrenceFields ? "SCHEDULEFLOW|5" : hasSkippedOccurrences ? "SCHEDULEFLOW|4"
                 : hasDateBoundedCommitments ? "SCHEDULEFLOW|3"
                 : "SCHEDULEFLOW|2";
-        // @@author ernestgoh-god
         StringBuilder text = new StringBuilder(version).append('\n');
         text.append("NEXT|").append(state.nextTaskId()).append('|').append(state.nextCommitmentId());
         if (includeRecurrenceFields) {
@@ -113,11 +106,9 @@ public final class StateCodec {
                     .append(recurring.generatedThrough().map(LocalDateTime::toString).orElse("-")).append('|')
                     .append(recurring.name()).append('\n');
         }
-        // @@author ernestgoh-god
         for (Commitment commitment : state.commitments()) {
             text.append("COMMITMENT|").append(commitment.id()).append('|').append(commitment.day()).append('|')
                     .append(commitment.start()).append('|').append(commitment.durationMinutes()).append('|');
-            // @@author Darren50
             if (hasDateBoundedCommitments || hasSkippedOccurrences || includeRecurrenceFields) {
                 text.append(commitment.startDate() == null ? "-" : commitment.startDate()).append('|')
                         .append(commitment.endDate() == null ? "-" : commitment.endDate()).append('|');
@@ -125,7 +116,6 @@ public final class StateCodec {
             if (hasSkippedOccurrences || includeRecurrenceFields) {
                 text.append(encodeSkippedDates(commitment.skippedDates())).append('|');
             }
-            // @@author ernestgoh-god
             text.append(commitment.name()).append('\n');
         }
         new TreeMap<>(state.studyHours().windows()).forEach((target, window) -> text.append("HOURS|")
@@ -155,7 +145,6 @@ public final class StateCodec {
             LOGGER.log(Level.FINE, "Saved data decoding rejected; null text");
             throw new StorageException("Saved data must not be null.");
         }
-        // @@author ernestgoh-god
         if (PlanCodec.hasSavedPlan(text)) {
             return new PlanCodec(this).decode(text).source();
         }
@@ -163,13 +152,10 @@ public final class StateCodec {
         try {
             validateHeader(lines);
             LOGGER.log(Level.FINE, "Saved data header validated; reading counters and records");
-            // @@author ernestgoh-god
             boolean supportsPolicy = lines.getFirst().equals("SCHEDULEFLOW|7");
             boolean supportsRecurrence = supportsPolicy || lines.getFirst().equals("SCHEDULEFLOW|5");
             Optional<StudyPolicy> studyPolicy = Optional.empty();
-            // @@author nickpatt
             String[] counters = splitFields(lines.get(1), supportsRecurrence ? 4 : 3);
-            // @@author ernestgoh-god
             if (!counters[0].equals("NEXT")) {
                 throw new StorageException("Missing next ID counters.");
             }
@@ -179,10 +165,7 @@ public final class StateCodec {
             Map<String, StudyWindow> windows = new HashMap<>();
             for (int i = 2; i < lines.size(); i++) {
                 String line = lines.get(i);
-                // @@author Darren50
                 boolean supportsExtensions = !lines.getFirst().equals(HEADER);
-                // @@author nickpatt
-                // @@author ernestgoh-god
                 if (supportsPolicy && line.startsWith("POLICY|")) {
                     if (studyPolicy.isPresent()) {
                         throw new StorageException("Duplicate study policy record.");
@@ -190,25 +173,21 @@ public final class StateCodec {
                     String[] fields = splitFields(line, 3);
                     studyPolicy = Optional.of(new StudyPolicy(Integer.parseInt(fields[1]),
                             Integer.parseInt(fields[2])));
-                // @@author nickpatt
                 } else if (supportsRecurrence && (line.startsWith("RECURRING|") || line.startsWith("OCCURRENCE|"))) {
                     decodeRecurrence(line, tasks, recurringTasks);
                 } else if (supportsExtensions && line.startsWith("HOURS|")) {
                     decodeHours(line, windows);
                 } else if (supportsExtensions && line.startsWith("TASK2|")) {
-                    // @@author nickpatt
                     String[] fields = splitFields(line, 6);
                     tasks.add(new Task(Integer.parseInt(fields[1]), fields[5], fields[2].equals("NONE")
                             ? Optional.empty() : Optional.of(LocalDateTime.parse(fields[2])),
                             Integer.parseInt(fields[3]), TaskPriority.valueOf(fields[4])));
-                    // @@author ernestgoh-god
                 } else {
                     boolean supportsDateRanges = lines.getFirst().equals("SCHEDULEFLOW|3")
                             || lines.getFirst().equals("SCHEDULEFLOW|4") || supportsRecurrence;
                     decodeRecord(line, tasks, commitments, supportsDateRanges,
                             lines.getFirst().equals("SCHEDULEFLOW|4") || supportsRecurrence);
                 }
-                // @@author ernestgoh-god
             }
             if (supportsPolicy && studyPolicy.isEmpty()) {
                 throw new StorageException("Missing study policy record.");
@@ -264,14 +243,11 @@ public final class StateCodec {
             boolean supportsDateRanges, boolean supportsSkippedDates) throws StorageException {
         if (line.startsWith("TASK|")) {
             String[] fields = splitFields(line, 5);
-            // @@author nickpatt
             // Legacy TASK rows retain their original positive half-hour contract, including old v2 hours files.
             InputRules.requireDuration(Integer.parseInt(fields[3]));
-            // @@author ernestgoh-god
             tasks.add(new Task(Integer.parseInt(fields[1]), fields[4],
                     LocalDateTime.parse(fields[2]), Integer.parseInt(fields[3])));
         } else if (line.startsWith("COMMITMENT|")) {
-            // @@author Darren50
             if (supportsSkippedDates) {
                 String[] fields = splitFields(line, 9);
                 commitments.add(new Commitment(Integer.parseInt(fields[1]), fields[8],
@@ -289,13 +265,11 @@ public final class StateCodec {
                 commitments.add(new Commitment(Integer.parseInt(fields[1]), fields[5], DayOfWeek.valueOf(fields[2]),
                         LocalTime.parse(fields[3]), Integer.parseInt(fields[4])));
             }
-            // @@author ernestgoh-god
         } else {
             throw new StorageException("Unknown or empty saved record.");
         }
     }
 
-    // @@author nickpatt
     /** Decodes recurrence records privately before the complete snapshot validates cross-record invariants. */
     private void decodeRecurrence(String line, List<Task> tasks, List<RecurringTask> recurringTasks)
             throws StorageException {
@@ -313,9 +287,7 @@ public final class StateCodec {
                             : Optional.of(LocalDateTime.parse(fields[5]))));
         }
     }
-    // @@author
 
-    // @@author Darren50
     /** Decodes the version 3 dash sentinel used for an unbounded endpoint. */
     private LocalDate parseOptionalDate(String token) {
         return token.equals("-") ? null : LocalDate.parse(token);
@@ -343,9 +315,7 @@ public final class StateCodec {
         }
         return Set.copyOf(dates);
     }
-    // @@author ernestgoh-god
 
-    // @@author GabrielYuSP
     /** Rejects duplicate targets and malformed windows rather than silently replacing saved settings. */
     private void decodeHours(String line, Map<String, StudyWindow> windows) throws StorageException {
         String[] fields = splitFields(line, 4);
@@ -355,7 +325,6 @@ public final class StateCodec {
         }
     }
 
-    // @@author ernestgoh-god
     /**
      * Splits required fields while preserving literal pipes within the final name field.
      *
@@ -369,5 +338,4 @@ public final class StateCodec {
         }
         return fields;
     }
-    // @@author
 }

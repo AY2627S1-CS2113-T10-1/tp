@@ -169,7 +169,6 @@ class PlanningRecordsTest {
                 List.of(entry(8, 22, SlotKind.FREE, "", "")), Arrays.asList((UnallocatedWork) null)));
     }
 
-    // @@author nickpatt
     @Test
     void exactWorkRecords_validateWorkCapacityAndOptionalDeadline() {
         LocalDateTime start = DATE.atTime(8, 0);
@@ -192,7 +191,6 @@ class PlanningRecordsTest {
                     () -> new UnallocatedWork(1, "Draft", Optional.empty(), 45, 60, reason));
         }
     }
-    // @@author
 
     private StudySession session(int id, int hour) {
         return new StudySession(id, DATE.atTime(hour, 0), DATE.atTime(hour, 30));

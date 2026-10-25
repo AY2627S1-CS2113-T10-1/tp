@@ -9,32 +9,36 @@ user-visible behaviour in the User Guide. Describe verified behaviour accurately
 and clearly mark planned features. This requirement also applies to all AI
 agents working on the project, as specified in the repository's root `AGENTS.md`.
 
-## Saving and loading authorship
+## Code authorship
 
-Scoped `// @@author ernestgoh-god` comments identify Ernest's storage
-implementation and storage tests for RepoSense. Each marked section ends with
-`// @@author`; shared foundation declarations outside these sections retain
-their Git-based attribution. Keep these boundaries accurate when editing the
-code. See the [RepoSense author-tag guide](https://reposense.org/RepoSense/ug/usingAuthorTags.html).
-These tooling comments do not change saving/loading behaviour or its test cases.
+RepoSense tags follow the whole-file allocation in version 2 of the supplied
+authorship redistribution plan, dated 2026-10-25. The previous scoped author
+comments have been removed from production and test Java files. This change
+applies only Ka How's (`ka-how`) allocation; other files use Git-based attribution
+until their owners' tags are applied.
 
-## Task authorship
+Ka How's files are relative to the corresponding `scheduleflow/` source root:
 
-Scoped `// @@author nickpatt` comments identify Nickhil's task add/delete/list
-implementation, defensive checks and opt-in diagnostics, together with his
-regression tests. Each range ends with `// @@author`. These ranges follow the
-Task role's four production files and verified contributions in commits
-`83c8d7c` and `a9bb80b`; unchanged shared foundation code and tests retain their
-Git-based attribution. CLI wiring remains attributed to its Printing owner.
-These tooling comments change no commands, runtime behaviour or UI fixtures;
-the existing Task JUnit coverage and packaged scenarios remain applicable.
+- Production (`src/main/java/scheduleflow/`): `Main.java`, `cli/App.java`,
+  `cli/AppState.java`, `cli/Command.java`, `cli/CommandResponse.java`,
+  `cli/ConsoleUi.java` and `cli/TextRenderer.java`.
+- Tests (`src/test/java/scheduleflow/`): `MainTest.java`, `cli/AppStateTest.java`,
+  `cli/AppTest.java`, `cli/CommandTest.java`, `cli/ConsoleUiTest.java`,
+  `cli/ContractsTest.java` and `cli/TextRendererTest.java`.
 
-Nickhil's task editing and progress work remains in his original commits
-`2751189` and `bfba4b1`. Scoped tags in shared renderer, planning and storage
-files identify his added sections; untagged edits retain their Git attribution.
-The mixed storage codec test has separate tags for Nickhil's format tests and
-Ernest's cross-feature round-trip test, so neither test is credited to the
-other contributor.
+Each listed file starts with exactly one `// @@author ka-how` before its package
+declaration and ends with one bare `// @@author` after its final closing brace.
+There are no interior author tags. The entire file, including nested command
+records, imports, helpers and documentation, belongs to this allocation.
+`CommandParser`, `ParseException` and `CommandDispatcher` are outside Ka How's
+allocation even though they share the `cli` package.
+
+These tags record the agreed allocation, not who originally wrote each section.
+They do not rewrite Git history, reassign historical TODOs or change behaviour.
+See the [RepoSense author-tag guide](https://reposense.org/RepoSense/ug/usingAuthorTags.html).
+For tag-only changes, verify the exact file list and marker boundaries and compare
+all 74 Java files against the plan's tag-independent fingerprints. Existing JUnit
+coverage and UI fixtures remain applicable; no new behavioural tests are needed.
 
 ## Duration verification (issue #13)
 
@@ -495,8 +499,7 @@ ID, remaining estimate, other records, recurrence definitions/cursors, all count
 (including exhausted counters) and configured study hours. A valid
 edit with no effective change after normalization returns the original snapshot
 instance. The API does not save, publish or invalidate plans. FINE diagnostics
-omit private values; assertions check candidate preservation. Nickhil's additions
-use scoped `// @@author nickpatt` markers without replacing teammates' attribution.
+omit private values; assertions check candidate preservation.
 
 `Command.EditTask` transports a partial edit and `CommandParser` accepts
 `task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]`. At least one field is required,
@@ -694,8 +697,6 @@ invalidate a plan. Failed saves preserve the snapshot and its saved plan.
 
 The completed view filters the service's numeric-ID list and shares row formatting
 with the original full list. No data or plan changes occur during listing.
-Nickhil's completion model/service and Ka How's completion formatter retain their
-authorship. Scoped Ernest tags cover the new parser, wiring and completed view.
 JUnit covers grammar boundaries, exact list text, save ordering, failed retries,
 plan exclusion and no-ops. UI-033 covers completion, validation and saved restart.
 Issue #56 adds the separate reopening command described below.
@@ -937,8 +938,6 @@ candidates save before publication; zero-credit candidates avoid an unnecessary
 save or plan invalidation. Fixed-clock dispatcher tests cover actual credit,
 successful publication, no-ops, failed-save preservation and retry. UI-030 covers
 the existing parsed forms through the packaged application and saved restarts.
-Ernest's parser and dispatcher production code is unchanged; scoped author tags
-attribute the implemented renderer and updated acceptance tests to Ka How.
 
 Issue #41 parses `task remaining TNUMBER remaining/MINUTES` into
 `ReviseTaskRemaining` without reading state. The parser requires positive decimal
@@ -956,8 +955,7 @@ Parser, service, renderer and dispatcher JUnit tests cover syntax, values,
 successful publication, no-op behavior and rollback. The Task regression saves
 a revised candidate to an isolated file, reloads it and verifies higher planning
 demand. UI-019 checks exact console responses, plan invalidation, replanning and
-two restarts against a fixed overdue task. Scoped Ernest tags identify issue #41
-additions without claiming existing Task or Printing code.
+two restarts against a fixed overdue task.
 
 `CommandParser.parse` implements all command formats in the User Guide and
 returns the existing nested `Command` records. The parser has no clock, storage
@@ -1087,9 +1085,8 @@ Tests cover all fifteen nonempty field subsets, invalid syntax, immutable source
 snapshots, self-exclusion, multi-conflict ordering, adjacent and midnight bounds,
 counter exhaustion, rollback/retry and changed allocation after regeneration.
 UI-014 verifies the packaged command, Unicode edits, rejection recovery and restart.
-New significant methods have scoped Darren50 author markers; existing shared CLI
-methods retain their attribution. Changes outside the commitment domain are limited
-to this command's transport, integration, output and acceptance tests.
+Changes outside the commitment domain are limited to this command's transport,
+integration, output and acceptance tests.
 
 ### Recurring commitment date bounds (issue #64)
 

@@ -24,7 +24,6 @@ class RecurringTaskServiceTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 9, 21, 7, 0);
     private final RecurringTaskService service = new RecurringTaskService();
 
-    // @@author ernestgoh-god
     @Test
     void mutations_storedPolicy_preservesSettingThroughAddMaterializationAndDeletion() {
         Optional<StudyPolicy> policy = Optional.of(new StudyPolicy(90, 30));
@@ -42,7 +41,6 @@ class RecurringTaskServiceTest {
         assertEquals(1, generated.tasks().size());
         assertSame(generated, service.materialize(generated, NOW));
     }
-    // @@author
 
     @Test
     void materialize_ties_assignsChronologicalThenNumericTemplateIds() {

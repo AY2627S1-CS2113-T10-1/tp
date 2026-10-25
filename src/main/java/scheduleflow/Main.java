@@ -1,4 +1,4 @@
-//@@author ka-how
+// @@author ka-how
 package scheduleflow;
 
 import java.io.BufferedReader;
@@ -78,3 +78,4 @@ public final class Main {
         }
     }
 }
+// @@author

@@ -1,4 +1,3 @@
-// @@author nickpatt
 package scheduleflow.task;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -46,7 +45,6 @@ class TaskServiceTest {
             LocalTime.of(10, 0), 120);
     private final TaskService service = new TaskService();
 
-    // @@author ernestgoh-god
     @Test
     void reviseRemaining_knownTask_replacesOnlyEstimateAndPreservesMetadata() {
         Task first = new Task(2, "First", DEADLINE, 30);
@@ -95,7 +93,6 @@ class TaskServiceTest {
         assertEquals(30, planner.generate(source, NOW).unallocated().getFirst().minutes());
         assertEquals(60, planner.generate(restored, NOW).unallocated().getFirst().minutes());
     }
-    // @@author nickpatt
 
     @Test
     void methods_nullDependencies_reportNamedPreconditions() {
@@ -678,4 +675,3 @@ class TaskServiceTest {
         }
     }
 }
-// @@author

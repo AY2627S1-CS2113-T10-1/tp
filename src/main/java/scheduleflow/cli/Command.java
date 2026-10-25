@@ -1,4 +1,4 @@
-//@@author ka-how
+// @@author ka-how
 package scheduleflow.cli;
 
 import java.time.DayOfWeek;
@@ -13,7 +13,6 @@ import scheduleflow.task.TaskEdit;
  * Defines the complete command vocabulary as immutable transport values.
  */
 public sealed interface Command {
-    // @@author ernestgoh-god
     /** Carries policy durations while leaving half-hour validation to StudyPolicy. */
     record SetStudyPolicy(int maxContinuousMinutes, int breakMinutes) implements Command {
     }
@@ -25,9 +24,7 @@ public sealed interface Command {
     /** Requests unrestricted planning without changing any other records. */
     record ResetStudyPolicy() implements Command {
     }
-    // @@author ka-how
 
-    // @@author GabrielYuSP
     /** Carries an inclusive start and exclusive end for a continuous unavailable interval. */
     record AddContinuousBlock(String name, LocalDateTime start, LocalDateTime end) implements Command {
         /** Requires transport references; the commitment service will validate values and ordering. */
@@ -50,9 +47,7 @@ public sealed interface Command {
             Objects.requireNonNull(end, "end");
         }
     }
-    // @@author
 
-    // @@author GabrielYuSP
     /** Requests replacement of one recurring weekday or date-specific window. */
     record SetHours(String target, LocalTime start, LocalTime end) implements Command {
         /** Requires transport values; domain validation happens during execution. */
@@ -79,7 +74,6 @@ public sealed interface Command {
         }
     }
 
-    // @@author ka-how
     /**
      * Requests command help.
      */
@@ -107,7 +101,6 @@ public sealed interface Command {
     record ListTasks() implements Command {
     }
 
-    // @@author ernestgoh-god
     /** Requests retained tasks whose remaining work is zero. */
     record ListCompletedTasks() implements Command {
     }
@@ -115,7 +108,6 @@ public sealed interface Command {
     /** Requests completion of an existing task without deleting its identity or metadata. */
     record CompleteTask(int id) implements Command {
     }
-    // @@author ka-how
 
     /** Carries an explicit positive remaining-work estimate for reopening a completed task. */
     record ReopenTask(int id, int remainingMinutes) implements Command {
@@ -127,7 +119,6 @@ public sealed interface Command {
     record DeleteTask(int id) implements Command {
     }
 
-    // @@author nickpatt
     /** Carries optional name/deadline replacements without applying domain validation. */
     record EditTask(int id, TaskEdit edit) implements Command {
         /** Requires the partial edit while leaving ID and field validation to TaskService. */
@@ -154,9 +145,7 @@ public sealed interface Command {
     /** Carries the independent numeric R-ID of a weekly template to remove. */
     record DeleteRecurringTask(int id) implements Command {
     }
-    // @@author ka-how
 
-    // @@author ernestgoh-god
     /** Carries a replacement remaining-work estimate for a stored task. */
     record ReviseTaskRemaining(int id, int remainingMinutes) implements Command {
     }
@@ -168,7 +157,6 @@ public sealed interface Command {
     /** Carries a reported session duration and its completed-work percentage. */
     record RecordTaskSession(int id, int sessionMinutes, int percent) implements Command {
     }
-    // @@author ka-how
 
     /**
      * Carries parsed weekly commitment fields without overlap validation.
@@ -176,12 +164,10 @@ public sealed interface Command {
      */
     record AddCommitment(String name, DayOfWeek day, LocalTime start, int minutes,
             LocalDate startDate, LocalDate endDate) implements Command {
-        //@@author Darren50
         /** Preserves callers adding an unbounded weekly series. */
         public AddCommitment(String name, DayOfWeek day, LocalTime start, int minutes) {
             this(name, day, start, minutes, null, null);
         }
-        //@@author ka-how
         /**
          * Requires the nonnumeric fields, leaving interval and overlap rules to the service.
          *
@@ -194,7 +180,6 @@ public sealed interface Command {
         }
     }
 
-    //@@author Darren50
     /**
      * Carries a partial weekly-series edit; null fields are omitted rather than cleared.
      * The service validates the ID, presence of changes and resulting complete interval.
@@ -214,7 +199,6 @@ public sealed interface Command {
             Objects.requireNonNull(date, "date");
         }
     }
-    //@@author ka-how
 
     /**
      * Requests all recurring weekly and one-time commitments.
@@ -260,3 +244,4 @@ public sealed interface Command {
     record Exit() implements Command {
     }
 }
+// @@author

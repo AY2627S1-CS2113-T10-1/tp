@@ -42,7 +42,6 @@ class TaskTest {
         assertEquals(9999, new Task(1, "A", DEADLINE.withYear(9999), 30).deadline().orElseThrow().getYear());
     }
 
-    // @@author nickpatt
     @Test
     void constructor_invalidNamesAndDurations_usesSharedValidation() {
         for (String name : new String[] {"", "   ", "Bad/name", "Bad\tname", "Bad\nname"}) {
@@ -64,5 +63,4 @@ class TaskTest {
         assertThrows(NullPointerException.class, () -> new Task(1, "A", null, 30, TaskPriority.NORMAL));
         assertThrows(NullPointerException.class, () -> new Task(1, "A", Optional.empty(), 30, null));
     }
-    // @@author
 }

@@ -3,7 +3,6 @@ package scheduleflow.model;
 import java.time.LocalDateTime;
 import scheduleflow.common.ValidationException;
 
-// @@author nickpatt
 /**
  * Identifies a logical weekly occurrence independently of later task deadline edits.
  * @param templateId stable original R-ID, retained even after the template is removed

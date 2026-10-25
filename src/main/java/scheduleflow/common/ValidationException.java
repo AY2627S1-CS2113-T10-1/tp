@@ -6,7 +6,6 @@ import java.util.Objects;
  * Reports a rejected domain value without changing application state.
  */
 public final class ValidationException extends RuntimeException {
-    // @@author nickpatt
     /**
      * Creates a validation failure with a user-facing explanation.
      * The application decides how to display the explanation and report session severity.
@@ -17,5 +16,4 @@ public final class ValidationException extends RuntimeException {
     public ValidationException(String message) {
         super(Objects.requireNonNull(message, "message"));
     }
-    // @@author
 }

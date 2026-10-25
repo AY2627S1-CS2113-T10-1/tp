@@ -9,13 +9,11 @@ import scheduleflow.common.ValidationException;
  * Exact positive {@code workMinutes} excludes padding and cannot exceed reserved {@link #minutes()}.
  */
 public record StudySession(int taskId, LocalDateTime start, LocalDateTime end, int workMinutes) {
-    // @@author nickpatt
     /** Preserves legacy sessions whose exact work equals their reserved capacity. */
     public StudySession(int taskId, LocalDateTime start, LocalDateTime end) {
         this(taskId, start, end, start == null || end == null || !start.toLocalDate().equals(end.toLocalDate()) ? 0
                 : Math.toIntExact(Duration.between(start, end).toMinutes()));
     }
-    // @@author
 
     /**
      * Validates this interval; the planner enforces configured hours and relationships to source tasks.
@@ -28,11 +26,9 @@ public record StudySession(int taskId, LocalDateTime start, LocalDateTime end, i
                 || !isAligned(start) || !isAligned(end)) {
             throw new ValidationException("Session must use aligned endpoints inside one study window.");
         }
-        // @@author nickpatt
         if (workMinutes <= 0 || workMinutes > Duration.between(start, end).toMinutes()) {
             throw new ValidationException("Session work must be positive and cannot exceed reserved capacity.");
         }
-        // @@author
     }
 
     /**

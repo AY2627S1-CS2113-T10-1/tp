@@ -1,4 +1,4 @@
-//@@author ka-how
+// @@author ka-how
 package scheduleflow.cli;
 
 import java.io.IOException;
@@ -74,11 +74,9 @@ public final class App {
         AppState state;
         try {
             LOGGER.log(Level.FINE, "Loading saved snapshot");
-            // @@author ernestgoh-god
             Snapshot loaded = storage.load();
             state = new AppState(loaded);
             storage.loadPlan(loaded).ifPresent(state::replacePlan);
-            // @@author ka-how
             LOGGER.log(Level.FINE, "Saved snapshot loaded");
         } catch (StorageException exception) {
             LOGGER.log(Level.SEVERE, "Startup load failed", exception);
@@ -135,3 +133,4 @@ public final class App {
         }
     }
 }
+// @@author

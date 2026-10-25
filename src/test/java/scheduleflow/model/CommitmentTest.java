@@ -124,7 +124,6 @@ class CommitmentTest {
                         first, second, null)).getMessage());
     }
 
-    //@@author Darren50
     @Test
     void constructor_missingIdentityOrTime_identifiesInvalidField() {
         assertEquals("Commitment ID must be positive.", assertThrows(ValidationException.class,
@@ -190,7 +189,6 @@ class CommitmentTest {
     private Commitment oneTime(int id, LocalDate date, int hour, int duration) {
         return new Commitment(id, "Meeting", date.getDayOfWeek(), LocalTime.of(hour, 0), duration, date, date);
     }
-    //@@author
 
     /**
      * Creates a Monday series with a padded name to exercise normalization.

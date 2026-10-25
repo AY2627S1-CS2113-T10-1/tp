@@ -42,7 +42,6 @@ public record Plan(LocalDateTime generatedAt, LocalDateTime horizonEnd, Snapshot
         }
         requireSorted(breaks, Comparator.comparing(ScheduleEntry::start));
         requireSorted(sessions, Comparator.comparing(StudySession::start).thenComparingInt(StudySession::taskId));
-        // @@author nickpatt
         Snapshot frozenSource = source;
         requireSorted(unallocated, Comparator.comparing((UnallocatedWork work) -> work.deadline().isEmpty())
                 .thenComparing((left, right) -> left.deadline().isPresent() && right.deadline().isPresent()
@@ -50,7 +49,6 @@ public record Plan(LocalDateTime generatedAt, LocalDateTime horizonEnd, Snapshot
                 .thenComparing(work -> frozenSource.tasks().stream().filter(task -> task.id() == work.taskId())
                         .map(task -> task.priority()).findFirst().orElse(TaskPriority.NORMAL))
                 .thenComparingInt(UnallocatedWork::taskId));
-        // @@author
     }
 
     /**

@@ -29,11 +29,9 @@ public final class CommitmentService {
      * Candidate creation is not a claim that data has been saved or published.
      */
     private static final Logger LOGGER = Logger.getLogger(CommitmentService.class.getName());
-    //@@author Darren50
     private static final int MINUTES_PER_HOUR = 60;
     private static final int MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR;
     private static final int MAX_SUPPORTED_YEAR = 9999;
-    //@@author
 
     /**
      * Creates the CommitmentService dependencies without performing I/O.
@@ -41,7 +39,6 @@ public final class CommitmentService {
     public CommitmentService() {
     }
 
-    //@@author Darren50
     /**
      * Blocks one continuous interval by splitting it at midnight into dated one-time commitments.
      * Adds every segment or none, so a rejected request leaves the source unchanged and consumes no IDs.
@@ -205,9 +202,7 @@ public final class CommitmentService {
     private static int minuteOfDay(LocalTime time) {
         return time.getHour() * MINUTES_PER_HOUR + time.getMinute();
     }
-    //@@author
 
-    //@@author Darren50
     /**
      * Creates a candidate after checking overlap and counter overflow.
      * Preserves the original snapshot so callers can save before publishing the change.
@@ -256,9 +251,7 @@ public final class CommitmentService {
         List<Commitment> commitments = new ArrayList<>(state.commitments());
         LOGGER.fine("Weekly overlaps checked; creating addition candidate");
         commitments.add(added);
-        // @@author nickpatt
         Snapshot candidate = state.withCommitments(commitments, state.nextCommitmentId() + 1);
-        // @@author Darren50
         assert candidate.commitments().getLast().equals(added)
                 && candidate.commitments().subList(0, candidate.commitments().size() - 1).equals(state.commitments())
                 : "Addition must append exactly one series and preserve existing records";
@@ -356,9 +349,7 @@ public final class CommitmentService {
         rejectOverlaps(edited, state.commitments().stream().filter(commitment -> commitment.id() != id).toList());
         List<Commitment> replacements = new ArrayList<>(state.commitments());
         replacements.set(replacements.indexOf(original), edited);
-        // @@author nickpatt
         Snapshot candidate = state.withCommitments(replacements, state.nextCommitmentId());
-        // @@author Darren50
         assert candidate.commitments().size() == state.commitments().size()
                 && candidate.nextCommitmentId() == state.nextCommitmentId()
                 && candidate.nextTaskId() == state.nextTaskId() && candidate.tasks().equals(state.tasks())
@@ -414,9 +405,7 @@ public final class CommitmentService {
                 original.durationMinutes(), original.startDate(), original.endDate(), skippedDates);
         List<Commitment> replacements = new ArrayList<>(state.commitments());
         replacements.set(replacements.indexOf(original), replacement);
-        // @@author nickpatt
         Snapshot candidate = state.withCommitments(replacements, state.nextCommitmentId());
-        // @@author Darren50
         assert candidate.tasks().equals(state.tasks()) && candidate.nextTaskId() == state.nextTaskId()
                 && candidate.nextCommitmentId() == state.nextCommitmentId()
                 : "Skipping one occurrence must preserve tasks and both counters";
@@ -450,9 +439,7 @@ public final class CommitmentService {
         // Snapshot guarantees unique IDs, so a successful deletion must remove exactly one series.
         assert remaining.size() == state.commitments().size() - 1 : "Deletion must remove exactly one commitment";
         LOGGER.fine("Commitment ID resolved; creating deletion candidate");
-        // @@author nickpatt
         Snapshot candidate = state.withCommitments(remaining, state.nextCommitmentId());
-        // @@author Darren50
         assert candidate.commitments().stream().noneMatch(commitment -> commitment.id() == commitmentId)
                 : "Deletion must remove the requested series";
         assert candidate.tasks().equals(state.tasks()) && candidate.nextTaskId() == state.nextTaskId()
@@ -479,5 +466,4 @@ public final class CommitmentService {
         LOGGER.fine("Commitment listing completed; source snapshot unchanged");
         return commitments;
     }
-    //@@author
 }

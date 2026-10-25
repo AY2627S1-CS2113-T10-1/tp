@@ -1,4 +1,4 @@
-//@@author ka-how
+// @@author ka-how
 package scheduleflow.cli;
 
 import java.util.Objects;
@@ -85,3 +85,4 @@ public final class AppState {
         LOGGER.log(Level.FINE, "Temporary plan replaced");
     }
 }
+// @@author

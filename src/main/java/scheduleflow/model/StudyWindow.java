@@ -3,7 +3,6 @@ package scheduleflow.model;
 import java.time.LocalTime;
 import scheduleflow.common.ValidationException;
 
-// @@author GabrielYuSP
 /** Defines a positive same-day study interval with half-hour endpoints. */
 public record StudyWindow(LocalTime start, LocalTime end) {
     public static final StudyWindow DEFAULT = new StudyWindow(LocalTime.of(8, 0), LocalTime.of(22, 0));
