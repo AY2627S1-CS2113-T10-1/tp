@@ -2,6 +2,79 @@
   "version": 1,
   "cases": [
     {
+      "id": "UI-032",
+      "aim": "Saved recurrence, exact work and reserved breaks survive restart; progress invalidates only the plan",
+      "status": "active",
+      "setup": "Frozen version 6 plan with a generated occurrence and partial-slot work",
+      "files": {
+        "data/scheduleflow.txt": "SCHEDULEFLOW|6\nNEXT|3|1|2\nTASK2|1|NONE|17|HIGH|Undated\nOCCURRENCE|2|2026-10-26T18:00|45|NORMAL|1|2026-10-26T18:00|Weekly\nRECURRING|1|2026-10-26T18:00|60|2026-10-26|2026-10-26T18:00|Weekly\nPLAN|2026-10-24T07:00|2027-10-24T00:00|2|0|1\nSESSION|1|2026-10-24T08:00|2026-10-24T08:30|17\nSESSION|2|2026-10-24T08:30|2026-10-24T09:30|45\nBREAK|2026-10-24T09:30|2026-10-24T10:00\n"
+      },
+      "sessions": [
+        {
+          "startup": "",
+          "steps": [
+            {
+              "input": "schedule 2026-10-24",
+              "output": "=== Schedule for Saturday (2026-10-24) ===\nGenerated at: 2026-10-24 07:00\n08:00 - 08:30 | [TASK] T1: Undated (30 min)\n08:30 - 09:30 | [TASK] T2: Weekly (60 min)\n09:30 - 10:00 | [BREAK]\n10:00 - 22:00 | [FREE]"
+            },
+            {
+              "input": "task recur list",
+              "output": "=== Weekly Recurring Tasks ===\nR1 | Weekly | Weekly from: 2026-10-26 18:00 | Duration: 60 min | Until: 2026-10-26\nTotal: 1 recurring task(s)."
+            },
+            {
+              "input": "exit",
+              "output": "Goodbye for now!",
+              "exitCode": 0
+            }
+          ]
+        },
+        {
+          "startup": "",
+          "steps": [
+            {
+              "input": "schedule 2026-10-24",
+              "output": "=== Schedule for Saturday (2026-10-24) ===\nGenerated at: 2026-10-24 07:00\n08:00 - 08:30 | [TASK] T1: Undated (30 min)\n08:30 - 09:30 | [TASK] T2: Weekly (60 min)\n09:30 - 10:00 | [BREAK]\n10:00 - 22:00 | [FREE]"
+            },
+            {
+              "input": "task progress T2 done/15",
+              "output": "Recorded progress for T2: Weekly | Credited: 15 min | Remaining: 30 min"
+            },
+            {
+              "input": "schedule 2026-10-24",
+              "output": "No current plan. Run plan to generate one."
+            },
+            {
+              "input": "exit",
+              "output": "Goodbye for now!",
+              "exitCode": 0
+            }
+          ]
+        },
+        {
+          "startup": "",
+          "steps": [
+            {
+              "input": "schedule 2026-10-24",
+              "output": "No current plan. Run plan to generate one."
+            },
+            {
+              "input": "task recur list",
+              "output": "=== Weekly Recurring Tasks ===\nR1 | Weekly | Weekly from: 2026-10-26 18:00 | Duration: 60 min | Until: 2026-10-26\nTotal: 1 recurring task(s)."
+            },
+            {
+              "input": "task list",
+              "output": "=== Actionable Tasks ===\nID | Name | Duration | Deadline\nT1 | Undated | 17 min | No deadline\nT2 | Weekly | 30 min | 2026-10-26 18:00\nTotal: 2 task(s)."
+            },
+            {
+              "input": "exit",
+              "output": "Goodbye for now!",
+              "exitCode": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "UI-030", "aim": "Record exact minute and session progress, retain completed tasks and persist across restarts",
       "status": "active", "setup": "One overdue saved task; fixed outputs independent of the current date",
       "requiredComponents": ["CommandParser.parse", "TaskService.recordWork", "TaskService.recordSessionProgress",
@@ -408,6 +481,7 @@
         ] },
         { "startup": "", "steps": [
           { "input": "commitment list", "output": "=== Recurring Weekly Commitments ===\n[Tuesday]\nC1. 10:00 - 10:30 | 学习 Café\n\nTotal: 1 recurring commitments across the week." },
+          { "input": "commitment delete C1", "output": "Deleted commitment C1: 学习 Café" },
           { "input": "schedule today", "output": "No current plan. Run plan to generate one." },
           { "input": null, "output": "Goodbye for now!", "exitCode": 0 }
         ] }
@@ -418,6 +492,23 @@
       "status": "active", "setup": "Invalid record; Save and Printing implemented",
       "files": { "data/scheduleflow.txt": "SCHEDULEFLOW|1\nNEXT|2|1\nTASK|1\n" },
       "sessions": [{ "startup": "Error: Missing saved record fields.\n", "steps": [], "exitCode": 1 }]
+    },
+    {
+      "id": "UI-031", "aim": "A saved study plan survives restart and a successful task change invalidates it",
+      "status": "active", "setup": "Frozen version 6 plan generated at a fixed time",
+      "files": { "data/scheduleflow.txt": "SCHEDULEFLOW|6\nNEXT|2|1|1\nTASK2|1|2026-10-26T18:00|30|NORMAL|Draft\nPLAN|2026-10-24T07:00|2027-10-24T00:00|1|0|0\nSESSION|1|2026-10-24T08:00|2026-10-24T08:30|30\n" },
+      "sessions": [
+        { "startup": "", "steps": [
+          { "input": "schedule 2026-10-24", "output": "=== Schedule for Saturday (2026-10-24) ===\nGenerated at: 2026-10-24 07:00\n08:00 - 08:30 | [TASK] T1: Draft (30 min)\n08:30 - 22:00 | [FREE]" },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] },
+        { "startup": "", "steps": [
+          { "input": "schedule 2026-10-24", "output": "=== Schedule for Saturday (2026-10-24) ===\nGenerated at: 2026-10-24 07:00\n08:00 - 08:30 | [TASK] T1: Draft (30 min)\n08:30 - 22:00 | [FREE]" },
+          { "input": "task delete T1", "output": "Deleted task T1: Draft" },
+          { "input": "schedule 2026-10-24", "output": "No current plan. Run plan to generate one." },
+          { "input": "exit", "output": "Goodbye for now!", "exitCode": 0 }
+        ] }
+      ]
     },
     {
       "id": "UI-009", "aim": "Restored tasks retain numeric order, unallocated work and deletion across restart",

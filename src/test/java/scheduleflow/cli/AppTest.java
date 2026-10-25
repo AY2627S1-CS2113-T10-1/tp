@@ -20,7 +20,9 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -28,8 +30,13 @@ import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
+import scheduleflow.model.RecurringTask;
 import scheduleflow.model.Snapshot;
 import scheduleflow.model.Task;
+import scheduleflow.model.TaskPriority;
+import scheduleflow.planning.EarliestDeadlinePlanner;
+import scheduleflow.planning.Plan;
+import scheduleflow.planning.ScheduleService;
 import scheduleflow.storage.FileStorage;
 import scheduleflow.storage.StateCodec;
 import scheduleflow.storage.Storage;
@@ -140,6 +147,96 @@ class AppTest {
                 result.output());
         assertFalse(Files.exists(file.getParent()));
     }
+
+    // @@author ernestgoh-god
+    @Test
+    void run_generatedScheduleAfterRestart_displaysIdenticalFrozenOutput() throws Exception {
+        Path file = directory.resolve("data/scheduleflow.txt");
+        Result first = run(ADD_TASK + "\nplan\nschedule today\nexit\n", new FileStorage(file, new StateCodec()));
+        Clock later = Clock.fixed(NOW.plusDays(2).toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
+        Result second = run(new BufferedReader(new StringReader("schedule 2026-09-21\nexit\n")),
+                new FileStorage(file, new StateCodec()), later);
+
+        assertEquals(0, first.status());
+        assertEquals(0, second.status());
+        String firstSchedule = first.output().split("scheduleflow> === Schedule", 2)[1]
+                .split("scheduleflow> Goodbye", 2)[0];
+        String restoredSchedule = second.output().split("scheduleflow> === Schedule", 2)[1]
+                .split("scheduleflow> Goodbye", 2)[0];
+        assertEquals(firstSchedule, restoredSchedule);
+        assertTrue(second.output().contains("08:00 - 08:30 | [TASK] T1: Draft (30 min)"));
+    }
+
+    @Test
+    void run_planMaterializesRecurringTasks_restoresExactSourceAndInvalidatesAfterProgress() throws Exception {
+        Path file = directory.resolve("data/scheduleflow.txt");
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        LocalDateTime firstDeadline = NOW.plusDays(1);
+        RecurringTask pending = new RecurringTask(1, "Weekly", firstDeadline,
+                Optional.of(firstDeadline.toLocalDate()), 60, Optional.empty());
+        Task undated = new Task(1, "Undated", Optional.empty(), 17, TaskPriority.HIGH);
+        Snapshot source = new Snapshot(List.of(undated), List.of(), 2, 1,
+                Snapshot.empty().studyHours(), List.of(pending), 2);
+        storage.save(source);
+
+        assertEquals(0, run("plan\nexit\n", storage).status());
+        Snapshot generated = storage.load();
+        Plan plan = storage.loadPlan(generated).orElseThrow();
+        byte[] saved = Files.readAllBytes(file);
+        assertEquals(List.of(1, 2), generated.tasks().stream().map(Task::id).toList());
+        assertEquals(Optional.of(firstDeadline), generated.recurringTasks().getFirst().generatedThrough());
+        assertEquals(77, plan.sessions().stream().mapToInt(session -> session.workMinutes()).sum());
+
+        Result restarted = run("schedule today\nexit\n", new FileStorage(file, new StateCodec()));
+        assertEquals(0, restarted.status());
+        assertTrue(restarted.output().contains(new TextRenderer().schedule(
+                new ScheduleService().forDate(plan, NOW.toLocalDate()))));
+        assertArrayEquals(saved, Files.readAllBytes(file));
+        assertEquals(plan, storage.loadPlan(generated).orElseThrow());
+
+        assertEquals(0, run("task progress T1 done/1\nexit\n", storage).status());
+        Snapshot changed = storage.load();
+        assertEquals(16, changed.tasks().getFirst().remainingMinutes());
+        assertEquals(generated.recurringTasks(), changed.recurringTasks());
+        assertEquals(generated.nextTaskId(), changed.nextTaskId());
+        assertTrue(storage.loadPlan(changed).isEmpty());
+        assertEquals(0, run("schedule today\nexit\n", storage).status());
+    }
+
+    @Test
+    void run_failedPlanSave_preservesPreviouslyRestoredPlan() {
+        Snapshot source = Snapshot.empty();
+        FakeStorage storage = new FakeStorage(source);
+        Plan previous = new EarliestDeadlinePlanner().generate(source, NOW.minusDays(1));
+        storage.savedPlan = Optional.of(previous);
+        storage.failPlanSave = true;
+
+        Result result = run("plan\nschedule today\nexit\n", storage);
+
+        assertEquals(0, result.status());
+        assertTrue(result.output().contains("Error: Plan save rejected"));
+        assertTrue(result.output().contains("Generated at: 2026-09-20 07:00"));
+        assertEquals(Optional.of(previous), storage.savedPlan);
+        assertEquals(1, storage.planSaveCalls);
+        assertEquals(0, storage.saveCalls);
+    }
+
+    @Test
+    void run_corruptSavedPlan_stopsBeforePromptAndPreservesFile() throws Exception {
+        Path file = directory.resolve("data/scheduleflow.txt");
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        storage.savePlan(new EarliestDeadlinePlanner().generate(Snapshot.empty(), NOW));
+        String corrupt = Files.readString(file).replace("|0|0|0\n", "|1|0|0\n");
+        Files.writeString(file, corrupt);
+
+        Result result = run("exit\n", new FileStorage(file, new StateCodec()));
+
+        assertEquals(1, result.status());
+        assertTrue(result.output().startsWith("Error: Saved plan row counts do not match its records."));
+        assertFalse(result.output().contains("scheduleflow>"));
+        assertEquals(corrupt, Files.readString(file));
+    }
+    // @@author ka-how
 
     @Test
     void run_exitAndEof_loadOnceAndNeverSave() {
@@ -260,7 +357,7 @@ class AppTest {
     }
 
     @Test
-    void run_failedSave_preservesExistingFileBytesAndPlan() throws Exception {
+    void run_failedSnapshotSave_preservesSavedPlanAndSource() throws Exception {
         Snapshot original = new Snapshot(List.of(new Task(2, "Existing", NOW.plusDays(1), 30)), List.of(), 3, 1);
         Path file = directory.resolve("scheduleflow.txt");
         FileStorage delegate = new FileStorage(file, new StateCodec());
@@ -272,6 +369,18 @@ class AppTest {
                 return delegate.load();
             }
 
+            // @@author ernestgoh-god
+            @Override
+            public Optional<Plan> loadPlan(Snapshot source) throws StorageException {
+                return delegate.loadPlan(source);
+            }
+
+            @Override
+            public void savePlan(Plan plan) throws StorageException {
+                delegate.savePlan(plan);
+            }
+            // @@author ka-how
+
             @Override
             public void save(Snapshot state) throws StorageException {
                 throw new StorageException("Save rejected before replacement");
@@ -282,7 +391,11 @@ class AppTest {
         assertTrue(result.output().contains("Error: Save rejected before replacement"));
         assertFalse(result.output().contains("Added T3"));
         assertTrue(result.output().contains("08:00 - 08:30 | [TASK] T2: Existing (30 min)"));
-        assertArrayEquals(bytes, Files.readAllBytes(file));
+        // @@author ernestgoh-god
+        assertFalse(Arrays.equals(bytes, Files.readAllBytes(file)));
+        assertTrue(Files.readString(file).startsWith("SCHEDULEFLOW|6\n"));
+        assertTrue(delegate.loadPlan(original).isPresent());
+        // @@author ka-how
         assertEquals(original, delegate.load());
     }
 
@@ -301,7 +414,7 @@ class AppTest {
     }
 
     @Test
-    void run_restart_preservesCountersAndClearsPlan() throws Exception {
+    void run_restart_preservesCountersAndRestoresPlan() throws Exception {
         Path file = directory.resolve("data/scheduleflow.txt");
         Result first = run(ADD_TASK + "\nplan\ntask delete T1\nplan\nexit\n", new FileStorage(file, new StateCodec()));
         assertEquals(0, first.status());
@@ -309,13 +422,15 @@ class AppTest {
         Result second = run("schedule today\n" + ADD_TASK + "\ntask list\nexit\n",
                 new FileStorage(file, new StateCodec()));
         assertEquals(0, second.status());
-        assertTrue(second.output().startsWith("scheduleflow> No current plan. Run plan to generate one."));
+        // @@author ernestgoh-god
+        assertTrue(second.output().startsWith("scheduleflow> === Schedule for Monday (2026-09-21) ==="));
+        // @@author ka-how
         assertTrue(second.output().contains("Added T2: Draft"));
         assertEquals(2, new FileStorage(file, new StateCodec()).load().tasks().getFirst().id());
     }
 
     @Test
-    void run_loadedOverdueTask_remainsVisibleAndPlansWithoutSaving() throws Exception {
+    void run_loadedOverdueTask_remainsVisibleAndSavesPlan() throws Exception {
         Snapshot overdue = new Snapshot(List.of(new Task(1, "Overdue", NOW.minusDays(1), 60)), List.of(), 2, 1);
         Path file = directory.resolve("scheduleflow.txt");
         FileStorage storage = new FileStorage(file, new StateCodec());
@@ -325,7 +440,11 @@ class AppTest {
         assertEquals(0, result.status());
         assertTrue(result.output().contains("T1 | Overdue | 60 min"));
         assertTrue(result.output().contains("T1: Overdue | Unallocated: 60 min | Reason: deadline passed"));
-        assertArrayEquals(bytes, Files.readAllBytes(file));
+        // @@author ernestgoh-god
+        assertFalse(Arrays.equals(bytes, Files.readAllBytes(file)));
+        assertTrue(storage.loadPlan(overdue).isPresent());
+        assertEquals(overdue, storage.load());
+        // @@author ka-how
     }
 
     @Test
@@ -350,6 +469,18 @@ class AppTest {
             public Snapshot load() {
                 throw new IllegalStateException("Storage defect");
             }
+
+            // @@author ernestgoh-god
+            @Override
+            public Optional<Plan> loadPlan(Snapshot source) {
+                throw new AssertionError("Must not load plan after defective load");
+            }
+
+            @Override
+            public void savePlan(Plan plan) {
+                throw new AssertionError("Must not save plan after defective load");
+            }
+            // @@author ka-how
 
             @Override
             public void save(Snapshot state) {
@@ -438,10 +569,17 @@ class AppTest {
      * Allows controlled reader failures and normalizes only platform line endings.
      */
     private Result run(BufferedReader input, Storage storage) {
+        return run(input, storage, CLOCK);
+    }
+
+    // @@author ernestgoh-god
+    /** Runs an isolated session at a selected time to verify restart does not regenerate frozen plans. */
+    private Result run(BufferedReader input, Storage storage, Clock clock) {
         StringWriter output = new StringWriter();
-        int status = new App(storage, CLOCK, new ConsoleUi(input, new PrintWriter(output))).run();
+        int status = new App(storage, clock, new ConsoleUi(input, new PrintWriter(output))).run();
         return new Result(status, output.toString().replace("\r\n", "\n"));
     }
+    // @@author ka-how
 
     /**
      * Holds observable status and complete console output from one session.
@@ -454,6 +592,11 @@ class AppTest {
      */
     private static final class FakeStorage implements Storage {
         private Snapshot saved;
+        // @@author ernestgoh-god
+        private Optional<Plan> savedPlan = Optional.empty();
+        private int planSaveCalls;
+        private boolean failPlanSave;
+        // @@author ka-how
         private int loadCalls;
         private int saveCalls;
         private boolean failLoad;
@@ -478,6 +621,16 @@ class AppTest {
             return saved;
         }
 
+        // @@author ernestgoh-god
+        @Override
+        public Optional<Plan> loadPlan(Snapshot source) throws StorageException {
+            if (!saved.equals(source)) {
+                throw new StorageException("Plan source differs from saved data");
+            }
+            return savedPlan;
+        }
+        // @@author ka-how
+
         @Override
         public void save(Snapshot state) throws StorageException {
             saveCalls++;
@@ -485,6 +638,21 @@ class AppTest {
                 throw new StorageException("Save rejected");
             }
             saved = state;
+            // @@author ernestgoh-god
+            savedPlan = Optional.empty();
+            // @@author ka-how
         }
+
+        // @@author ernestgoh-god
+        @Override
+        public void savePlan(Plan plan) throws StorageException {
+            planSaveCalls++;
+            if (failPlanSave) {
+                throw new StorageException("Plan save rejected");
+            }
+            saved = plan.source();
+            savedPlan = Optional.of(plan);
+        }
+        // @@author ka-how
     }
 }

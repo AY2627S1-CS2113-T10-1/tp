@@ -375,7 +375,7 @@ Integration handoff (ownership-marked comments are present at the relevant code)
   formatting, plus adjacent supplied break rows with cutoff notes and remainders.
 - **Save:** coordinate adding settings to `Snapshot`, codec versioning and legacy
   defaults. Ensure task, commitment and hours mutations preserve them. This change
-  does not modify the snapshot or saved format; #68 plan persistence is separate.
+  does not modify the snapshot or saved format; #68 persists the resulting frozen breaks.
 
 Fixed-time JUnit tests cover cross-task limits, exact and 2x/3x commitment
 overruns, adjacent commitments, interrupted and partially elapsed breaks,
@@ -559,11 +559,13 @@ slot start while retaining current study hours, dated/skipped commitments and
 continuous-work policy. No second allocation algorithm is introduced.
 
 `plan` first materializes a candidate and generates its Plan, validates the source
-association and formats the result before any publication. If data or cursors
-changed, it saves the complete candidate once, commits and then publishes the
-already-validated temporary plan. Planner/null/stale-result/rendering/save failure
-preserves the previous snapshot and plan. No-op materialization causes no write.
-Plans remain temporary; this change does not implement exact-plan persistence.
+association and formats the result before publication. It atomically saves the
+complete candidate and frozen plan together through `Storage.savePlan`, then
+commits any changed source and publishes the plan. This avoids an intermediate
+snapshot-only save that could discard the previous plan if the second save failed.
+Planner/null/stale-result/rendering/save failure preserves the previous snapshot,
+cursors, IDs and plan. Every successful `plan` saves its result, including when
+materialization makes no source changes.
 
 #### Recurrence storage format
 
@@ -712,7 +714,7 @@ Names are last so literal pipes need no escaping. Encoding preserves each
 list's order and writes LF line endings. Decoding also accepts CRLF/CR and an
 omitted final newline. Java's date/time parsers and existing domain constructors
 validate the complete snapshot, including overlaps and counters. Past deadlines
-remain valid; plans are never stored. Invalid data raises `StorageException`
+remain valid. Invalid data raises `StorageException`
 without returning a partial snapshot or modifying the file.
 
 New writes without recurrence, bounded or skipped commitments use this version 2 layout:
@@ -738,9 +740,9 @@ legacy/extended rows still share normal duplicate-ID/counter validation. `TASK2`
 rows are also valid in versions 3 and 4, which add commitment bounds and skips,
 and in version 5, which adds recurring templates and occurrence rows as described
 above. Tasks and commitments retain stored order; HOURS rows sort by target.
-Plans are not persisted. Loading legacy data is read-only; the next save writes
-extended version 2, 3, 4 or 5. FileStorage constructors and atomic save behavior
-are unchanged.
+Loading legacy data is read-only; the next snapshot save writes extended
+version 2, 3, 4 or 5. Generating a plan instead writes version 6 as described
+below. FileStorage constructors and atomic replacement behavior are unchanged.
 
 `StateCodecTest` covers the format and validation, including `TASK2` records
 alongside bounded version 3 and skipped version 4 commitments. Planner tests
@@ -762,6 +764,44 @@ Console integration loads once at startup, then saves
 each candidate before `AppState.commit` and success output. `AppTest` verifies
 restart and rollback alongside the storage tests. Use one writer per file;
 atomic replacement does not promise durability after power loss.
+
+### Automatic saved schedules (issue #68)
+
+`PlanCodec` writes `SCHEDULEFLOW|6`, keeping version 5 available for upstream's
+recurring-task snapshots. The embedded source always uses the full version 5
+layout: three NEXT counters, extended tasks, occurrence provenance, templates,
+processing cursors, commitment bounds/skips and study hours. One
+`PLAN|generatedAt|horizonEnd|sessionCount|unallocatedCount|breakCount` row follows,
+then the counted rows:
+
+```text
+SESSION|taskId|start|end|exactWorkMinutes
+UNALLOCATED|taskId|deadline-or-NONE|exactMinutes|capacityMinutes|reason|name
+BREAK|start|end
+```
+
+Session work preserves partial-slot padding, and unallocated capacity is a long
+so rounding an `Integer.MAX_VALUE` estimate cannot overflow. Names remain last
+so literal pipes survive. Decoding validates the source, row counts, references,
+ordering, horizon and individual planning-record contracts without regenerating
+or rescheduling. Versions 1-5 remain readable. The earlier branch's version 5
+saved plans are distinguished by their two NEXT counters and read using the old
+version 4 source layout; new saves always use version 6 for plans.
+
+`FileStorage.savePlan` writes the source and result in one atomic replacement.
+`save` removes any prior plan while saving a mutation. At startup, `App` loads
+and validates the complete file before restoring the matching plan; it does not
+read the clock or materialize recurrence during restoration. Existing sessions,
+generation time, unallocated work and reserved breaks are reused exactly.
+Keep one running instance per data file; atomic replacement does not provide
+coordination between concurrent writers.
+
+`PlanCodecTest` covers exact work, optional deadlines, retained completion,
+recurrence/provenance/counters, large capacity, breaks, pipe names, legacy files
+and malformed rows. File and fixed-clock application tests cover one-file
+restoration, read-only restart, materialization, mutation invalidation and failed
+save rollback. UI-031 checks frozen schedules across packaged-process restarts;
+UI-032 checks saved recurrence metadata with exact work and progress invalidation.
 
 ### Storage defensive checks and diagnostics
 
@@ -985,7 +1025,7 @@ rules. It rejects repeated, reordered and unknown fields. Domain validation,
 including empty-edit rejection, remains in the service. The dispatcher resolves
 the replacement before the existing save-and-commit transaction and reports it
 through `TextRenderer.commitmentEdited`. Even identical-value valid edits save
-and invalidate the temporary plan, consistently with successful mutations.
+and invalidate the saved plan, consistently with successful mutations.
 
 Tests cover all fifteen nonempty field subsets, invalid syntax, immutable source
 snapshots, self-exclusion, multi-conflict ordering, adjacent and midnight bounds,
@@ -1166,10 +1206,11 @@ assertions. Run `./gradlew test --tests 'scheduleflow.commitment.*' --tests 'sch
 Mutation services validate and return candidates. The dispatcher resolves the
 added or removed record, calls `Storage.save`, then calls `AppState.commit` and
 formats success. A failed save propagates without publishing the candidate,
-consuming an ID or clearing the current plan. Shared public APIs are unchanged.
+consuming an ID or clearing the current plan. Existing command and service
+interfaces are preserved; issue #68 adds `loadPlan` and `savePlan` to Storage.
 
 Help, lists, schedule and exit preserve state and make no save call. Planning
-replaces only the temporary plan; partial and empty results remain usable.
+saves and replaces the frozen plan; partial and empty results remain usable.
 Schedule requests project that frozen plan; absence takes precedence over date
 validation. Exceptions from domain services remain their owners' validation.
 
@@ -1180,8 +1221,8 @@ range validation, zone-aware today and frozen/replaced plans.
 
 ### Application lifecycle and executable entry point
 
-`App.run` loads once and stops with status 1 before prompting if storage rejects
-the load. Each loop prompts and reads a line, ignores blanks, parses, dispatches
+`App.run` loads the snapshot and any matching saved plan before prompting, and
+stops with status 1 if storage rejects either load. Each loop prompts and reads a line, ignores blanks, parses, dispatches
 and prints the response. Parse errors include usage; domain and save errors
 print one error and allow another command. Input failure returns 1; exit and
 EOF return 0 with goodbye and no save. Unexpected programming exceptions
@@ -1331,7 +1372,7 @@ estimates or commitments before the deadline.
 * *Commitment* - A busy interval repeated on one weekday, optionally within
   inclusive dates, or a one-time busy interval on a single date.
 * *Snapshot* - Immutable tasks, commitments, study hours and independent next-ID counters.
-* *Plan* - Temporary allocations and unallocated work derived from a snapshot.
+* *Plan* - Frozen allocations and unallocated work derived from a snapshot, saved until a successful mutation.
 * *Planning horizon* - The calendar range ending at midnight on the same date
   next year, with February 29 adjusted to February 28 when necessary.
 * *Slot* - A 30-minute interval within the daily study window.

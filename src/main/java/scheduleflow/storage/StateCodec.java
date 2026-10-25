@@ -62,6 +62,17 @@ public final class StateCodec {
      * @throws NullPointerException if the snapshot is null
      */
     public String encode(Snapshot state) {
+        return encodeSnapshot(state, false);
+    }
+
+    // @@author ernestgoh-god
+    /** Encodes a plan's source using the complete version 5 layout, including all recurrence counters. */
+    String encodeForPlan(Snapshot state) {
+        return encodeSnapshot(state, true);
+    }
+
+    /** Shares snapshot encoding while allowing a frozen plan to require the full record layout. */
+    private String encodeSnapshot(Snapshot state, boolean fullRecordLayout) {
         Objects.requireNonNull(state, "state");
         LOGGER.log(Level.FINE, "Starting snapshot encoding");
         // @@author Darren50
@@ -69,9 +80,11 @@ public final class StateCodec {
                 .anyMatch(commitment -> commitment.startDate() != null);
         boolean hasSkippedOccurrences = state.commitments().stream()
                 .anyMatch(commitment -> !commitment.skippedDates().isEmpty());
-        // @@author nickpatt
-        boolean hasRecurrence = !state.recurringTasks().isEmpty() || state.nextRecurringTaskId() != 1
+        // @@author ernestgoh-god
+        boolean hasRecurrence = fullRecordLayout || !state.recurringTasks().isEmpty()
+                || state.nextRecurringTaskId() != 1
                 || state.tasks().stream().anyMatch(task -> task.occurrence().isPresent());
+        // @@author nickpatt
         String version = hasRecurrence ? "SCHEDULEFLOW|5" : hasSkippedOccurrences ? "SCHEDULEFLOW|4"
                 : hasDateBoundedCommitments ? "SCHEDULEFLOW|3"
                 : "SCHEDULEFLOW|2";
@@ -138,6 +151,10 @@ public final class StateCodec {
         if (text == null) {
             LOGGER.log(Level.FINE, "Saved data decoding rejected; null text");
             throw new StorageException("Saved data must not be null.");
+        }
+        // @@author ernestgoh-god
+        if (PlanCodec.hasSavedPlan(text)) {
+            return new PlanCodec(this).decode(text).source();
         }
         List<String> lines = text.lines().toList();
         try {

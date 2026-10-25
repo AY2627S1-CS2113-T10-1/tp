@@ -13,7 +13,7 @@ exact output, invalid values, plan invalidation, replanning and saved data after
 two restarts. Save failure is covered by an isolated dispatcher fake because
 process-level fault injection is unavailable.
 
-All twenty-two maintained process scenarios are active. They exercise the packaged
+All twenty-four maintained process scenarios are active. They exercise the packaged
 JAR in fresh temporary folders, with restart sessions sharing only their own
 saved data. Review this plan and `ui-scenarios.json` after each coherent code
 update. The fixtures are the executable source of truth for exact responses.
@@ -30,6 +30,18 @@ candidates through fresh file readers, retaining values and both ID sequences
 after deletion. Repeated loading of valid overdue records preserves the original
 file bytes. These direct JUnit checks complement the active console scenarios
 and Printing's restart and rollback tests.
+
+Issue #68's UI-031 starts with a fixed version 6 file, checks the same schedule
+on two process launches, then confirms a successful task deletion clears it.
+Fixed-clock JUnit additionally generates and saves a plan through the command,
+compares its schedule before and after restart, verifies failed plan saves keep
+the prior plan, and rejects corrupt plan rows before the first prompt. Codec
+tests cover exact credited work, optional deadlines, large rounded capacities,
+recurrence metadata, reserved breaks, literal pipes and legacy snapshots/plans.
+UI-032 restores a version 6 recurring-task plan with partial-slot work and checks
+that progress invalidates the saved plan without losing template metadata.
+Fixed-clock tests also generate new recurring occurrences and save their source
+and plan together; injected plan-save failure preserves IDs, cursors and the old plan.
 
 Save's defensive-check tests also verify null snapshots are rejected before
 file changes, and capture opt-in storage diagnostics for success, corrupt input
@@ -126,7 +138,9 @@ optional/completed restored-data compatibility case and exact-minute restart che
 | UI-004 | Unsupported store version stops before prompting | Active |
 | UI-005 | Strict syntax, usage hints and recovery including `exit extra` | Active |
 | UI-006 | Blank lines, duration/alignment/overlap errors, unknown IDs and retry IDs | Active |
-| UI-007 | Unicode save/restart and temporary-plan loss | Active |
+| UI-007 | Unicode save/restart and plan invalidation after deletion | Active |
+| UI-031 | Saved version 6 schedule survives restart and is invalidated by task deletion | Active |
+| UI-032 | Saved recurrence and exact work survive restart; progress invalidates the plan | Active |
 | UI-008 | Truncated saved record stops startup with status 1 | Active |
 | UI-009 | Restored overdue/out-of-horizon tasks, numeric listing, deletion and restart | Active |
 | UI-010 | Exhausted task and commitment ID sequences reject additions without overflow | Active |

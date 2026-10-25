@@ -404,11 +404,13 @@ public final class CommandDispatcher {
         LOGGER.log(Level.FINE, "Saved candidate committed");
     }
 
+    // @@author ernestgoh-god
     /**
-     * Replaces the complete temporary plan without changing or saving task estimates.
+     * Saves and replaces the frozen plan without changing stored task estimates.
+     * A failed save leaves the current plan and saved file untouched.
      */
     private String generatePlan(AppState state, LocalDateTime now) throws StorageException {
-        LOGGER.log(Level.FINE, "Generating temporary plan");
+        LOGGER.log(Level.FINE, "Generating frozen plan");
         // @@author nickpatt
         Snapshot candidate = recurringTasks.materialize(state.snapshot(), now);
         Plan plan = Objects.requireNonNull(planner.generate(candidate, now), "generated plan");
@@ -416,14 +418,16 @@ public final class CommandDispatcher {
             throw new IllegalArgumentException("Generated plan must use the validated source snapshot.");
         }
         String output = renderer.plan(plan);
+        // @@author ernestgoh-god
+        storage.savePlan(plan);
         if (candidate != state.snapshot()) {
-            saveAndCommit(candidate, state);
+            state.commit(candidate);
         }
-        // @@author ka-how
         state.replacePlan(plan);
-        LOGGER.log(Level.FINE, "Temporary plan published; formatting result");
+        LOGGER.log(Level.FINE, "Saved plan published");
         return output;
     }
+    // @@author ka-how
 
     /**
      * Gives absent plans precedence over date-range validation and projects existing frozen plans.

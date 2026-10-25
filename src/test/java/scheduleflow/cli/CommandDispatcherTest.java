@@ -168,6 +168,9 @@ class CommandDispatcherTest {
             Plan prior = new EarliestDeadlinePlanner().generate(original, NOW);
             state.replacePlan(prior);
             FakeStorage storage = new FakeStorage(original);
+            // @@author ernestgoh-god
+            storage.savedPlan = Optional.of(prior);
+            // @@author ka-how
             storage.beforeSave = () -> {
                 assertSame(original, state.snapshot());
                 assertSame(prior, state.currentPlan().orElseThrow());
@@ -178,19 +181,34 @@ class CommandDispatcherTest {
                 assertTrue(source.recurringTasks().getFirst().generatedThrough().isPresent());
                 return new EarliestDeadlinePlanner().generate(source, now);
             };
+            // @@author ernestgoh-god
+            storage.beforePlanSave = storage.beforeSave;
+            // @@author ka-how
             CommandDispatcher dispatcher = new CommandDispatcher(new TaskService(), new CommitmentService(), storage,
                     planner, new ScheduleService(), renderer, CLOCK);
             storage.failSave = true;
             assertThrows(StorageException.class, () -> dispatcher.execute(new Command.GeneratePlan(), state));
             assertSame(original, state.snapshot());
             assertSame(prior, state.currentPlan().orElseThrow());
+            // @@author ernestgoh-god
+            assertSame(original, storage.saved);
+            assertEquals(Optional.of(prior), storage.savedPlan);
+            Snapshot attempted = storage.attempted;
+            // @@author ka-how
             storage.failSave = false;
             dispatcher.execute(new Command.GeneratePlan(), state);
             assertSame(storage.saved, state.snapshot());
             assertSame(state.snapshot(), state.currentPlan().orElseThrow().source());
-            assertEquals(2, storage.saveCalls);
+            // @@author ernestgoh-god
+            assertEquals(attempted, storage.saved);
+            assertEquals(0, storage.saveCalls);
+            assertEquals(2, storage.planSaveCalls);
+            assertEquals(state.currentPlan(), storage.savedPlan);
+            storage.beforePlanSave = () -> { };
             dispatcher.execute(new Command.GeneratePlan(), state);
-            assertEquals(2, storage.saveCalls);
+            assertEquals(3, storage.planSaveCalls);
+            assertEquals(0, storage.saveCalls);
+            // @@author ka-how
         }
     }
 
@@ -928,6 +946,12 @@ class CommandDispatcherTest {
      */
     private static final class FakeStorage implements Storage {
         private Snapshot saved;
+        // @@author ernestgoh-god
+        private Optional<Plan> savedPlan = Optional.empty();
+        private int planSaveCalls;
+        /** Observes source/plan publication at the combined plan-save boundary. */
+        private Runnable beforePlanSave = () -> { };
+        // @@author ka-how
         private Snapshot attempted;
         private int saveCalls;
         private boolean failSave;
@@ -948,6 +972,16 @@ class CommandDispatcherTest {
             return saved;
         }
 
+        // @@author ernestgoh-god
+        @Override
+        public Optional<Plan> loadPlan(Snapshot source) throws StorageException {
+            if (!saved.equals(source)) {
+                throw new StorageException("Plan source differs from saved data");
+            }
+            return savedPlan;
+        }
+        // @@author ka-how
+
         @Override
         public void save(Snapshot state) throws StorageException {
             saveCalls++;
@@ -957,7 +991,24 @@ class CommandDispatcherTest {
                 throw new StorageException("Save rejected");
             }
             saved = state;
+            // @@author ernestgoh-god
+            savedPlan = Optional.empty();
+            // @@author ka-how
         }
+
+        // @@author ernestgoh-god
+        @Override
+        public void savePlan(Plan plan) throws StorageException {
+            planSaveCalls++;
+            attempted = plan.source();
+            beforePlanSave.run();
+            if (failSave) {
+                throw new StorageException("Plan save rejected");
+            }
+            saved = plan.source();
+            savedPlan = Optional.of(plan);
+        }
+        // @@author ka-how
     }
 
     /**

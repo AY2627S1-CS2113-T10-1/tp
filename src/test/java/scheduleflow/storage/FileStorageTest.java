@@ -32,6 +32,9 @@ import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 import scheduleflow.model.TaskOccurrence;
 import scheduleflow.model.TaskPriority;
+import scheduleflow.planning.EarliestDeadlinePlanner;
+import scheduleflow.planning.Plan;
+import scheduleflow.planning.TimeRules;
 import scheduleflow.task.TaskService;
 
 // @@author ernestgoh-god
@@ -132,6 +135,62 @@ class FileStorageTest {
         assertEquals(2, completed.nextCommitmentId());
     }
     // @@author ernestgoh-god
+
+    @Test
+    void savePlan_restartRestoresFrozenResultAndMutationRemovesIt() throws Exception {
+        Path file = directory.resolve("data/scheduleflow.txt");
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        LocalDateTime now = LocalDateTime.of(2026, 10, 5, 7, 0);
+        Plan empty = new Plan(now, TimeRules.horizonEnd(now), Snapshot.empty(), List.of(), List.of());
+
+        assertEquals(Optional.empty(), storage.loadPlan(Snapshot.empty()));
+        storage.savePlan(empty);
+        assertEquals(Snapshot.empty(), new FileStorage(file, new StateCodec()).load());
+        assertEquals(Optional.of(empty), new FileStorage(file, new StateCodec()).loadPlan(Snapshot.empty()));
+        assertTrue(Files.readString(file).startsWith("SCHEDULEFLOW|6\n"));
+
+        Snapshot changed = new Snapshot(List.of(new Task(1, "Draft", now.plusDays(1), 30)), List.of(), 2, 1);
+        storage.save(changed);
+        assertEquals(Optional.empty(), storage.loadPlan(changed));
+        assertEquals(changed, storage.load());
+    }
+
+    @Test
+    void savePlan_candidateSourceAndPlan_replaceTogetherAndRejectMismatchedLoad() throws Exception {
+        Path file = directory.resolve("scheduleflow.txt");
+        FileStorage storage = new FileStorage(file, new StateCodec());
+        LocalDateTime now = LocalDateTime.of(2026, 10, 5, 7, 0);
+        Snapshot source = new Snapshot(List.of(new Task(1, "Draft", now.plusDays(1), 30)), List.of(), 2, 1);
+        storage.save(source);
+        Snapshot candidate = new TaskService().recordWork(source, 1, 15);
+        Plan plan = new EarliestDeadlinePlanner().generate(candidate, now);
+
+        storage.savePlan(plan);
+
+        FileStorage restarted = new FileStorage(file, new StateCodec());
+        byte[] saved = Files.readAllBytes(file);
+        assertEquals(candidate, restarted.load());
+        assertEquals(Optional.of(plan), restarted.loadPlan(candidate));
+        assertThrows(StorageException.class, () -> restarted.loadPlan(source));
+        assertArrayEquals(saved, Files.readAllBytes(file));
+    }
+
+    @Test
+    void savePlan_failedReplacement_preservesExistingTargetAndCleansTemporaryFile() throws Exception {
+        Path file = directory.resolve("occupied");
+        Files.createDirectory(file);
+        Path retained = file.resolve("retained.txt");
+        Files.writeString(retained, "keep");
+        LocalDateTime now = LocalDateTime.of(2026, 10, 5, 7, 0);
+        Plan plan = new Plan(now, TimeRules.horizonEnd(now), Snapshot.empty(), List.of(), List.of());
+
+        assertThrows(StorageException.class, () -> new FileStorage(file, new StateCodec()).savePlan(plan));
+
+        assertEquals("keep", Files.readString(retained));
+        try (var children = Files.list(directory)) {
+            assertEquals(List.of(file), children.toList());
+        }
+    }
 
     @Test
     void constructor_nullDependencies_rejectsWithoutCreatingData() {
