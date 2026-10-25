@@ -44,7 +44,7 @@ class ContractsTest {
         assertEquals(0, new Command.ReviseTaskRemaining(1, 0).remainingMinutes());
         // @@author
         // @@author nickpatt
-        assertEquals(23, Command.class.getPermittedSubclasses().length);
+        assertEquals(25, Command.class.getPermittedSubclasses().length);
         // @@author ka-how
         // @@author ernestgoh-god
         // @@author ka-how

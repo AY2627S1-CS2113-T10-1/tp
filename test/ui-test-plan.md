@@ -204,9 +204,10 @@ exit 2 means BLOCKED. A planned or diagnostic scaffold case is never a pass.
 The separate `test/ui-unavailable-ranges.planned.json` file holds proposed
 exact inputs and outputs. It is excluded from the main release fixture, which
 requires every maintained release case to be active. No range command is
-currently parsed. Service, parser, dispatcher and renderer skeletons throw
-explicitly and are not feature passes. New command-record tests cover only
-their implemented transport/reference contracts.
+currently parsed. The commitment service operations are implemented with
+JUnit coverage, but parser, dispatcher and renderer skeletons still throw
+explicitly, so no range case can run yet and none is a feature pass. New
+command-record tests cover only their implemented transport/reference contracts.
 
 | ID | Proposed acceptance coverage | Status |
 | --- | --- | --- |
@@ -228,9 +229,10 @@ The Developer Guide's handoff contains the corresponding owner-specific JUnit
 matrix, including injected save failure, whole-batch rollback and ID exhaustion.
 Two active planner tests supply the expected dated records manually through
 the existing one-time API to verify allocation/projection compatibility for
-continuous and daily representations. They do not call or certify the new
-batch skeletons. Exact range-command parsing, creation, confirmation and
-transaction acceptance remain unexecuted until the owners implement them.
+continuous and daily representations. `CommitmentServiceTest` separately
+verifies the implemented batch creation, rollback and ID limits. Exact
+range-command parsing, confirmation and transaction acceptance remain
+unexecuted until the parser, dispatcher and renderer owners implement them.
 ## Planned issue #40 console acceptance
 
 Progress grammar, candidate transactions and exact work are implemented, but
