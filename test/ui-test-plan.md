@@ -198,12 +198,13 @@ exit 2 means BLOCKED. A planned or diagnostic scaffold case is never a pass.
 
 The separate `test/ui-unavailable-ranges.planned.json` file holds proposed
 exact inputs and outputs. It is excluded from the main release fixture, which
-requires every maintained release case to be active. No range command is
-currently parsed. The commitment service operations are implemented with
-JUnit coverage. The batch renderer is implemented and tested for exact counts,
-new ID/date rows, leap day, Unicode, midnight, framing and invalid batches.
-Parser and dispatcher skeletons still throw explicitly, so no range case can
-run yet and none is a feature pass. New
+requires every maintained release case to be active. Both range modes are parsed
+into transport records with deterministic JUnit coverage. The commitment service
+operations are implemented with JUnit coverage. The batch renderer is tested
+for exact counts, new ID/date rows, leap day, Unicode, midnight, framing and
+invalid batches.
+The dispatcher skeletons still throw explicitly, so no range case can run yet
+and none is a feature pass. New
 command-record tests cover only their implemented transport/reference contracts.
 
 | ID | Proposed acceptance coverage | Status |
@@ -228,8 +229,9 @@ Two active planner tests supply the expected dated records manually through
 the existing one-time API to verify allocation/projection compatibility for
 continuous and daily representations. `CommitmentServiceTest` separately
 verifies the implemented batch creation, rollback and ID limits. Exact
-range-command parsing and transaction acceptance remain unexecuted until Ernest
-implements those routes. The planned fixtures retain their exact expectations.
+range-command parsing has JUnit coverage; transaction acceptance remains
+unexecuted until dispatch is implemented. The planned fixtures retain their
+exact expectations.
 
 ## Issue #40 console acceptance
 

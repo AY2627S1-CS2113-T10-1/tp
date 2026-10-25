@@ -58,6 +58,14 @@ public final class CommandParser {
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
     private static final String HOURS_USAGE = "hours DAY|YYYY-MM-DD [/start HH:mm /end HH:mm]"
             + " OR hours reset DAY|YYYY-MM-DD";
+    // @@author ernestgoh-god
+    private static final String UNAVAILABLE_CONTINUOUS_USAGE =
+            "unavailable continuous n/NAME from/YYYY-MM-DD HHmm until/YYYY-MM-DD HHmm";
+    private static final String UNAVAILABLE_DAILY_USAGE =
+            "unavailable daily n/NAME from/YYYY-MM-DD until/YYYY-MM-DD start/HHmm end/HHmm";
+    private static final String UNAVAILABLE_USAGE = UNAVAILABLE_CONTINUOUS_USAGE
+            + " OR " + UNAVAILABLE_DAILY_USAGE;
+    // @@author ka-how
     private static final String DATE_TOKEN = "[0-9]{4}-[0-9]{2}-[0-9]{2}";
     private static final String DATE_RANGE_PATTERN = "(?: +from/(?<from>" + DATE_TOKEN
             + ") +until/(?<until>" + DATE_TOKEN + "))?";
@@ -80,6 +88,16 @@ public final class CommandParser {
      * Matches name text while excluding slash so extra prefixes cannot be swallowed into a multiword name.
      */
     private static final String NAME_TOKEN = "[^/\\p{javaISOControl}]*";
+    // @@author ernestgoh-god
+    private static final Pattern UNAVAILABLE_CONTINUOUS_PATTERN = Pattern.compile(
+            "unavailable +continuous +n/(?<name>" + NAME_TOKEN + ") +from/(?<from>" + DATE_TOKEN
+                    + ") +(?<start>" + TIME_TOKEN + ") +until/(?<until>" + DATE_TOKEN
+                    + ") +(?<end>" + TIME_TOKEN + ")");
+    private static final Pattern UNAVAILABLE_DAILY_PATTERN = Pattern.compile(
+            "unavailable +daily +n/(?<name>" + NAME_TOKEN + ") +from/(?<from>" + DATE_TOKEN
+                    + ") +until/(?<until>" + DATE_TOKEN + ") +start/(?<start>" + TIME_TOKEN
+                    + ") +end/(?<end>" + TIME_TOKEN + ")");
+    // @@author ka-how
     private static final Pattern TASK_ADD_PATTERN = Pattern.compile(
             "task +add +n/(?<name>" + NAME_TOKEN + ") +due/(?<date>" + DATE_TOKEN
                     + ") +(?<time>" + TIME_TOKEN + ") +d/(?<minutes>" + POSITIVE_INT_TOKEN + ")");
@@ -142,18 +160,72 @@ public final class CommandParser {
     public CommandParser() {
     }
 
-    // @@author GabrielYuSP
+    // @@author ernestgoh-god
     /**
-     * Reserves parsing of the two explicit unavailable modes; it is not called by {@link #parse(String)} yet.
+     * Parses either unavailable range mode without applying commitment service rules.
      *
      * @param line complete unavailable command using the grammar in the Developer Guide
-     * @return continuous or daily transport command once implemented
-     * @throws ParseException for malformed input once implemented
-     * @throws UnsupportedOperationException until the Parsing owner implements and connects this method
+     * @return continuous or daily transport command
+     * @throws ParseException if syntax, dates or times are invalid
      */
     private Command parseUnavailable(String line) throws ParseException {
-        // TODO(ernestgoh-god): implement CommandParser.parseUnavailable and route it from parse.
-        throw new UnsupportedOperationException("Unavailable range parsing is not implemented yet.");
+        String mode = unavailableMode(line);
+        String usage = unavailableUsage(mode);
+        try {
+            return switch (mode) {
+                case "continuous" -> parseContinuousBlock(line, usage);
+                case "daily" -> parseDailyBlocks(line, usage);
+                default -> throw new ParseException("Invalid unavailable command format", usage);
+            };
+        } catch (DateTimeParseException exception) {
+            throw new ParseException("Invalid date or time", usage);
+        }
+    }
+
+    /** Reads the unavailable mode word while leaving complete syntax checks to its pattern. */
+    private String unavailableMode(String input) {
+        String[] words = input.split(" +", 3);
+        return words.length > 1 ? words[1] : "";
+    }
+
+    /** Selects the relevant mode's usage without accepting an unknown mode. */
+    private String unavailableUsage(String mode) {
+        return switch (mode) {
+            case "continuous" -> UNAVAILABLE_CONTINUOUS_USAGE;
+            case "daily" -> UNAVAILABLE_DAILY_USAGE;
+            default -> UNAVAILABLE_USAGE;
+        };
+    }
+
+    /** Builds a transport value from an entire continuous-mode match. */
+    private Command.AddContinuousBlock parseContinuousBlock(String input, String usage) throws ParseException {
+        Matcher fields = matchUnavailable(UNAVAILABLE_CONTINUOUS_PATTERN, input, usage);
+        LocalDate firstDate = parseOptionalDate(fields.group("from"), usage);
+        LocalDate lastDate = parseOptionalDate(fields.group("until"), usage);
+        LocalTime start = LocalTime.parse(fields.group("start"), TIME_FORMAT);
+        LocalTime end = LocalTime.parse(fields.group("end"), TIME_FORMAT);
+        return new Command.AddContinuousBlock(fields.group("name").strip(),
+                firstDate.atTime(start), lastDate.atTime(end));
+    }
+
+    /** Builds a transport value from an entire daily-mode match. */
+    private Command.AddDailyBlocks parseDailyBlocks(String input, String usage) throws ParseException {
+        Matcher fields = matchUnavailable(UNAVAILABLE_DAILY_PATTERN, input, usage);
+        LocalDate firstDate = parseOptionalDate(fields.group("from"), usage);
+        LocalDate lastDate = parseOptionalDate(fields.group("until"), usage);
+        LocalTime start = LocalTime.parse(fields.group("start"), TIME_FORMAT);
+        LocalTime end = LocalTime.parse(fields.group("end"), TIME_FORMAT);
+        return new Command.AddDailyBlocks(fields.group("name").strip(), firstDate, lastDate, start, end);
+    }
+
+    /** Rejects an incomplete, reordered or mixed unavailable command before constructing a transport value. */
+    private Matcher matchUnavailable(Pattern pattern, String input, String usage) throws ParseException {
+        Matcher fields = pattern.matcher(input);
+        if (!fields.matches()) {
+            throw new ParseException("Invalid unavailable command format", usage);
+        }
+        assert fields.start() == 0 && fields.end() == input.length() : "Grammar must match the complete input";
+        return fields;
     }
     // @@author
     // @@author ka-how
@@ -172,7 +244,7 @@ public final class CommandParser {
         String input = Objects.requireNonNull(line, "line").strip();
         LOGGER.log(Level.FINE, "Starting command parsing");
         String command = identifyCommand(input);
-        String usage = findUsage(command);
+        String usage = findUsage(command, input);
         LOGGER.log(Level.FINE, "Command words recognized; validating syntax");
         if (input.codePoints().anyMatch(Character::isISOControl)) {
             LOGGER.log(Level.FINE, "Rejected embedded control characters");
@@ -191,6 +263,9 @@ public final class CommandParser {
                 // @@author ernestgoh-god
                 case "task progress" -> parseTaskProgress(input);
                 case "task remaining" -> parseTaskRemaining(input);
+                // @@author ka-how
+                // @@author ernestgoh-god
+                case "unavailable" -> parseUnavailable(input);
                 // @@author ka-how
                 case "commitment add" -> parseAddCommitment(input);
                 case "commitment edit" -> parseEditCommitment(input);
@@ -234,7 +309,7 @@ public final class CommandParser {
     /**
      * Selects the expected syntax for recognized command words or the help hint.
      */
-    private String findUsage(String command) {
+    private String findUsage(String command, String input) {
         return switch (command) {
             case "task add" -> TASK_ADD_USAGE;
             case "task delete" -> TASK_DELETE_USAGE;
@@ -245,6 +320,9 @@ public final class CommandParser {
             // @@author ernestgoh-god
             case "task progress" -> TASK_PROGRESS_USAGE;
             case "task remaining" -> TASK_REMAINING_USAGE;
+            // @@author ka-how
+            // @@author ernestgoh-god
+            case "unavailable" -> unavailableUsage(unavailableMode(input));
             // @@author ka-how
             case "commitment add" -> COMMITMENT_ADD_USAGE;
             case "commitment edit" -> COMMITMENT_EDIT_USAGE;

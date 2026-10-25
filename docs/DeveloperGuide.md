@@ -138,11 +138,11 @@ extensions; this branch remains independent of the #55 study-policy feature.
 #### Multi-date unavailable periods: implementation handoff (planned)
 
 **Status:** transport records, exact planned console fixtures and tests for the
-resulting commitment representation are supplied. The commitment service
-operations (step 1 below) and the confirmation renderer are implemented and
-unit-tested. Parsing and dispatch remain unwired throwing skeletons, so the two
-range commands are NOT yet usable from the console. The following grammar and
-output are the proposed implementation contract for the team.
+resulting commitment representation are supplied. The commitment service,
+parser and confirmation renderer are implemented and unit-tested. Dispatch
+remains an unwired throwing skeleton, so the two range commands are NOT yet
+usable from the console. The following grammar and output remain the proposed
+implementation contract for the team.
 
 Continuous mode uses an inclusive start and exclusive end:
 
@@ -208,14 +208,17 @@ avoid arithmetic past year 9999 when stepping dates.
    `Snapshot.withCommitments` call. `CommitmentServiceTest` covers every
    Darren row of the JUnit matrix below, plus null references and logging.
    Preserve tasks, their counter, custom hours and other commitments.
-2. **Ernest (`ernestgoh-god`), parsing:** implement the private
-   `CommandParser.parseUnavailable` skeleton and route the new command word
-   through recognition and usage lookup. Return `Command.AddContinuousBlock`
-   or `Command.AddDailyBlocks`; their constructors only require references.
-   Match the entire case-sensitive input in the shown order. Reuse strict
-   existing name/date/time parsing, year checks and outer-whitespace handling.
-   Reject missing/repeated/reordered/extra or mixed-mode fields. Semantic range,
-   alignment and conflict validation stays in the commitment service.
+2. **Ernest (`ernestgoh-god`), implemented parsing:**
+   `CommandParser.parseUnavailable` routes both modes from `parse`, returning
+   `Command.AddContinuousBlock` or `Command.AddDailyBlocks`. Complete,
+   case-sensitive patterns preserve stripped Unicode names and parse strict
+   four-digit times and calendar dates in years 0001-9999. Missing, repeated,
+   reordered, extra and mixed-mode fields reject with the selected mode's
+   usage; unknown modes show both alternatives. Invalid dates/times and year
+   zero retain the existing parser messages. Semantic range, alignment and
+   conflict validation remains in the commitment service. Deterministic
+   `CommandParserTest` cases cover valid transport values, leap and boundary
+   dates, malformed fields and mode-specific errors.
 3. **Ernest, coordinating shared dispatch with Ka How:** replace the two
    explicit throwing switch cases. Call the selected service, identify added
    records from the candidate's IDs, save the complete candidate exactly once,
@@ -229,7 +232,7 @@ avoid arithmetic past year 9999 when stepping dates.
    guidance. Null lists/elements, empty batches and weekly records are rejected.
    `TextRendererTest` covers the continuous example, a daily service batch across
    leap day, unrelated-record exclusion, Unicode and boundary years. Add the two
-   command formats to help after parsing and dispatch work. Existing schedule
+   command formats to help after dispatch work. Existing schedule
    output continues to show `[BUSY]` and the generated IDs; no new allocation
    logic belongs in Printing.
 5. **Ernest, saving:** round-trip the whole batch through the existing version 3
@@ -275,7 +278,8 @@ printed before the save succeeds.
 [`test/ui-unavailable-ranges.planned.json`](../test/ui-unavailable-ranges.planned.json)
 contains exact per-command expected output for UI-022 through UI-027. All six
 are `planned`; do not treat their unexecuted expectations or a stub exception
-as a pass. The main release fixture remains fully active. Once dependencies are
+as a pass. Parsing alone does not activate console cases while dispatch is
+unfinished. The main release fixture remains fully active. Once dependencies are
 implemented, change the relevant case status to `active`, run it with
 `node .agents/skills/test-ui/scripts/run-ui-tests.mjs --fixtures test/ui-unavailable-ranges.planned.json`,
 and move verified cases into the main fixture in the same change. If the file
