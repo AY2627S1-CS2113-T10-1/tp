@@ -18,12 +18,14 @@ import scheduleflow.planning.UnallocatedWork;
 
 // @@author ernestgoh-god
 /**
- * Encodes a frozen plan and its complete source snapshot in file version 6.
+ * Encodes a frozen plan in version 6, or version 8 when its source has a stored study policy.
  * Version 5 snapshot-only recurrence files remain distinct from the earlier saved-plan prototype.
  */
 final class PlanCodec {
     /** Separates saved plans from version 5's recurring-task snapshots. */
     private static final String PLAN_HEADER = "SCHEDULEFLOW|6";
+    /** Adds policy-bearing version 7 source snapshots without reusing an existing saved-data version. */
+    private static final String POLICY_PLAN_HEADER = "SCHEDULEFLOW|8";
     /** Reads files written by the earlier, unmerged saved-plan implementation. */
     private static final String LEGACY_PLAN_HEADER = "SCHEDULEFLOW|5";
     /** Preserves existing snapshot validation for embedded source records. */
@@ -38,12 +40,13 @@ final class PlanCodec {
      * Encodes the exact generated result and its source in one complete file.
      *
      * @param plan validated frozen plan
-     * @return version 6 text with LF endings and a final newline
+     * @return version 6 or 8 text with LF endings and a final newline
      */
     String encode(Plan plan) {
         Objects.requireNonNull(plan, "plan");
         String source = snapshots.encodeForPlan(plan.source());
-        StringBuilder text = new StringBuilder(PLAN_HEADER).append(source.substring("SCHEDULEFLOW|5".length()));
+        String header = plan.source().studyPolicy().isPresent() ? POLICY_PLAN_HEADER : PLAN_HEADER;
+        StringBuilder text = new StringBuilder(header).append(source.substring(source.indexOf('\n')));
         text.append("PLAN|").append(plan.generatedAt()).append('|').append(plan.horizonEnd()).append('|')
                 .append(plan.sessions().size()).append('|').append(plan.unallocated().size()).append('|')
                 .append(plan.breaks().size()).append('\n');
@@ -68,6 +71,7 @@ final class PlanCodec {
     static boolean hasSavedPlan(String text) {
         List<String> firstLines = text.lines().limit(2).toList();
         return !firstLines.isEmpty() && (firstLines.getFirst().equals(PLAN_HEADER)
+                || firstLines.getFirst().equals(POLICY_PLAN_HEADER)
                 || (firstLines.getFirst().equals(LEGACY_PLAN_HEADER) && firstLines.size() == 2
                 && firstLines.get(1).split("\\|", -1).length == 3));
     }
@@ -85,7 +89,7 @@ final class PlanCodec {
         }
         List<String> lines = text.lines().toList();
         if (!hasSavedPlan(text)) {
-            throw new StorageException("Saved plan requires file version 6 or a legacy saved-plan file.");
+            throw new StorageException("Saved plan requires file version 6, 8 or a legacy saved-plan file.");
         }
         boolean legacy = lines.getFirst().equals(LEGACY_PLAN_HEADER);
         int planLine = -1;
@@ -99,7 +103,8 @@ final class PlanCodec {
             throw new StorageException("Saved plan metadata is missing.");
         }
         List<String> sourceLines = new ArrayList<>(lines.subList(0, planLine));
-        sourceLines.set(0, legacy ? "SCHEDULEFLOW|4" : "SCHEDULEFLOW|5");
+        sourceLines.set(0, legacy ? "SCHEDULEFLOW|4"
+                : lines.getFirst().equals(POLICY_PLAN_HEADER) ? "SCHEDULEFLOW|7" : "SCHEDULEFLOW|5");
         Snapshot source = snapshots.decode(String.join("\n", sourceLines) + "\n");
         try {
             String[] metadata = exactFields(lines.get(planLine), 6, "PLAN");

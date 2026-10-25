@@ -11,6 +11,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -24,6 +25,7 @@ import scheduleflow.planning.Plan;
 import scheduleflow.planning.ScheduleEntry;
 import scheduleflow.planning.ScheduleView;
 import scheduleflow.planning.SlotKind;
+import scheduleflow.planning.StudyPolicy;
 import scheduleflow.planning.StudySession;
 import scheduleflow.planning.UnallocatedWork;
 
@@ -124,6 +126,9 @@ public final class TextRenderer {
                 // @@author ernestgoh-god
                 "task complete TNUMBER - Mark a task complete without deleting it.",
                 "task list completed - List completed tasks.",
+                "policy set max/MINUTES break/MINUTES - Set continuous-work and required-break durations.",
+                "policy show - View the current study policy.",
+                "policy reset - Restore unrestricted planning.",
                 // @@author ka-how
                 // @@author nickpatt
                 "task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm] - Edit at least one field; run plan again.",
@@ -307,6 +312,21 @@ public final class TextRenderer {
     /** Formats a completed-only view while retaining stable IDs, deadlines and zero remaining work. */
     public String completedTasks(List<Task> tasks) {
         return formatTaskList(tasks, "=== Completed Tasks ===", "No completed tasks found.");
+    }
+
+    /** Displays stored policy values or the explicit unrestricted legacy default without reading a clock. */
+    public String studyPolicy(Optional<StudyPolicy> policy) {
+        Objects.requireNonNull(policy, "policy");
+        LOGGER.log(Level.FINE, "Formatting study policy");
+        return policy.map(value -> "Study policy: Maximum continuous work: " + value.maxContinuousMinutes()
+                + " min | Required break: " + value.breakMinutes() + " min")
+                .orElse("Study policy: unrestricted (no session limit or required break).");
+    }
+
+    /** Confirms a changed saved policy or an unchanged setting without implying another save occurred. */
+    public String studyPolicyUpdated(Optional<StudyPolicy> policy, boolean changed) {
+        return finish(studyPolicy(policy) + "\n" + (changed
+                ? "Saved study policy. Run plan to regenerate." : "Study policy unchanged."));
     }
 
     /** Shares task row formatting between the full list and completed-only view without reordering inputs. */

@@ -19,6 +19,7 @@ import scheduleflow.model.StudyWindow;
 import scheduleflow.model.Task;
 import scheduleflow.model.TaskOccurrence;
 import scheduleflow.model.TaskPriority;
+import scheduleflow.planning.StudyPolicy;
 
 // @@author ernestgoh-god
 /**
@@ -26,6 +27,31 @@ import scheduleflow.model.TaskPriority;
  */
 class StateCodecTest {
     private final StateCodec codec = new StateCodec();
+
+    // @@author ernestgoh-god
+    @Test
+    void encodeAndDecode_studyPolicy_preservesRecurrenceAndRejectsMissingDuplicateOrInvalidValues() throws Exception {
+        LocalDateTime first = LocalDateTime.of(2026, 10, 26, 18, 0);
+        RecurringTask template = new RecurringTask(1, "Weekly", first, Optional.empty(), 60, Optional.of(first));
+        Task occurrence = new Task(1, "Progress", first, 17, Optional.of(new TaskOccurrence(1, first)));
+        Snapshot source = new Snapshot(List.of(occurrence), List.of(), 2, 3,
+                Snapshot.empty().studyHours(), List.of(template), 4)
+                .withStudyPolicy(Optional.of(new StudyPolicy(90, 30)));
+        String text = codec.encode(source);
+        assertTrue(text.startsWith("SCHEDULEFLOW|7\nNEXT|2|3|4\n"));
+        assertEquals(source, codec.decode(text));
+        for (String invalid : List.of(text.replace("POLICY|90|30\n", ""), text + "POLICY|90|30\n",
+                text.replace("POLICY|90|30", "POLICY|0|30"), text.replace("POLICY|90|30", "POLICY|90|45"),
+                text.replace("POLICY|90|30", "POLICY|2147483648|30"),
+                text.replace("SCHEDULEFLOW|7", "SCHEDULEFLOW|5"))) {
+            assertThrows(StorageException.class, () -> codec.decode(invalid), invalid);
+        }
+        Snapshot reset = source.withStudyPolicy(Optional.empty());
+        assertTrue(codec.encode(reset).startsWith("SCHEDULEFLOW|5\n"));
+        assertEquals(reset, codec.decode(codec.encode(reset)));
+        assertTrue(codec.decode("SCHEDULEFLOW|1\nNEXT|1|1\n").studyPolicy().isEmpty());
+    }
+    // @@author
 
     // @@author nickpatt
     @Test

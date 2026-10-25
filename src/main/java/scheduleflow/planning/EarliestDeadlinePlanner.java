@@ -15,7 +15,7 @@ import scheduleflow.model.Task;
  * An optional policy reserves breaks after continuous task and commitment work.
  */
 public final class EarliestDeadlinePlanner implements Planner {
-    /** Holds an opt-in policy until Printing and Save integrate user-configurable settings. */
+    /** Supplies an optional constructor fallback when the source has no stored policy. */
     private final Optional<StudyPolicy> policy;
 
     /**
@@ -70,7 +70,9 @@ public final class EarliestDeadlinePlanner implements Planner {
     private List<Slot> createSlots(Snapshot state, LocalDateTime now,
             LocalDateTime horizonEnd, List<PendingTask> pending) {
         List<Slot> slots = new ArrayList<>();
-        WorkClock workClock = new WorkClock(policy);
+        // @@author ernestgoh-god
+        WorkClock workClock = new WorkClock(state.studyPolicy().or(() -> policy));
+        // @@author
         for (var date = now.toLocalDate(); date.isBefore(horizonEnd.toLocalDate()); date = date.plusDays(1)) {
             var window = state.studyHours().forDate(date);
             LocalDateTime cutoff = TimeRules.eligibleStart(date, now, window);

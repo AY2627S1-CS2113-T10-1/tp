@@ -40,6 +40,25 @@ class CommandParserTest {
 
     // @@author ernestgoh-god
     @Test
+    void parse_policy_preservesDurationsAndRejectsMalformedOrOverflowingFields() throws ParseException {
+        assertEquals(new Command.ShowStudyPolicy(), parser.parse(" policy  show "));
+        assertEquals(new Command.ResetStudyPolicy(), parser.parse("policy reset"));
+        assertEquals(new Command.SetStudyPolicy(90, 30), parser.parse("policy set max/90 break/30"));
+        assertEquals(new Command.SetStudyPolicy(0, 45), parser.parse("policy set max/0 break/45"));
+        assertEquals(new Command.SetStudyPolicy(Integer.MAX_VALUE, 30),
+                parser.parse("policy set max/2147483647 break/30"));
+        for (String input : List.of("policy", "policy show extra", "policy reset max/90", "policy set max/90",
+                "policy Set max/90 break/30", "policy set break/30 max/90", "policy set max/-1 break/30",
+                "policy set max/01 break/30", "policy set max/90 break/2147483648",
+                "policy set max/90 break/30 break/30", "policy set max/90 break/30 extra")) {
+            assertEquals("policy set max/MINUTES break/MINUTES OR policy show OR policy reset",
+                    assertThrows(ParseException.class, () -> parser.parse(input)).usage());
+        }
+    }
+    // @@author ka-how
+
+    // @@author ernestgoh-god
+    @Test
     void parse_completionAndCompletedView_acceptsSpacingAndLargestIdentifier() throws ParseException {
         assertEquals(new Command.CompleteTask(Integer.MAX_VALUE), parser.parse(" task  complete T2147483647 "));
         assertEquals(new Command.ListCompletedTasks(), parser.parse("task  list completed"));

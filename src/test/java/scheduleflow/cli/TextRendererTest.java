@@ -49,6 +49,23 @@ class TextRendererTest {
 
     // @@author ernestgoh-god
     @Test
+    void studyPolicy_setShowAndReset_reportsValuesAndDistinguishesNoop() {
+        Optional<StudyPolicy> configured = Optional.of(new StudyPolicy(90, 30));
+        assertOutput("Study policy: Maximum continuous work: 90 min | Required break: 30 min",
+                renderer.studyPolicy(configured));
+        assertOutput("Study policy: unrestricted (no session limit or required break).",
+                renderer.studyPolicy(Optional.empty()));
+        assertOutput("Study policy: Maximum continuous work: 90 min | Required break: 30 min\n"
+                + "Saved study policy. Run plan to regenerate.", renderer.studyPolicyUpdated(configured, true));
+        assertOutput("Study policy: unrestricted (no session limit or required break).\nStudy policy unchanged.",
+                renderer.studyPolicyUpdated(Optional.empty(), false));
+        assertThrows(NullPointerException.class, () -> renderer.studyPolicy(null));
+        assertThrows(NullPointerException.class, () -> renderer.studyPolicyUpdated(null, true));
+    }
+    // @@author ka-how
+
+    // @@author ernestgoh-god
+    @Test
     void completedTasks_emptyAndMixedDeadlines_preservesSuppliedOrderAndFraming() {
         assertOutput("No completed tasks found.", renderer.completedTasks(List.of()));
         Task dated = new Task(8, "Done | draft", DEADLINE, 0);
@@ -273,6 +290,7 @@ class TextRendererTest {
                 "task delete TNUMBER",
                 // @@author ernestgoh-god
                 "task complete TNUMBER", "task list completed",
+                "policy set max/MINUTES break/MINUTES", "policy show", "policy reset",
                 // @@author ka-how
                 "task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]",
                 "task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES every/WEEKLY [until/YYYY-MM-DD]",

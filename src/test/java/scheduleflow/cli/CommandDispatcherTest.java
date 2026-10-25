@@ -29,10 +29,12 @@ import scheduleflow.planning.EarliestDeadlinePlanner;
 import scheduleflow.planning.Plan;
 import scheduleflow.planning.Planner;
 import scheduleflow.planning.ScheduleService;
+import scheduleflow.planning.StudyPolicy;
 import scheduleflow.planning.StudySession;
 import scheduleflow.planning.TimeRules;
 import scheduleflow.storage.Storage;
 import scheduleflow.storage.StorageException;
+import scheduleflow.task.TaskEdit;
 import scheduleflow.task.TaskService;
 
 /**
@@ -42,6 +44,67 @@ class CommandDispatcherTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 9, 21, 7, 0);
     private static final Clock CLOCK = Clock.fixed(NOW.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
     private final TextRenderer renderer = new TextRenderer();
+
+    // @@author ernestgoh-god
+    @Test
+    void execute_policyChanges_savesBeforePublicationAndPreservesEverythingOnFailureOrNoop() throws Exception {
+        Snapshot original = populatedSnapshot().withStudyPolicy(Optional.of(new StudyPolicy(60, 30)));
+        for (Command command : List.of(new Command.SetStudyPolicy(90, 30), new Command.ResetStudyPolicy())) {
+            AppState state = new AppState(original);
+            Plan plan = new EarliestDeadlinePlanner().generate(original, NOW);
+            state.replacePlan(plan);
+            FakeStorage storage = new FakeStorage(original);
+            storage.savedPlan = Optional.of(plan);
+            storage.beforeSave = () -> {
+                assertSame(original, state.snapshot());
+                assertSame(plan, state.currentPlan().orElseThrow());
+            };
+            CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
+            storage.failSave = true;
+            assertThrows(StorageException.class, () -> dispatcher.execute(command, state));
+            assertSame(original, storage.saved);
+            assertEquals(Optional.of(plan), storage.savedPlan);
+            storage.failSave = false;
+            assertTrue(dispatcher.execute(command, state).output()
+                    .endsWith("Saved study policy. Run plan to regenerate."));
+            Snapshot changed = state.snapshot();
+            assertEquals(original.tasks(), changed.tasks());
+            assertEquals(original.commitments(), changed.commitments());
+            assertEquals(original.nextTaskId(), changed.nextTaskId());
+            assertEquals(original.studyHours(), changed.studyHours());
+            assertEquals(original.recurringTasks(), changed.recurringTasks());
+            assertTrue(state.currentPlan().isEmpty());
+            dispatcher.execute(new Command.GeneratePlan(), state);
+            Plan replacement = state.currentPlan().orElseThrow();
+            assertTrue(dispatcher.execute(command, state).output().endsWith("Study policy unchanged."));
+            dispatcher.execute(new Command.ShowStudyPolicy(), state);
+            for (Command.SetStudyPolicy invalid : List.of(new Command.SetStudyPolicy(0, 30),
+                    new Command.SetStudyPolicy(90, 45), new Command.SetStudyPolicy(-30, 30))) {
+                assertThrows(ValidationException.class, () -> dispatcher.execute(invalid, state));
+            }
+            assertSame(changed, state.snapshot());
+            assertSame(replacement, state.currentPlan().orElseThrow());
+            assertEquals(2, storage.saveCalls);
+        }
+    }
+
+    @Test
+    void execute_existingMutations_preserveConfiguredPolicy() throws Exception {
+        Snapshot source = pendingRecurrence(false).withStudyPolicy(Optional.of(new StudyPolicy(90, 30)));
+        List<Command> commands = List.of(addTask(), new Command.DeleteTask(2), addCommitment(),
+                new Command.DeleteCommitment(2), new Command.CompleteTask(2), new Command.RecordTaskWork(2, 1),
+                new Command.ReviseTaskRemaining(2, 17), new Command.SetHours("monday", LocalTime.of(9, 0),
+                        LocalTime.of(18, 0)), new Command.ResetHours("monday"), new Command.GeneratePlan(),
+                new Command.EditTask(2, new TaskEdit(Optional.of("Renamed"), Optional.empty(), false)));
+        for (Command command : commands) {
+            AppState state = new AppState(source);
+            FakeStorage storage = new FakeStorage(source);
+            dispatcher(storage, CLOCK).execute(command, state);
+            assertEquals(source.studyPolicy(), state.snapshot().studyPolicy(), command.toString());
+            assertEquals(source.studyPolicy(), storage.saved.studyPolicy(), command.toString());
+        }
+    }
+    // @@author ka-how
 
     // @@author ernestgoh-god
     @Test

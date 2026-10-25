@@ -47,7 +47,7 @@ class ContractsTest {
         // @@author
         // @@author nickpatt
         // @@author ernestgoh-god
-        assertEquals(27, Command.class.getPermittedSubclasses().length);
+        assertEquals(30, Command.class.getPermittedSubclasses().length);
         // @@author ka-how
         // @@author ka-how
         // @@author ernestgoh-god

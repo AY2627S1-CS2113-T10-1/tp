@@ -39,6 +39,25 @@ class EarliestDeadlinePlannerTest {
     private static final int STUDY_MINUTES_PER_DAY = 14 * 60;
     private final EarliestDeadlinePlanner planner = new EarliestDeadlinePlanner();
 
+    // @@author ernestgoh-god
+    @Test
+    void generate_storedPolicy_enforcesBreaksAndOverridesConstructorFallback() {
+        Snapshot base = new Snapshot(List.of(new Task(1, "Work", MONDAY.atTime(12, 0), 180)), List.of(), 2, 1);
+        Snapshot source = base.withStudyPolicy(Optional.of(new StudyPolicy(60, 30)));
+        Plan plan = planner.generate(source, EARLY_MORNING);
+        Plan configured = new EarliestDeadlinePlanner(new StudyPolicy(120, 60)).generate(source, EARLY_MORNING);
+        assertEquals(plan, configured);
+        assertEquals(List.of(MONDAY.atTime(8, 0), MONDAY.atTime(9, 30), MONDAY.atTime(11, 0)),
+                plan.sessions().stream().map(StudySession::start).toList());
+        assertEquals(List.of(MONDAY.atTime(9, 0), MONDAY.atTime(10, 30)),
+                plan.breaks().stream().map(ScheduleEntry::start).toList());
+        assertEquals(180, plan.sessions().stream().mapToInt(StudySession::workMinutes).sum());
+        assertTrue(plan.unallocated().isEmpty());
+        assertTrue(planner.generate(base, EARLY_MORNING).breaks().isEmpty());
+        assertEquals(1, planner.generate(base, EARLY_MORNING).sessions().size());
+    }
+    // @@author
+
     // @@author GabrielYuSP
     @Test
     void generate_customHours_respectsDatePriorityRecurrenceAndCommitments() {
