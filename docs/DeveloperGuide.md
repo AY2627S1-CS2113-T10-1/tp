@@ -14,8 +14,9 @@ agents working on the project, as specified in the repository's root `AGENTS.md`
 RepoSense tags follow the whole-file allocation in version 2 of the supplied
 authorship redistribution plan, dated 2026-10-25. The previous scoped author
 comments have been removed from production and test Java files. The allocations
-of Ka How (`ka-how`) and Darren (`Darren50`) are applied; other files use
-Git-based attribution until their owners' tags are applied.
+of Ka How (`ka-how`), Ernest (`ernestgoh-god`) and Darren (`Darren50`) are
+applied; other files use Git-based attribution until their owners' tags are
+applied.
 
 Ka How's files are relative to the corresponding `scheduleflow/` source root:
 
@@ -32,6 +33,22 @@ There are no interior author tags. The entire file, including nested command
 records, imports, helpers and documentation, belongs to this allocation.
 `CommandParser`, `ParseException` and `CommandDispatcher` are outside Ka How's
 allocation even though they share the `cli` package.
+
+Ernest's files are relative to the corresponding `scheduleflow/` source root:
+
+- Production (`src/main/java/scheduleflow/`): `model/Snapshot.java`,
+  `storage/FileStorage.java`, `storage/PlanCodec.java`, `storage/StateCodec.java`,
+  `storage/Storage.java` and `storage/StorageException.java`.
+- Tests (`src/test/java/scheduleflow/`): `model/SnapshotTest.java`,
+  `storage/FileStorageTest.java`, `storage/PlanCodecTest.java` and
+  `storage/StateCodecTest.java`.
+
+Each of Ernest's ten files starts with one `// @@author ernestgoh-god` before
+its package declaration and ends with one bare `// @@author` after its final
+closing brace. There are no interior tags. The entire Snapshot aggregate is
+included, along with all storage contracts, validation, codecs and helpers.
+Imports of another member's types do not split a file's ownership. Application
+startup, AppState, command parsing and dispatch remain outside this allocation.
 
 Darren's files use the same layout with `// @@author Darren50`:
 
