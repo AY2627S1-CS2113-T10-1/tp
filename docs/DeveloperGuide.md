@@ -42,20 +42,32 @@ coursework around fixed commitments. For commands and user examples, see the
 
 ## Acknowledgements
 
-The build uses [Gradle](https://gradle.org/),
-[Shadow](https://gradleup.com/shadow/) for executable JAR packaging,
-[JUnit 5](https://junit.org/junit5/) for Java tests and
-[Checkstyle](https://checkstyle.org/) for coding-standard checks. Versions are
-declared in `build.gradle` and `gradle/wrapper/gradle-wrapper.properties`.
-The repository-local skills attribute the SE Education coding and Git
-conventions and CS2113 code-quality guidelines used by this project.
+ScheduleFlow uses [Gradle](https://gradle.org/) and the
+[Shadow plugin](https://gradleup.com/shadow/) to build and package its executable
+JAR, [JUnit 5](https://junit.org/junit5/) for Java tests, and
+[Checkstyle](https://checkstyle.org/) for automated style checks. Dependency
+versions are recorded in [`build.gradle`](../build.gradle) and the
+[Gradle wrapper configuration](../gradle/wrapper/gradle-wrapper.properties).
+These are development tools; ScheduleFlow does not call their websites while
+managing a student's data.
 
 This guide adapts the organization and enhancement-explanation pattern of the
 [AddressBook Level 3 Developer Guide](https://se-education.org/addressbook-level3/DeveloperGuide.html).
-This is documentation-structure inspiration, not reuse of AB3 application
-components. UML sources are maintained using
-[PlantUML](https://plantuml.com/), following the
-[SE Education tutorial](https://se-education.org/guides/tutorials/plantUml.html).
+That credit concerns documentation structure; the console design described here
+uses ScheduleFlow's actual classes. The UML figures use
+[PlantUML](https://plantuml.com/) and the
+[SE Education PlantUML tutorial](https://se-education.org/guides/tutorials/plantUml.html).
+The repository's local skills record the
+[SE Education Java conventions](https://se-education.org/guides/conventions/java/intermediate.html),
+[Git conventions](https://se-education.org/guides/conventions/git.html), and
+[CS2113 code-quality guidance](https://nus-cs2113-ay2627-s1.github.io/website/se-book-adapted/chapters/codeQuality.html)
+used during development.
+
+The [code-authorship allocation](#code-authorship) identifies maintenance
+responsibilities. Reassigned whole-file tags do not establish who originally
+implemented an enhancement; Git history retains that provenance. Before release,
+contributors must supply credits for any additional copied or adapted material
+so its source and extent can be acknowledged accurately.
 
 ## Setting up, getting started
 
@@ -266,10 +278,37 @@ sequenceDiagram
 
 ### Persistence and the Snapshot aggregate
 
-`FileStorage` implements `Storage`, delegating source text to `StateCodec`
-and frozen-plan text to `PlanCodec`. `Snapshot` validates the complete
-immutable aggregate, including IDs, counters, overlaps, recurrence, hours
-and policy. It is distinct from the mutable session holder `AppState`.
+This section describes candidate source `cd06171` for the upcoming v2.0 release.
+It does not describe the older v1.0 JAR. The persistence boundary separates
+filesystem access, text conversion and aggregate validation:
+
+| Type | Responsibility |
+| --- | --- |
+| [`Storage`](../src/main/java/scheduleflow/storage/Storage.java) | Defines complete snapshot and frozen-plan loading/saving contracts for the application. |
+| [`FileStorage`](../src/main/java/scheduleflow/storage/FileStorage.java) | Resolves one target path, reads UTF-8 and replaces that file atomically. Construction performs no I/O. |
+| [`StateCodec`](../src/main/java/scheduleflow/storage/StateCodec.java) | Converts versioned source records without opening files. |
+| [`PlanCodec`](../src/main/java/scheduleflow/storage/PlanCodec.java) | Converts a frozen result together with its complete source; it is package-private. |
+| [`Snapshot`](../src/main/java/scheduleflow/model/Snapshot.java) | Copies lists and validates the complete persisted aggregate. |
+| `StorageException` | Reports rejected loads/saves while retaining underlying causes where available. |
+
+![Persistence classes and their external model dependencies](images/ernest-storage-classes.svg)
+
+[PlantUML source](diagrams/ernest-storage-classes.puml). Dashed arrows denote use;
+solid arrows denote retained references. The external `Plan` is shaded; other
+model dependencies appear as field types, without transferring their ownership.
+
+`Snapshot` retains tasks, commitments, study hours, recurring templates, optional
+policy and three independent next-ID counters. Its validation rejects duplicate
+IDs, counters not above retained IDs, overlapping commitments and inconsistent
+occurrence provenance/cursors. Validated hours/policy values must be present in
+their required containers. Retained provenance may refer to a deleted template,
+provided its allocated ID remains below the next R counter. Lists retain their
+order and are immutable; deleting all records does not reset counters.
+
+A `Snapshot` is source data. A `Plan` additionally freezes generation time,
+sessions, unallocated work and breaks against that source. Ka How's `AppState`
+holds the session's live snapshot and optional plan; storage neither publishes
+that state nor invokes the planner.
 
 ## Implementation
 
@@ -919,189 +958,103 @@ materialization makes no source changes.
 
 ### Atomic persistence and restoring frozen plans
 
-#### Basic saving and loading
+Consider a student who generates a plan, closes the app and returns later. Saving
+only task estimates would require a new allocation using a later clock time.
+Saving only session rows would lose the source needed to interpret task IDs,
+study windows and recurring occurrences. `savePlan(plan)` instead stores the
+complete source and frozen result in one file. On restoration, the schedule keeps
+its original sessions and generation time; reading it does not credit progress.
 
-`StateCodec` converts the existing `Snapshot` to and from plain text.
-`FileStorage` loads UTF-8 or returns `Snapshot.empty()` for a definitely missing
-file. Saving creates missing parent directories, writes a sibling temporary
-file, then atomically replaces the target. There is no non-atomic fallback.
-Constructors perform no I/O; existing constructor call sites remain supported.
+#### Atomic snapshot and plan saves
 
-Legacy version 1 uses one record per line (still read without changing values):
+Both save operations use `FileStorage.writeAtomically`:
 
-```text
-SCHEDULEFLOW|1
-NEXT|2|2
-TASK|1|2000-01-02T09:00|60|Read
-COMMITMENT|1|MONDAY|10:30|90|Class
-```
+1. `save(snapshot)` calls `StateCodec.encode`; `savePlan(plan)` calls
+   `PlanCodec.encode`, which asks `StateCodec.encodeForPlan` for the full source.
+   Encoding completes before any filesystem preparation. Null arguments are
+   rejected before filesystem changes.
+2. Create missing parent directories and a distinct sibling temporary file.
+   Keeping both paths in one directory avoids a cross-filesystem move.
+3. Write the complete text using UTF-8, then call `Files.move` with
+   `ATOMIC_MOVE` and `REPLACE_EXISTING`. There is no ordinary-move fallback.
+4. Return only after replacement succeeds. On a filesystem failure, attempt to
+   remove the temporary file and throw `StorageException`; attach a cleanup
+   failure as suppressed information instead of replacing the original error.
 
-`NEXT` holds the next task and commitment IDs, including after deletion.
-Legacy TASK rows store ID, ISO local deadline, positive half-hour minutes and
-name; they load with NORMAL priority. Commitments
-store ID, full uppercase weekday, ISO local start time, duration and name.
-Names are last so literal pipes need no escaping. Encoding preserves each
-list's order and writes LF line endings. Decoding also accepts CRLF/CR and an
-omitted final newline. Java's date/time parsers and existing domain constructors
-validate the complete snapshot, including overlaps and counters. Past deadlines
-remain valid. Invalid data raises `StorageException`
-without returning a partial snapshot or modifying the file.
+![Saving a frozen plan and its source with an atomic replacement](images/ernest-atomic-plan-save.svg)
 
-New writes without recurrence, bounded or skipped commitments use this version 2 layout:
+[PlantUML source](diagrams/ernest-atomic-plan-save.puml). The diagram abbreviates
+static filesystem calls and shows one write/move failure alternative. See
+[command transactions](#command-dispatch-and-live-state-transactions) for live
+publication: the dispatcher prepares recurrence/allocation/output, calls
+`savePlan` once, then publishes the saved source and plan. It does not save the
+source separately first. A rejected save leaves the previous live snapshot and
+plan in use, allowing retry without consuming IDs or advancing template cursors.
 
-```text
-SCHEDULEFLOW|2
-NEXT|4|2
-TASK2|1|2026-11-20T18:00|45|NORMAL|Draft
-TASK2|2|NONE|0|NORMAL|Completed|name with pipe
-TASK2|3|NONE|2147483647|NORMAL|Undated
-COMMITMENT|1|MONDAY|10:30|90|Class
-HOURS|2026-11-20|09:00|18:00
-HOURS|monday|08:00|20:00
-```
+A successful `save(snapshot)` deliberately writes no plan. It removes a stale
+persisted schedule after a source mutation. Read operations and service-defined
+no-ops do not call it. This distinction lets an unchanged policy or zero credited
+progress preserve the current schedule while a changed estimate invalidates it.
 
-`TASK2|id|deadline-or-NONE|exact-remaining-int|priority|name` uses uppercase
-`NONE` only for an absent deadline, zero only for completion, and a required
-HIGH/NORMAL/LOW priority. Names stay last and may contain pipes. The distinct
-TASK2 discriminator avoids confusing legacy v2 names containing pipes with new
-fields. Version 2 also accepts the previous TASK rows unchanged, including their
-positive-half-hour validation; version 1 does not accept TASK2 or HOURS. Mixed
-legacy/extended rows still share normal duplicate-ID/counter validation. `TASK2`
-rows are also valid in versions 3 and 4, which add commitment bounds and skips,
-and in version 5, which adds recurring templates and occurrence rows as described
-above. Tasks and commitments retain stored order; HOURS rows sort by target.
-Loading legacy data is read-only; the next snapshot save writes extended
-version 2, 3, 4 or 5. Generating a plan instead writes version 6, or version 8
-with a stored policy, as described below. FileStorage constructors and atomic replacement behavior are unchanged.
+#### Startup restoration
 
-#### Recurrence storage format
+`FileStorage.load()` reads the complete file. Only a target that is definitely
+absent returns `Snapshot.empty()`; access errors, a directory target, malformed
+UTF-8 and invalid records are failures. A broken symbolic link must not silently
+become an empty store. Loading itself creates no directories and rewrites no
+legacy data.
 
-For snapshot-only saves without a policy, version 5 is selected if a template,
-occurrence provenance or allocated R counter requires it. Otherwise writes use version 2, 3 or 4 according to commitment
-fields; version 2 is the minimum for `TASK2`. Versions 1 through 4 remain readable.
-Loading old versions does not write or migrate files automatically.
-Version 5 stores names last (including literal pipes) and uses these rows:
+`StateCodec.decode` validates headers/records and constructs domain values and
+the complete `Snapshot`. Saved overdue tasks are valid: restoration does not
+repeat the time-dependent admission rule for adding a new task. For a plan file,
+decoding also checks metadata, counted rows, task references, matching remainder
+names/deadlines, interval bounds and result ordering. It does not rerun the
+allocator or prove every possible allocation relationship independently.
 
-```text
-SCHEDULEFLOW|5
-NEXT|3|1|2
-TASK2|1|NONE|45|HIGH|Undated draft
-OCCURRENCE|2|2026-11-02T18:00|45|NORMAL|1|2026-11-02T18:00|Weekly quiz
-RECURRING|1|2026-11-02T18:00|60|2026-11-02|2026-11-02T18:00|Weekly quiz
-```
+`App.run()` loads the snapshot and calls `loadPlan(source)` before the first
+prompt. `loadPlan` rereads the file and accepts only an equal embedded source;
+a change between reads is rejected when it changes that source. Snapshot-only
+files return no plan. Invalid source or plan data stops startup instead of
+returning partial records. This is not a file lock or concurrent-writer protocol.
 
-`NEXT` adds next R ID after the existing T/C counters. Ordinary tasks still use
-`TASK2|id|deadline-or-NONE|exact-remaining-int|priority|name`. Occurrence rows have
-eight fields including the discriminator:
-`OCCURRENCE|id|deadline-or-NONE|exact-remaining-int|priority|templateId|originalDeadline|name`.
-Zero remaining retains completion; priority is HIGH, NORMAL or LOW. Original
-deadlines remain concrete even if the current deadline is cleared internally.
-Templates use first deadline, positive half-hour minutes, last
-date and processing cursor, with `-` for absent last date/cursor. V5 commitments
-use the widest existing v4 layout, including bounds and skipped dates; hours rows
-are unchanged. Even an empty state retains v5 after allocating an R ID, so IDs
-are never reused. Invalid/duplicate/counter-inconsistent records reject the whole
-load. Old executables cannot read v5; back up data before upgrading or downgrading.
+#### File formats and compatibility
 
-#### Stored study policy format
+The current decoder accepts the following layouts; the encoder selects the
+smallest snapshot layout required by its records, or a plan layout explicitly.
+Version numbers describe saved data, not application release numbers.
 
-A snapshot with configured settings writes `SCHEDULEFLOW|7`, the full version 5
-source layout plus exactly one `POLICY|maxContinuousMinutes|breakMinutes` row.
-Missing, duplicate, nonpositive, unaligned and overflowing values reject the whole
-file. Old snapshots load with an empty policy without rewriting data. Resetting
-settings returns snapshot-only writes to versions 2-5 as appropriate.
-Policy-bearing frozen plans use version 8 with the full version 7 source layout;
-version 6 plans and all earlier supported formats remain readable. Constructors
-retain their existing overloads and default to an empty policy. `withTasks`,
-`withCommitments`, `withStudyHours` and recurring-task operations retain settings.
-Only a policy command changes them.
+| Header version | Data represented / current write rule |
+| --- | --- |
+| 1 | Read-only legacy layout: `TASK`, weekly commitments and T/C counters; default hours, NORMAL priority and no policy. |
+| 2 | Minimum new snapshot: `TASK2` exact remaining minutes (including zero), optional deadline/priority, `HOURS`, and T/C counters. Legacy `TASK` rows still require positive half-hour work. |
+| 3 / 4 | Add commitment date bounds / skipped dates respectively; selected when those fields are needed without recurrence or policy. |
+| 5 | Snapshot with templates, occurrence provenance or an allocated R counter; includes all three counters and the widest commitment layout. |
+| 7 | Full version 5 source plus exactly one valid `POLICY` row. Resetting policy permits a lower snapshot version when appropriate. |
+| 6 / 8 | Frozen plan plus full version 5 / 7 source respectively, including exact credited work, optional remainder deadlines, long rounded capacities and breaks. |
+| Legacy 5 plan | Read-only earlier prototype, distinguished by two `NEXT` counters; source uses version 4 and sessions credit their full interval. New plan writes use 6 or 8. |
 
-#### Automatic saved schedules
+`NEXT` counters survive deletion. `RECURRING` rows retain generation cursors and
+`OCCURRENCE` rows retain original template/deadline provenance, preventing lost
+identity across restarts. Names are the final field so literal pipes remain
+part of the name. Task/commitment list order is preserved; hours targets and
+skipped dates are encoded in sorted order. Encoding uses LF with a final newline;
+decoding also accepts CRLF/CR and an omitted final newline. Session rows preserve
+exact work separately from reserved half-hour capacity: a 45-minute task can
+occupy 60 minutes without becoming a 60-minute estimate.
 
-`PlanCodec` writes `SCHEDULEFLOW|6` without a study policy or `SCHEDULEFLOW|8`
-with one. Version 5 remains available for recurring-task snapshots. The embedded
-source uses the full version 5 layout (version 7 when a policy is present):
-three NEXT counters, extended tasks, occurrence provenance, templates,
-processing cursors, commitment bounds/skips and study hours. One
-`PLAN|generatedAt|horizonEnd|sessionCount|unallocatedCount|breakCount` row follows,
-then the counted rows:
+#### Persistence tradeoffs and limits
 
-```text
-SESSION|taskId|start|end|exactWorkMinutes
-UNALLOCATED|taskId|deadline-or-NONE|exactMinutes|capacityMinutes|reason|name
-BREAK|start|end
-```
+One file keeps source/result replacement indivisible and remains inspectable,
+but each save rewrites the complete state. An alternative database could support
+coordinated updates and schema migrations at greater setup/dependency cost. This
+is a design analysis, not a claim about historical team deliberations.
 
-Session work preserves partial-slot padding, and unallocated capacity is a long
-so rounding an `Integer.MAX_VALUE` estimate cannot overflow. Names remain last
-so literal pipes survive. Decoding validates the source, row counts, references,
-ordering, horizon and individual planning-record contracts without regenerating
-or rescheduling. Snapshot versions 1-5 and 7, and saved-plan versions 6 and 8 remain readable.
-The earlier branch's version 5
-saved plans are distinguished by their two NEXT counters and read using the old
-version 4 source layout; new saves use version 6 or 8 for plans.
-
-`FileStorage.savePlan` writes the source and result in one atomic replacement.
-`save` removes any prior plan while saving a mutation. At startup, `App` loads
-and validates the complete file before restoring the matching plan; it does not
-read the clock or materialize recurrence during restoration. Existing sessions,
-generation time, unallocated work and reserved breaks are reused exactly.
-Keep one running instance per data file; atomic replacement does not provide
-coordination between concurrent writers.
-
-#### Storage defensive checks and diagnostics
-
-The Save-owned types document their inputs, failure contracts and private
-validation helpers with Javadoc. `FileStorage.save` and `StateCodec.encode`
-reject null snapshots with a named `NullPointerException` before filesystem
-changes. Invalid saved text still raises `StorageException`, preserving the
-original parsing or I/O cause where available; failed cleanup remains a
-suppressed exception on the original save failure. `Snapshot` continues to
-validate IDs, counters and weekly overlaps with runtime exceptions.
-
-Java assertions check the codec's one-record-per-line invariant and the save
-temporary file's distinct sibling location. They detect implementation defects,
-not user-input errors, and perform no I/O or mutations. Gradle tests and `run`
-enable assertions; use `java -ea -jar scheduleflow.jar` for a packaged launch.
-Null, format and filesystem checks also work when assertions are disabled.
-
-`FileStorage` and `StateCodec` use `java.util.logging` at `FINE` level for load,
-decode, encode, directory preparation, temporary writing, atomic replacement
-and cleanup. Success is recorded only after that stage succeeds. Storage-layer
-failures are also `FINE` diagnostics; the application owns session severity and
-user-facing error reporting. This avoids duplicate warnings and keeps default
-console output unchanged. Storage log records omit paths, saved values and
-exception payloads; the thrown exception retains its diagnostic details.
-Constructors neither log nor perform I/O.
-
-For storage-only diagnostics, use this local `logging.properties` file in a
-launch folder outside the repository:
-
-```properties
-handlers=java.util.logging.FileHandler
-.level=INFO
-scheduleflow.storage.level=FINE
-scheduleflow.cli.level=OFF
-java.util.logging.FileHandler.level=FINE
-java.util.logging.FileHandler.pattern=scheduleflow-storage-%u.log
-java.util.logging.FileHandler.encoding=UTF-8
-java.util.logging.FileHandler.formatter=java.util.logging.SimpleFormatter
-```
-
-Launch with
-`java -ea -Djava.util.logging.config.file=logging.properties -jar scheduleflow.jar`.
-No logging handlers or global settings are installed by storage itself.
-
-#### Supplied contract and Save-module differences
-
-The supplied implementation contract's section 7 specifies Base64 names before
-the date fields, three-letter weekdays, canonical numeric/date tokens, sorted
-encoded rows and `FileChannel.force(true)`. The committed Save module uses
-plain names last, full weekday names, Java token parsers, snapshot order and
-`Files.writeString` before atomic replacement. Printing preserves that existing
-module and its public APIs; the format documented above and tested restarts
-use the committed codec. Contract-format interoperability and forced flushing
-require coordination with the Save owner and are outside this printer change.
+Atomic replacement requires filesystem/provider support, and only one running
+instance may write a given file. It provides neither writer coordination nor a
+power-loss durability guarantee: the implementation uses `Files.writeString`,
+not `FileChannel.force(true)`. Importing a different wire format requires
+explicit conversion and verification against these codecs. Back up before
+changing application versions; older executables may reject newer layouts.
 
 ## Documentation, logging, testing and dev-ops
 
@@ -1224,12 +1177,48 @@ clock and cannot establish those exact-time allocation assertions.
 
 ### Storage diagnostics and compatibility verification
 
-`StateCodecTest`, `PlanCodecTest`, `SnapshotTest` and `FileStorageTest` cover
-legacy/current formats, corruption, ID relationships, Unicode and real
-temporary-file round trips. Fake-storage tests establish caller rollback,
-not filesystem-provider behavior. Unsupported atomic moves and injected
-cleanup failures remain untested. Storage diagnostics are described
-[above](#storage-defensive-checks-and-diagnostics).
+[`StateCodecTest`](../src/test/java/scheduleflow/storage/StateCodecTest.java) checks
+legacy/current formats, pipes/Unicode, exact work, bounds/skips, hours, policy and
+recurrence relationships. [`PlanCodecTest`](../src/test/java/scheduleflow/storage/PlanCodecTest.java)
+checks complete frozen results, malformed rows and distinct legacy layouts.
+[`SnapshotTest`](../src/test/java/scheduleflow/model/SnapshotTest.java) covers
+immutable copies, counters, overlaps and policy-preserving candidates;
+[`FileStorageTest`](../src/test/java/scheduleflow/storage/FileStorageTest.java)
+uses temporary folders for byte-preserving reads, restarts, blocked parents,
+failed replacement and cleanup. Dispatcher/App tests exercise save-before-
+publication and matching-source restoration with fixed clocks and controlled
+storage. Their fake failures do not simulate every filesystem provider.
+
+UI-031/UI-032 in the [console test plan](../test/ui-test-plan.md) cover restored
+plans and invalidation. The [manual recipes](#saving-restoration-failure-and-recovery)
+add backup/transfer and an interactive rejected-save check. Unsupported atomic
+moves, injected cleanup failures, other operating systems and power-loss behavior
+still need separate evidence; the implementation makes no power-loss guarantee.
+
+#### Storage defensive checks and diagnostics
+
+Runtime exceptions reject invalid data even with assertions disabled. Assertions
+check internal record-count and sibling-temporary-file invariants; use `-ea` for
+a packaged launch. `FileStorage`/`StateCodec` emit `FINE` stage diagnostics without
+paths, names, file contents or exception payloads in those log records. The
+application owns user-facing errors and session severity. Thrown exceptions may
+contain paths/details, so review logs before sharing them.
+
+For storage-only logging, create `logging.properties` in a disposable launch
+folder (not the repository):
+
+```properties
+handlers=java.util.logging.FileHandler
+.level=OFF
+scheduleflow.storage.level=FINE
+java.util.logging.FileHandler.level=FINE
+java.util.logging.FileHandler.pattern=scheduleflow-storage-%u.log
+java.util.logging.FileHandler.encoding=UTF-8
+java.util.logging.FileHandler.formatter=java.util.logging.SimpleFormatter
+```
+
+Launch `java -ea -Djava.util.logging.config.file=logging.properties -jar scheduleflow.jar`.
+Default launches stay quiet; storage installs no global logger configuration.
 
 ## Appendix A: Product Scope
 
@@ -1273,15 +1262,24 @@ the supported command surface.
 
 ## Appendix C: Non-Functional Requirements
 
-- Run with Java 25 and UTF-8 source, saved data and console streams.
-- Keep runtime operation local and offline, with no external service required.
-- Save each successful mutation by atomic replacement before publishing it in
-  memory or printing success. Use one running instance per saved-data file.
-- Reject invalid input and corrupt saved data without publishing partial state.
-- Keep normal diagnostics quiet; allow opt-in logs through Java logging.
-- Verify behavior with deterministic JUnit tests and isolated console sessions.
-- Atomic replacement requires filesystem support and does not guarantee
-  durability after power loss.
+These are quality requirements and operating constraints for the candidate,
+separate from functional commands and from claims that every platform has been
+tested. Verification entry points indicate how each requirement can be assessed.
+
+| ID | Requirement / operating constraint | Verification entry point |
+| --- | --- | --- |
+| NFR-1 | Build and run with Java 25. A packaged JAR requires no Gradle, Node or network connection for normal use. | Java/Gradle version checks, packaged launch and local-session tests. |
+| NFR-2 | Read/write saved data and console streams as UTF-8; preserve supported Unicode names through restart. Keep Java sources UTF-8. | Codec, file round-trip and `MainTest` encoding cases. |
+| NFR-3 | Save each changed candidate atomically before publishing it or reporting success. Reject a failed save without committing its records, counters or replacement plan. | FileStorage replacement tests and dispatcher/App rollback/retry tests. |
+| NFR-4 | Reject malformed or unreadable saved data before accepting commands; preserve the original file and avoid partial restoration. | Corruption/invalid-UTF-8 tests and Appendix E recovery recipes. |
+| NFR-5 | Validate public inputs with runtime checks; use assertions only for internal invariants. Invalid commands must preserve prior state. | Domain/parser/dispatcher tests with invalid and boundary inputs. |
+| NFR-6 | Keep default console diagnostics quiet and make stage logging opt-in. Storage stage records must omit saved values and exception payloads. | Logger-capture tests and quiet-stderr console checks; review broader application logs before sharing. |
+| NFR-7 | Use one running instance per saved-data file on a filesystem supporting atomic replacement. Close the app before backup/transfer. | Explicit deployment assumption, not a concurrency or universal-provider test result. |
+
+No response-time, large-dataset capacity, universal operating-system support or
+crash/power-loss durability result is claimed. Atomic visibility alone does not
+flush data to durable media. Current Windows verification cannot establish other
+platform/provider behavior; see [storage verification](#storage-diagnostics-and-compatibility-verification).
 
 ## Appendix D: Glossary
 
@@ -1469,27 +1467,82 @@ separate from other manual tests so its IDs and settings are isolated.
 
 ### Saving, restoration, failure and recovery
 
-1. In a fresh folder add `commitment add n/Saved day/TUE start/1000 d/30`.
-   Run `plan`, `schedule today`, then `exit`. Expect a saved data file.
-2. Relaunch there; run `commitment list` and `schedule today`. Expect C1 and
-   the same generation timestamp/rows for the same selected date. Across
-   midnight use `schedule YYYY-MM-DD` for the original date. Exit and copy
-   the file to a backup outside that launch folder.
-3. In a second disposable folder put a copy at `data/scheduleflow.txt`;
-   relaunch and confirm the same commitment and frozen plan.
-4. With the app closed, edit only the second copy's header to
-   `SCHEDULEFLOW|99`. Launch. Expect `Error: Unsupported file version: 99`,
-   status 1 and no prompt; the invalid file must remain unchanged. Restore
-   the backup and verify normal startup.
-5. For save rejection, create a regular file named `data` in a third empty
-   launch folder before starting. Run
-   `commitment add n/Retry day/TUE start/1000 d/30`. Expect a save error,
-   another prompt and no added commitment. `commitment list` stays empty.
-   Exit, move that disposable `data` file aside and retry in a new session.
-   Expect C1, confirming the failed attempt consumed no ID.
+Use Java 25 and the candidate `scheduleflow.jar` built from the source described
+in [persistence design](#persistence-and-the-snapshot-aggregate). Launch with
+`java -ea -jar scheduleflow.jar` in disposable folders. Keep one instance per
+folder. Never use your normal data for these checks; see the
+[UG persistence chapter](UserGuide.md#saving-and-restoring-data) for file location
+and recovery. Replace each `D` below with tomorrow's ISO date before entering
+commands; its 18:00 deadline must be within the allowed calendar-year range.
 
-Automatic persistence has no save/load command. Repeat restart checks after
-the task, settings and recurrence groups when exploring further. Permission
-and unsupported-atomic-move failures vary by OS/provider; use the controlled
-storage/dispatcher tests for the documented boundaries, and record any
-unexecuted provider case rather than treating it as passed.
+**First launch, restart and frozen plan**
+
+1. In folder A, confirm `data/scheduleflow.txt` is absent. Launch and enter
+   `task list`. Expect `No tasks found.` and another prompt; reading alone must
+   not create the data folder.
+2. Enter this setup, replacing `D` first:
+
+   ```text
+   task add n/Draft due/D 1800 d/45
+   task add n/Remove due/D 1800 d/30
+   task delete T2
+   commitment add n/Class day/TUE start/1000 d/30
+   commitment add n/Remove day/WED start/1200 d/30
+   commitment delete C2
+   hours monday /start 09:00 /end 18:00
+   policy set max/60 break/30
+   task recur add n/Weekly due/D 1800 d/60 every/WEEKLY until/D
+   plan
+   task list
+   task recur list
+   schedule today
+   exit
+   ```
+
+3. Record the selected schedule date, generation timestamp and rows. Expect T1
+   with 45 minutes, generated T3 with 60 minutes, C1 and template R1. The data file
+   now exists. Copy it to a backup with the app closed.
+4. Relaunch A. Check `task list`, `commitment list`, `task recur list`,
+   `hours monday`, `policy show`, and `schedule D0`, replacing `D0` with the
+   recorded schedule date (not tomorrow's `D`). Expect identical records,
+   template cursor, 09:00–18:00 Monday hours, 60/30 policy and the same schedule
+   timestamp/rows. These reads must leave the saved bytes unchanged.
+5. Add another ordinary task and commitment using valid inputs. Expect T4 and
+   C3, not reused deleted IDs. Add a second weekly template: expect R2. These
+   successful changes invalidate the plan; `schedule D0` now reports
+   `No current plan. Run plan to generate one.` Exit.
+
+**Backup, invalid data and recovery**
+
+1. In folder B, place a copy of A's step-3 backup at `data/scheduleflow.txt`.
+   Launch and repeat the step-4 reads. Expect the backed-up values and frozen
+   schedule. Exit before changing the copy.
+2. Change only B's header to `SCHEDULEFLOW|99`. Launch. Expect
+   `Error: Unsupported file version: 99`, status 1 and no prompt. Check that the
+   invalid file was not rewritten. Restore the backup and expect normal startup.
+3. Repeat with an extra `BROKEN` line appended to the restored plan file. Expect
+   a saved-plan validation error before the prompt and unchanged invalid bytes.
+   Restore the backup again. Exact wording depends on which plan row/count fails.
+4. For an access/type rejection, close the app, move B's data file aside and
+   create a directory named `scheduleflow.txt` in its place. Launch. Expect
+   `Error: Cannot load saved data: ...`, status 1 and no prompt. Remove only that
+   empty test directory and restore the moved file. Permission-denial recipes
+   vary by OS/account; record them as unexecuted if they cannot be reproduced.
+
+**Rejected save and retry in one session**
+
+1. Launch in fresh folder C and wait for the first prompt. Only then, in a second
+   terminal or file manager, create a regular text file named `data` in C. For
+   PowerShell opened in C, use `Set-Content -LiteralPath data -Value blocked`.
+2. In the running app enter `commitment add n/Retry day/TUE start/1000 d/30`.
+   Expect `Error: Cannot save data: ...`, another prompt and no success message.
+   `commitment list` must report `No commitments found.` The blocking file
+   must retain its contents.
+3. Move that test file aside while the app remains open, then repeat the same
+   add. Expect C1. Exit, relaunch and confirm C1 is restored. Creating the blocker
+   before startup tests loading instead, so the timing matters.
+
+Close every instance before cleanup. Remove only disposable A/B/C folders and
+their copies/logs after inspection. This recipe tests a blocked parent, not an
+unsupported atomic move or failed temporary-file cleanup; those provider failure
+injections remain outside the manual coverage above.

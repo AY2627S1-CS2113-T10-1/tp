@@ -1,0 +1,73 @@
+@startuml
+' DG contribution D5: Ernest (ernestgoh-god).
+!pragma layout smetana
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName SansSerif
+skinparam defaultFontSize 15
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam ArrowColor #475569
+skinparam classBorderColor #475569
+hide empty members
+top to bottom direction
+
+package "Persistence (ernestgoh-god)" {
+    interface Storage {
+        +load(): Snapshot
+        +loadPlan(source): Optional<Plan>
+        +save(source): void
+        +savePlan(plan): void
+    }
+    class FileStorage {
+        -file: Path
+        -writeAtomically(text): void
+        -removeTemporaryFile(...): void
+    }
+    class StateCodec {
+        +encode(source): String
+        +decode(text): Snapshot
+        ~encodeForPlan(source): String
+    }
+    class PlanCodec <<package-private>> {
+        ~encode(plan): String
+        ~decode(text): Plan
+    }
+    class StorageException
+}
+
+package "Persisted aggregate (ernestgoh-god)" {
+    class Snapshot <<record>> {
+        tasks: List<Task>
+        commitments: List<Commitment>
+        recurringTasks: List<RecurringTask>
+    }
+}
+
+package "External collaborators" #F1F5F9 {
+    class Plan <<record>>
+}
+
+Storage <|.. FileStorage
+FileStorage --> StateCodec : codec
+FileStorage ..> PlanCodec : creates
+PlanCodec --> StateCodec : snapshots
+StateCodec ..> PlanCodec : plan decode
+StateCodec ..> Snapshot
+PlanCodec ..> Plan
+FileStorage ..> StorageException : throws
+Plan --> "1" Snapshot : source
+
+note bottom of Snapshot
+  Hours, policy and three ID counters are omitted.
+  Field types are external model dependencies.
+  Lists are copied; counters survive deletion.
+end note
+
+' Layout edges have no UML meaning.
+StorageException -[hidden]down-> StateCodec
+legend bottom
+  Parameter types and some members omitted.
+  FileStorage alone performs file I/O; constructors do none.
+endlegend
+@enduml
