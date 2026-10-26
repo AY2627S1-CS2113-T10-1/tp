@@ -235,7 +235,7 @@ A successful addition saves the task and clears any current plan. Run `plan` aga
 
 Rejected task additions leave existing tasks, commitments, ID counters and the
 current plan unchanged. Correct the input and retry; the failed attempt does not
-consume an ID. Optional [Task diagnostics](DeveloperGuide.md#task-operations-and-defensive-checks)
+consume an ID. Optional [Task diagnostics](DeveloperGuide.md#taskparser-validation-and-junitdocumentation-conventions)
 record validation and candidate-processing stages in a separate log file, without
 task names, deadlines or durations. Normal launches keep the same console output.
 
@@ -732,7 +732,7 @@ eligible slots and reports unallocated minutes if it cannot all fit before the
 deadlines. Stored task estimates do not change.
 
 Adding the block saves automatically and clears the old plan; run `plan` again
-to apply it. The block survives restarting, but the generated plan does not.
+to apply it. Both the block and the newly generated plan survive restarting.
 You can release it with `commitment delete CNUMBER`, using the ID shown by
 `commitment list`, then run `plan` again. Successful deletion also saves and
 clears the current plan.
@@ -762,8 +762,8 @@ be rejected if any period conflicts with an existing commitment.
 The batch confirmation and syntax parsing are implemented and unit-tested, but
 the console dispatch still cannot run these commands. For now, use the existing
 single-date `commitment add ... on/DATE` commands.
-The [Developer Guide handoff](DeveloperGuide.md#multi-date-unavailable-periods-implementation-handoff-planned)
-contains proposed outputs, owner responsibilities and acceptance tests.
+The [Developer Guide proposal](DeveloperGuide.md#multi-date-unavailable-periods-implementation-handoff-planned)
+summarizes the integration boundary and links to the proposed acceptance fixtures.
 
 ### Session limits and breaks
 
@@ -868,10 +868,10 @@ The schedule displays the latest plan's full configured window in chronological 
 | Label | Meaning |
 | --- | --- |
 | `[TASK]` | A planned study session, showing its task ID, name, and session duration. |
-| `[BUSY]` | A recurring commitment, showing its commitment ID and name. |
+| `[BUSY]` | A recurring or one-time commitment, showing its commitment ID and name. |
 | `[FREE]` | Time eligible for planning that was not assigned to a task or blocked by a commitment. |
 | `[UNPLANNED]` | Time before the planning cutoff on the day the plan was generated. It is not available study time in this plan. |
-| `[BREAK]` | A supplied rest interval from the configured Java planning API; the console cannot configure this policy yet. |
+| `[BREAK]` | A reserved rest interval under the configured work/break policy; use `policy set` to configure it. |
 
 A commitment remains `[BUSY]` even when it occurred before the planning cutoff. Adjacent entries are combined only when their label, ID, and name match, so separate commitments remain separate rows.
 
