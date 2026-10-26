@@ -302,7 +302,13 @@ empty-plan clipping/midnight output, invalidation, input IOException and
 exit/EOF without saving. `ConsoleUiTest` asserts flushes and exact framing.
 `MainTest` launches separate production-entry-point processes to check
 nonempty argument rejection, UTF-8 despite ASCII defaults, EOF and real saved
-restarts. The maintained UI cases verify the packaged manifest entry point.
+restarts. It also checks corrupt plan metadata and a directory at the saved-file
+path exit before prompting without changing existing data. Child JVM logging
+probes exercise class-based configuration and explicitly configured CLI and
+application logger levels, preserving command output and warning filtering.
+These additional startup checks enable assertions and keep logger state inside
+their own processes. The maintained UI cases verify the packaged manifest entry
+point; their active status and expected command output remain unchanged.
 
 Time-sensitive task/planning checks use fixed clocks through injected APIs;
 there is no production clock flag. `FileStorageTest` covers deterministic
