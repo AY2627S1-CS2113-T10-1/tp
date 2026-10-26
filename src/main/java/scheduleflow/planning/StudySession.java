@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.planning;
 
 import java.time.Duration;
@@ -42,3 +43,4 @@ public record StudySession(int taskId, LocalDateTime start, LocalDateTime end, i
         return time.getMinute() % TimeRules.SLOT_MINUTES == 0 && time.getSecond() == 0 && time.getNano() == 0;
     }
 }
+// @@author

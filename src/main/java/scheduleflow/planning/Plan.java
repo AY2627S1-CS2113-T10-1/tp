@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.planning;
 
 import java.time.LocalDateTime;
@@ -67,3 +68,4 @@ public record Plan(LocalDateTime generatedAt, LocalDateTime horizonEnd, Snapshot
         }
     }
 }
+// @@author

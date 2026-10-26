@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.planning;
 
 import scheduleflow.common.ValidationException;
@@ -18,3 +19,4 @@ public record StudyPolicy(int maxContinuousMinutes, int breakMinutes) {
         }
     }
 }
+// @@author

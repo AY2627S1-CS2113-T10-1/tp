@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -26,3 +27,4 @@ class StudyWindowTest {
         assertThrows(ValidationException.class, () -> new StudyWindow(start.plusMinutes(1), start.plusHours(1)));
     }
 }
+// @@author

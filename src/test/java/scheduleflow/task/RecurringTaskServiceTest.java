@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.task;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -165,3 +166,4 @@ class RecurringTaskServiceTest {
         return new Snapshot(List.of(), List.of(), nextTask, 1, Snapshot.empty().studyHours(), templates, nextRecurring);
     }
 }
+// @@author

@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -43,3 +44,4 @@ class StudyHoursTest {
         }
     }
 }
+// @@author

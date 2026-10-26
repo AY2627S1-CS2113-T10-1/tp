@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.planning;
 
 import java.time.LocalDate;
@@ -53,3 +54,4 @@ public final class TimeRules {
         return rounded.isBefore(now) ? rounded.plusMinutes(SLOT_MINUTES) : rounded;
     }
 }
+// @@author

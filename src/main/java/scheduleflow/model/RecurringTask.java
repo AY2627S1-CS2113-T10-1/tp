@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.model;
 
 import java.time.LocalDate;
@@ -59,3 +60,4 @@ public record RecurringTask(int id, String name, LocalDateTime firstDeadline, Op
         return "R" + id;
     }
 }
+// @@author
