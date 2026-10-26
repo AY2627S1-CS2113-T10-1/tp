@@ -1,3 +1,4 @@
+// @@author Darren50
 package scheduleflow.model;
 
 import java.time.DayOfWeek;
@@ -187,3 +188,4 @@ public record Commitment(int id, String name, DayOfWeek day, LocalTime start, in
                 && sharesOccurrence(other);
     }
 }
+// @@author
