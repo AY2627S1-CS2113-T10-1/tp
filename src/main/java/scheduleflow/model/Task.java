@@ -1,3 +1,4 @@
+// @@author nickpatt
 package scheduleflow.model;
 
 import java.time.LocalDateTime;
@@ -96,3 +97,4 @@ public record Task(int id, String name, Optional<LocalDateTime> deadline, int re
         return "T" + id;
     }
 }
+// @@author

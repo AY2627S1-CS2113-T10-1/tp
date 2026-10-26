@@ -1,3 +1,4 @@
+// @@author nickpatt
 package scheduleflow.task;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -110,3 +111,4 @@ class TaskRecurrenceTest {
         return new Snapshot(tasks, List.of(), 3, 1, Snapshot.empty().studyHours(), templates, nextRecurring);
     }
 }
+// @@author

@@ -1,3 +1,4 @@
+// @@author nickpatt
 package scheduleflow.common;
 
 import java.util.logging.Level;
@@ -67,3 +68,4 @@ public final class InputRules {
         LOGGER.log(Level.FINE, "Duration validation completed");
     }
 }
+// @@author
