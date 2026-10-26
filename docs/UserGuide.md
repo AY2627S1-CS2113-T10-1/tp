@@ -5,24 +5,27 @@ description: Manage tasks, recurring and one-time commitments, and study plans w
 
 # ScheduleFlow User Guide
 
-ScheduleFlow is a command line application for university students balancing coursework deadlines, project work, and recurring classes. Add your tasks and weekly commitments, then generate a study plan that allocates work to available time before each deadline.
+ScheduleFlow is a local command line application for university students balancing coursework deadlines, project work, classes and other fixed events. Add tasks with remaining-work estimates, record your progress, and reserve time for weekly or one-time commitments. Generate a study plan to find time for your work before its deadlines and identify work that cannot fit.
 
 Study hours default to **08:00–22:00 every day**, including weekends. You can set recurring weekday hours and override individual dates. Work is scheduled in **30-minute slots**, and any work that does not fit is reported explicitly.
 
-> **Implementation status:** All supported commands are connected to the console application. Changes save before success is printed, and both IDs and generated plans survive restarts. Java tests cover transactions and fixed-clock planning; packaged console tests cover startup, recovery and saved restarts.
+> **Guide scope:** This guide describes the current development build for the upcoming v2.0 release. Earlier published JARs may have fewer commands. Successful changes save automatically, and IDs and generated plans survive restarts.
+
+> **Coming soon:** [Blocking multiple dates](#blocking-multiple-dates-planned) is planned and cannot currently be used from the console. Use [one-time commitments](#adding-a-one-time-commitment) to block individual dates.
 
 ## Contents
 
 - [Quick start](#quick-start)
 - [Command format](#command-format)
 - [Tasks](#tasks)
-  - [Adding a task](#adding-a-task)
+  - [Recording duration (tasks and commitments)](#recording-duration-tasks-and-commitments)
   - [Recording progress](#recording-progress)
-  - [Completing and viewing completed tasks](#completing-and-viewing-completed-tasks)
-  - [Reopening a completed task](#reopening-a-completed-task)
+  - [Adding a task](#adding-a-task)
+  - [Listing tasks](#listing-tasks)
   - [Editing a task](#editing-a-task)
   - [Weekly recurring tasks](#weekly-recurring-tasks)
-  - [Listing tasks](#listing-tasks)
+  - [Completing and viewing completed tasks](#completing-and-viewing-completed-tasks)
+  - [Reopening a completed task](#reopening-a-completed-task)
   - [Deleting a task](#deleting-a-task)
 - [Commitments](#commitments)
   - [Adding a commitment](#adding-a-commitment)
@@ -35,6 +38,8 @@ Study hours default to **08:00–22:00 every day**, including weekends. You can 
 - [Study plans](#study-plans)
   - [Generating a plan](#generating-a-plan)
   - [Marking a study period unavailable](#marking-a-study-period-unavailable)
+  - [Blocking multiple dates (Coming soon)](#blocking-multiple-dates-planned)
+  - [Session limits and breaks](#session-limits-and-breaks)
   - [Planning hours and date range](#planning-hours-and-date-range)
   - [Unallocated work](#unallocated-work)
 - [Viewing the schedule](#viewing-the-schedule)
@@ -42,8 +47,17 @@ Study hours default to **08:00–22:00 every day**, including weekends. You can 
   - [Worked schedule example](#worked-schedule-example)
   - [Planning partway through the day](#planning-partway-through-the-day)
 - [Help and exit](#help-and-exit)
+  - [Viewing help](#viewing-help)
+  - [Exiting the program](#exiting-the-program)
 - [Saving and restoring data](#saving-and-restoring-data)
 - [Troubleshooting and FAQ](#troubleshooting-and-faq)
+  - [What if my work does not fit before its deadline?](#what-if-my-work-does-not-fit-before-its-deadline)
+  - [How do I mark work as complete or correct an entry?](#how-do-i-mark-work-as-complete-or-correct-an-entry)
+  - [Why did my schedule disappear?](#why-did-my-schedule-disappear)
+  - [Can I change the study hours or slot size?](#can-i-change-the-study-hours-or-slot-size)
+  - [Can I schedule more than a year ahead?](#can-i-schedule-more-than-a-year-ahead)
+  - [Why was my command rejected?](#why-was-my-command-rejected)
+  - [What should I do if the application cannot load my data?](#what-should-i-do-if-the-application-cannot-load-my-data)
 - [Command summary](#command-summary)
 
 ## Quick start
@@ -83,39 +97,45 @@ Study hours default to **08:00–22:00 every day**, including weekends. You can 
 
 ## Command format
 
-Enter each command on one line. In syntax examples, uppercase placeholders such as `NAME` and `MINUTES` are values you replace. Terminal transcripts include the `scheduleflow>` prompt; copy only the command after it.
+Enter each command on one line and press Enter. Terminal transcripts include the `scheduleflow>` prompt; copy only the command after it.
+
+In command formats:
+
+- Uppercase placeholders such as `NAME` and `MINUTES` are values you replace. Keep literal keywords such as `WEEKLY`, weekday codes such as `MON`, and ID prefixes such as `T` in the case shown.
+- Square brackets mark optional fields; do not type the brackets. A group such as `[from/YYYY-MM-DD until/YYYY-MM-DD]` means supply both fields or omit both.
+- A vertical bar (`|`) separates alternatives; choose one and do not type the bar. For example, `hours DAY|YYYY-MM-DD` can be entered as `hours tuesday` or `hours 2026-11-03`.
+- An edit must supply at least one of its optional fields. Keep supplied fields in the order shown; omitted fields retain their values.
 
 | Input | Rule | Example |
 | --- | --- | --- |
-| Commands and prefixes | Case sensitive and lowercase | `task add`, `n/`, `due/`, `d/` |
-| Fields | Fields must appear in the stated order; bracketed edit fields are optional | `n/NAME due/DATE_TIME d/MINUTES` |
+| Commands and prefixes | Case sensitive; command words and field prefixes are lowercase | `task add`, `n/`, `due/`, `d/` |
+| Fields | Use the stated order and each prefix at most once | `n/NAME due/YYYY-MM-DD HHmm d/MINUTES` |
 | Names | Nonblank; may contain spaces and Unicode, but no `/`, tabs, newlines, or other control characters | `CS2113 draft` |
 | Dates | Real dates in `YYYY-MM-DD` format; years `0001`–`9999` | `2026-10-06` |
 | Task/commitment times | Four digits in 24-hour `HHmm` format, from `0000` to `2359` | `0930`, `1800` |
 | Study hours | `HH:mm`, on half-hour boundaries; start before end within the same day | `09:00`, `22:30` |
 | Deadlines | Date and time separated by a space; any minute is allowed | `2026-10-06 2359` |
-| Task durations | Positive whole minutes; no sign or leading zeroes | `1`, `45`, `180` |
+| Task durations and remaining estimates | Positive whole minutes; no sign or leading zeroes | `1`, `45`, `180` |
+| Weekly task template durations | Positive whole minutes divisible by 30 | `30`, `90`, `180` |
 | Commitment durations | Positive whole minutes divisible by 30; no sign or leading zeroes | `30`, `90`, `180` |
 | Commitment starts | Must be on the hour or half hour | `1000`, `1030` |
-| Commitment weekdays | Exactly `MON`, `TUE`, `WED`, `THU`, `FRI`, `SAT`, or `SUN` | `MON` |
-| Study-hours weekdays | Full lowercase weekday names | `tuesday` |
+| Commitment weekdays (`DAY`) | Exactly `MON`, `TUE`, `WED`, `THU`, `FRI`, `SAT`, or `SUN` | `MON` |
+| Study-hours weekdays (`DAY`) | Full lowercase weekday names: `monday` through `sunday` | `tuesday` |
 | Task IDs | `T` followed by a positive integer, without leading zeroes | `T1`, `T12` |
-| Recurring task template IDs | `R` followed by a positive integer, separate from occurrence IDs | `R1`, `R12` |
+| Recurring task template IDs | `R` followed by a positive integer, without leading zeroes; separate from task occurrence IDs | `R1`, `R12` |
 | Commitment IDs | `C` followed by a positive integer, without leading zeroes | `C1`, `C12` |
 
-Use one or more ordinary spaces between fields. Outer whitespace is trimmed, and blank lines are ignored. Names are trimmed at both ends while retaining internal spaces. Quotation marks have no special meaning and are unnecessary. Duplicate names are allowed.
+Use one or more ordinary spaces between words and fields; embedded tabs are rejected. Outer whitespace is trimmed, and blank lines are ignored. Names are trimmed at both ends while retaining internal spaces. Quotation marks are stored as part of the name, so enter `n/CS2113 draft` without surrounding quotes. Duplicate names are allowed.
 
-IDs identify records, not list positions. Bare numbers such as `1`, zero-padded IDs such as `T01`, and IDs with the wrong prefix are rejected. Task and commitment IDs have separate sequences starting at `T1` and `C1`. Deleted IDs are never reused, including after a restart; a failed add does not consume an ID. Numeric inputs must fit within a signed 32-bit integer, and an exhausted ID sequence rejects further additions.
+IDs identify records, not list positions. Bare numbers such as `1`, zero-padded IDs such as `T01`, and IDs with the wrong prefix are rejected. Tasks, commitments and recurring task templates have separate sequences starting at `T1`, `C1` and `R1`. Deleted IDs are never reused, including after a restart; a failed add does not consume an ID.
 
-Missing required fields, repeated, unknown, reordered, or extra fields are rejected. Commands such as `help`, `task list`, `plan`, and `exit` accept no arguments. Deletion and schedule commands also reject trailing input.
+Whole-number inputs use digits `0`–`9`, without signs or leading zeroes, and must not exceed `2147483647`. Zero is accepted only where stated, such as `done/0` or `percent/0` in [progress commands](#recording-progress). An exhausted ID sequence rejects further additions.
 
-Impossible dates such as `2026-02-30` are rejected rather than adjusted to another
-date. Parsing keeps `schedule today` as a request for today's schedule; its date
-will be resolved when the command executes. Checks such as a future deadline,
-commitment duration divisibility and whether an ID exists belong to domain validation
-after parsing.
+Missing required fields and repeated, unknown or reordered prefixes are rejected. Do not append arguments beyond the format shown. For example, `help`, `plan` and `exit` accept no arguments. `task list` and `task list completed` are two supported forms; other trailing words are rejected. For commitments, `on/` cannot be combined with `day/`, `from/` or `until/`.
 
-Examples below are independent unless a sequence is explicitly described. Use existing IDs and suitable future dates in your own session. List spacing and explanatory error wording may vary; identifiers, values, and behaviour follow the rules described in this guide.
+Impossible dates such as `2026-02-30` are rejected rather than adjusted. A new task deadline must be in the future and within the [allowed date range](#planning-hours-and-date-range). Commitment starts and durations must also satisfy the [commitment rules](#adding-a-commitment). Correct rejected input at the next prompt; see [command troubleshooting](#why-was-my-command-rejected).
+
+Examples below are independent unless a sequence is explicitly described. Use existing IDs and suitable future task deadlines in your own session. Output times contain a colon (`10:30`), while task/commitment command times use four digits (`1030`).
 
 ## Tasks
 
@@ -569,39 +589,41 @@ removed instead. One-time commitments cannot be skipped; delete them instead.
 commitment list
 ```
 
-Lists commitments by weekday, Monday through Sunday, then by start time and numeric ID. Empty weekday groups are omitted. The displayed IDs remain the original commitment IDs. Bounded series show their inclusive date range after the name; unbounded series retain the shorter display.
-Series with cancelled occurrences append those dates in chronological order,
-for example `| skipped: 2026-10-26, 2026-11-02`.
+Lists all stored commitments, including those outside study hours or with past dates. Listing changes neither saved data nor the current plan. Use the displayed `C` IDs for edits, skips and deletions; they are not renumbered to match the list order.
+
+Weekly series appear first, grouped Monday through Sunday, then ordered by start time and numeric ID. Bounded series show their inclusive date range after the name. Skipped dates appear in chronological order after `| skipped:`. One-time commitments follow in a separate section, ordered by date, start time and numeric ID. Empty sections and weekday groups are omitted.
+
+For this example, start with an empty store so the IDs begin at `C1`, and run these setup commands in order:
+
+```text
+commitment add n/CS2113 lecture day/MON start/1000 d/120 from/2026-11-02 until/2026-11-30
+commitment add n/EE2026 lecture day/MON start/1200 d/60
+commitment add n/Weekly review day/FRI start/2330 d/30
+commitment add n/Project meeting on/2026-11-06 start/1400 d/60
+commitment skip C1 on/2026-11-16
+commitment skip C1 on/2026-11-09
+```
+
+Then list the saved entries:
 
 ```text
 scheduleflow> commitment list
 === Recurring Weekly Commitments ===
 [Monday]
-C1. 10:00 - 12:00 | CS2113 lecture
+C1. 10:00 - 12:00 | CS2113 lecture | 2026-11-02 to 2026-11-30 | skipped: 2026-11-09, 2026-11-16
 C2. 12:00 - 13:00 | EE2026 lecture
 
 [Friday]
 C3. 23:30 - 24:00 | Weekly review
 
 Total: 3 recurring commitments across the week.
-```
-
-One-time commitments appear in a separate section after the weekly series, ordered
-by date, then start time and ID. The weekly section is omitted when there are only
-one-time commitments.
-
-```text
-scheduleflow> commitment list
-=== Recurring Weekly Commitments ===
-[Friday]
-C1. 10:00 - 11:00 | Lecture
-
-Total: 1 recurring commitments across the week.
 
 === One-time Commitments ===
-C2. 2026-10-30 (Friday) 14:00 - 15:00 | Project meeting
+C4. 2026-11-06 (Friday) 14:00 - 15:00 | Project meeting
 Total: 1 one-time commitments.
 ```
+
+`24:00` means midnight at the end of the commitment's day. A weekly entry with identical `from/` and `until/` dates has one occurrence and appears in the one-time section. Skipped occurrences do not remove the weekly definition or reduce its section's commitment count.
 
 An empty list displays:
 
@@ -867,35 +889,37 @@ unchanged; use `task progress` or `task remaining` to update it.
 
 ## Viewing the schedule
 
-Use either command:
+If no plan exists, generate one with [`plan`](#generating-a-plan). Then use either command to view a date:
 
 ```text
 schedule today
 schedule YYYY-MM-DD
 ```
 
-`today` means the computer's current local date when the command runs. A dated command selects that calendar date explicitly.
+`today` means the computer's current local date when the command runs. A dated command selects that calendar date explicitly. The selected date must be within the saved plan's [date range](#planning-hours-and-date-range). If a successful change has cleared the plan, run `plan` again before viewing it.
 
-The schedule displays the latest plan's full configured window in chronological order, along with the time the plan was generated. Commitments are clipped to the study window: with default hours, a 07:30–09:00 commitment appears as 08:00–09:00. Commitments entirely outside study hours remain visible in `commitment list` but do not appear in the schedule.
+The schedule displays the latest saved plan's full configured study window in chronological order, along with its generation time. Viewing a date does not regenerate the plan or record progress. Commitments are clipped to that date's study window: with default hours, a 07:30–09:00 commitment appears as 08:00–09:00. Commitments entirely outside study hours remain visible in [`commitment list`](#listing-commitments) but do not appear in the schedule.
 
 ### Schedule labels
 
 | Label | Meaning |
 | --- | --- |
-| `[TASK]` | A planned study session, showing its task ID, name, and session duration. |
+| `[TASK]` | A planned study session, showing its task ID, name and reserved interval duration. |
 | `[BUSY]` | A recurring or one-time commitment, showing its commitment ID and name. |
-| `[FREE]` | Time eligible for planning that was not assigned to a task or blocked by a commitment. |
-| `[UNPLANNED]` | Time before the planning cutoff on the day the plan was generated. It is not available study time in this plan. |
-| `[BREAK]` | A reserved rest interval under the configured work/break policy; use `policy set` to configure it. |
+| `[FREE]` | Eligible study time left after assigning tasks, blocking commitments and reserving required breaks. |
+| `[UNPLANNED]` | Time before the rounded planning cutoff on the day the plan was generated. It is unavailable for new study sessions in this plan. |
+| `[BREAK]` | A reserved rest interval under the configured work/break policy; configure it with [`policy set`](#session-limits-and-breaks), then run `plan`. |
 
 A commitment remains `[BUSY]` even when it occurred before the planning cutoff. Adjacent entries are combined only when their label, ID, and name match, so separate commitments remain separate rows.
 
+Task rows show reserved time in 30-minute slots. For example, 45 minutes of remaining work can occupy a 60-minute `[TASK]` interval. The extra 15 minutes are padding; generating or viewing the plan does not reduce the saved work estimate. See [exact work and unallocated totals](#unallocated-work).
+
 ### Worked schedule example
 
-Assume an empty store and that it is **Monday, 5 October 2026 at 07:00**. Run these commands in order:
+This reference transcript assumes an empty store, default **08:00–22:00** study hours, no work/break policy, and a local time of **Monday, 2 November 2026 at 07:00**. Run these commands in order:
 
 ```text
-task add n/CS2113 draft due/2026-10-06 1800 d/180
+task add n/CS2113 draft due/2026-11-03 1800 d/180
 commitment add n/CS2113 lecture day/MON start/1000 d/120
 commitment add n/EE2026 lecture day/MON start/1200 d/60
 plan
@@ -905,8 +929,8 @@ schedule today
 The schedule is:
 
 ```text
-=== Schedule for Monday (2026-10-05) ===
-Generated at: 2026-10-05 07:00
+=== Schedule for Monday (2026-11-02) ===
+Generated at: 2026-11-02 07:00
 08:00 - 10:00 | [TASK] T1: CS2113 draft (120 min)
 10:00 - 12:00 | [BUSY] C1: CS2113 lecture
 12:00 - 13:00 | [BUSY] C2: EE2026 lecture
@@ -915,6 +939,8 @@ Generated at: 2026-10-05 07:00
 ```
 
 The task uses the two free morning hours first, then resumes after the commitments. All 180 minutes fit, so there is no unallocated-work footer.
+
+When trying this at another time, use a future deadline within the allowed range. The displayed date, generation time and available slots depend on when you run `plan`; the exact rows above require the stated setup.
 
 ### Planning partway through the day
 
@@ -948,22 +974,29 @@ A selected date must fall within the current plan's date range. An out-of-range 
 
 ## Help and exit
 
+Use these commands at the `scheduleflow>` prompt. Both preserve saved data and the current plan.
+
 ### Viewing help
 
 ```text
 help
 ```
 
-Displays `=== ScheduleFlow Command Help ===`, followed by every supported command format and a short description. See the [command summary](#command-summary) for the full list.
+Displays `=== ScheduleFlow Command Help ===`, followed by every supported command format and a short description, then returns to the prompt. Enter `help` without arguments. See the linked [command summary](#command-summary) for each command's detailed instructions.
 
 ### Exiting the program
 
 ```text
+scheduleflow> exit extra
+Error: This command accepts no arguments
+Expected: exit
 scheduleflow> exit
 Goodbye for now!
 ```
 
-`exit` closes the application without another save because successful changes have already been saved. End of input also prints the same goodbye message and exits normally. Extra arguments, such as `exit extra`, are rejected and the application keeps running.
+`exit` closes the application without another save because successful changes have already been saved. As shown above, extra arguments are rejected and leave the application running so you can correct the command.
+
+End of input (EOF) also prints `Goodbye for now!` and exits normally without another save. In a Windows terminal, use Ctrl+Z then Enter; in a macOS/Linux terminal, use Ctrl+D on an empty input line.
 
 ## Saving and restoring data
 
@@ -1002,6 +1035,8 @@ Use one running instance per data file. Saving requires a filesystem that suppor
 To back up your data, close the app and copy `data/scheduleflow.txt`. To transfer it, place the copy in the destination launch folder's `data` subfolder and use the Java 25 and JAR setup described in [Quick start](#quick-start). Back up any existing destination file before replacing it.
 
 ## Troubleshooting and FAQ
+
+Ordinary command errors return you to the `scheduleflow>` prompt so you can correct the input and retry. A startup data-load error stops the application; follow the [data recovery guidance](#what-should-i-do-if-the-application-cannot-load-my-data) before restarting.
 
 ### What if my work does not fit before its deadline?
 
@@ -1061,41 +1096,44 @@ these storage logs do not include your task names or saved file contents.
 
 ## Command summary
 
+These are the supported console commands in this build. Follow an action link for its rules and examples. See [command format](#command-format) for optional fields, alternatives, dates, times and IDs.
+
 | Action | Command |
 | --- | --- |
-| View help | `help` |
-| Add a task | `task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES` |
-| Edit a task | `task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]` |
-| Add weekly task template | `task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES every/WEEKLY [until/YYYY-MM-DD]` |
-| List task templates | `task recur list` |
-| Stop future task generation | `task recur delete RNUMBER` |
-| List tasks | `task list` |
-| Delete a task | `task delete TNUMBER` |
-| Revise a task's remaining time | `task remaining TNUMBER remaining/MINUTES` |
-| Set study policy | `policy set max/MINUTES break/MINUTES` |
-| View study policy | `policy show` |
-| Reset study policy | `policy reset` |
-| Complete a task | `task complete TNUMBER` |
-| Reopen a completed task | `task reopen TNUMBER remaining/MINUTES` |
-| View completed tasks | `task list completed` |
-| Record completed minutes | `task progress TNUMBER done/MINUTES` |
-| Record session progress | `task progress TNUMBER session/MINUTES percent/PERCENT` |
-| Add a weekly commitment | `commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD]` |
-| Add a one-time commitment | `commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES` |
-| List commitments | `commitment list` |
-| Delete a commitment | `commitment delete CNUMBER` |
-| Skip one commitment occurrence | `commitment skip CNUMBER on/YYYY-MM-DD` |
-| Set study hours | `hours DAY\|YYYY-MM-DD /start HH:mm /end HH:mm` |
-| View effective study hours | `hours DAY\|YYYY-MM-DD` |
-| Reset study hours | `hours reset DAY\|YYYY-MM-DD` |
-| Edit a commitment | `commitment edit CNUMBER [n/NAME] [day/DAY\|on/YYYY-MM-DD] [start/HHmm] [d/MINUTES] [from/YYYY-MM-DD until/YYYY-MM-DD]` |
-| Generate or replace the plan | `plan` |
-| View today's schedule | `schedule today` |
-| View a dated schedule | `schedule YYYY-MM-DD` |
-| Exit | `exit` |
+| [View help](#viewing-help) | `help` |
+| [Add a task](#adding-a-task) | `task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES` |
+| [List tasks](#listing-tasks) | `task list` |
+| [Edit a task](#editing-a-task) | `task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]` |
+| [Revise a task's remaining time](#recording-duration-tasks-and-commitments) | `task remaining TNUMBER remaining/MINUTES` |
+| [Record completed minutes](#recording-progress) | `task progress TNUMBER done/MINUTES` |
+| [Record session progress](#recording-progress) | `task progress TNUMBER session/MINUTES percent/PERCENT` |
+| [Complete a task](#completing-and-viewing-completed-tasks) | `task complete TNUMBER` |
+| [View completed tasks](#completing-and-viewing-completed-tasks) | `task list completed` |
+| [Reopen a completed task](#reopening-a-completed-task) | `task reopen TNUMBER remaining/MINUTES` |
+| [Delete a task](#deleting-a-task) | `task delete TNUMBER` |
+| [Add a weekly task template](#weekly-recurring-tasks) | `task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES every/WEEKLY [until/YYYY-MM-DD]` |
+| [List task templates](#weekly-recurring-tasks) | `task recur list` |
+| [Stop future task generation](#weekly-recurring-tasks) | `task recur delete RNUMBER` |
+| [Add a weekly commitment](#adding-a-commitment) | `commitment add n/NAME day/DAY start/HHmm d/MINUTES [from/YYYY-MM-DD until/YYYY-MM-DD]` |
+| [Add a one-time commitment](#adding-a-one-time-commitment) | `commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES` |
+| [Edit a commitment](#editing-a-commitment) | `commitment edit CNUMBER [n/NAME] [day/DAY\|on/YYYY-MM-DD] [start/HHmm] [d/MINUTES] [from/YYYY-MM-DD until/YYYY-MM-DD]` |
+| [Skip one commitment occurrence](#skipping-one-occurrence) | `commitment skip CNUMBER on/YYYY-MM-DD` |
+| [List commitments](#listing-commitments) | `commitment list` |
+| [Delete a commitment](#deleting-a-commitment) | `commitment delete CNUMBER` |
+| [Set study hours](#study-hours) | `hours DAY\|YYYY-MM-DD /start HH:mm /end HH:mm` |
+| [View effective study hours](#study-hours) | `hours DAY\|YYYY-MM-DD` |
+| [Reset study hours](#study-hours) | `hours reset DAY\|YYYY-MM-DD` |
+| [Set study policy](#session-limits-and-breaks) | `policy set max/MINUTES break/MINUTES` |
+| [View study policy](#session-limits-and-breaks) | `policy show` |
+| [Reset study policy](#session-limits-and-breaks) | `policy reset` |
+| [Generate or replace the plan](#generating-a-plan) | `plan` |
+| [View today's schedule](#viewing-the-schedule) | `schedule today` |
+| [View a dated schedule](#viewing-the-schedule) | `schedule YYYY-MM-DD` |
+| [Exit](#exiting-the-program) | `exit` |
 
 `TNUMBER`, `CNUMBER` and `RNUMBER` mean existing IDs such as `T1`, `C1` and `R1`.
-`WEEKLY` is a literal keyword, not a placeholder. Replace the other uppercase
-placeholders with your values; do not type the placeholders literally.
+For `DAY`, use uppercase three-letter codes such as `MON` for commitments and full lowercase names such as `monday` for study hours. `WEEKLY` is a literal keyword. `PERCENT` is a whole number from `0` to `100`, representing the completed percentage of the stated session. Replace other placeholders with your values.
+
+For commitment edits, supply at least one field; choose `day/` or `on/` if changing when it occurs. `on/` cannot be combined with `from/` or `until/`. The [Coming soon multi-date commands](#blocking-multiple-dates-planned) are excluded from this supported-command list.
 
 [Back to top](#scheduleflow-user-guide)
