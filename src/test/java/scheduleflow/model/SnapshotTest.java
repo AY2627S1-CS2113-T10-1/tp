@@ -1,3 +1,4 @@
+// @@author ernestgoh-god
 package scheduleflow.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -110,3 +111,4 @@ class SnapshotTest {
         return new Commitment(id, "Repeated", DayOfWeek.MONDAY, LocalTime.of(hour, 0), 60);
     }
 }
+// @@author
