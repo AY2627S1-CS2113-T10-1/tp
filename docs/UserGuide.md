@@ -317,7 +317,9 @@ Adding a template materializes future deadlines through the rolling planning
 horizon. Each `plan` command extends generation as that horizon moves forward.
 Templates may start beyond the current horizon; their first tasks appear once
 eligible. A task is never scheduled before one week before its original due
-date, even if you later edit that occurrence's deadline.
+date, even if you later edit that occurrence's deadline. A generated task can
+appear in `task list` before its release time; planning simply waits until the
+release time to schedule it.
 
 Generation skips ungenerated deadlines already passed; it does not backfill
 missed weeks. Saved cursors prevent restart, replanning or deleting an occurrence
@@ -680,6 +682,10 @@ of ScheduleFlow; older versions cannot read the new format.
 
 ## Study plans
 
+A study plan is a saved snapshot of your tasks, commitments, study hours and
+policy when you run `plan`. Use `schedule` to view its time slots by date. The
+plan does not change a task's saved remaining-work estimate.
+
 ### Generating a plan
 
 ```text
@@ -694,6 +700,10 @@ tasks, by priority and ID, within the same horizon. Priority operations are not
 yet available at the console.
 
 Each task fills the earliest available 30-minute slots that end at or before its deadline. Work may split around commitments or across days. Adjacent slots for the same task on the same day are displayed as one session. Sessions never overlap commitments or other sessions.
+
+If a task cannot fit completely, `plan` still saves the sessions that fit and
+reports its remaining work. See [Unallocated work](#unallocated-work) for the
+reported reasons and how exact work relates to the half-hour slots.
 
 When every task fits:
 
@@ -850,6 +860,11 @@ Schedule rows still show reserved interval durations. Undated remainder rows say
 `outside planning horizon`. They follow dated rows; priority breaks equal
 deadline ties before numeric ID. Completed overdue tasks contribute no remainder.
 
+For example, a task with 45 minutes remaining needs two half-hour slots. The plan
+credits 45 minutes of work while the schedule reserves 60 minutes; the remaining
+15 minutes are padding, not extra task work. Planning leaves the saved estimate
+unchanged; use `task progress` or `task remaining` to update it.
+
 ## Viewing the schedule
 
 Use either command:
@@ -993,7 +1008,10 @@ To back up your data, close the app and copy `data/scheduleflow.txt`. To transfe
 Run `plan` and review the unallocated minutes and reasons. The app retains every
 session that fits. Revise an estimate with `task remaining`, change a deadline
 with `task edit`, or remove a commitment if that time has become available.
-Run `plan` again after changes.
+You can also review the configured study window with `hours DAY` or
+`hours YYYY-MM-DD`, or check the continuous-work policy with `policy show`.
+Adjust those settings when appropriate. Run `plan` again after any change to
+see an updated allocation.
 
 ### How do I mark work as complete or correct an entry?
 
@@ -1016,7 +1034,9 @@ Run `plan` to generate another one.
 
 ### Can I change the study hours or slot size?
 
-Use `hours` to configure weekday hours and date overrides. The slot size remains fixed at 30 minutes.
+Use `hours` to configure weekday hours and date overrides. The slot size remains
+fixed at 30 minutes; there is no command to change it. A final slot can reserve
+30 minutes while crediting fewer minutes of exact task work.
 
 ### Can I schedule more than a year ahead?
 
