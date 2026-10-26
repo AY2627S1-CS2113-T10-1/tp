@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.model;
 
 import java.time.LocalTime;
@@ -22,3 +23,4 @@ public record StudyWindow(LocalTime start, LocalTime end) {
         return time.getMinute() % 30 == 0 && time.getSecond() == 0 && time.getNano() == 0;
     }
 }
+// @@author

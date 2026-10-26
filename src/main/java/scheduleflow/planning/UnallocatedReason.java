@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.planning;
 
 /**
@@ -6,3 +7,4 @@ package scheduleflow.planning;
 public enum UnallocatedReason {
     DEADLINE_PASSED, OUTSIDE_HORIZON, INSUFFICIENT_CAPACITY
 }
+// @@author

@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.model;
 
 import java.time.LocalDateTime;
@@ -23,3 +24,4 @@ public record TaskOccurrence(int templateId, LocalDateTime originalDeadline) {
         return originalDeadline.minusWeeks(1);
     }
 }
+// @@author

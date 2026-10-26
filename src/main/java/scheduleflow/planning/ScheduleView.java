@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.planning;
 
 import java.time.LocalDate;
@@ -40,3 +41,4 @@ public record ScheduleView(LocalDate date, LocalDateTime generatedAt,
         }
     }
 }
+// @@author

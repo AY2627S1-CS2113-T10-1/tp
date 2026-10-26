@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.planning;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -20,3 +21,4 @@ class ScheduleEntryTest {
                 () -> new ScheduleEntry(start, start.plusMinutes(30), SlotKind.BREAK, "", "Rest"));
     }
 }
+// @@author

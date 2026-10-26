@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.planning;
 
 /**
@@ -6,3 +7,4 @@ package scheduleflow.planning;
 public enum SlotKind {
     TASK, BUSY, FREE, UNPLANNED, BREAK
 }
+// @@author

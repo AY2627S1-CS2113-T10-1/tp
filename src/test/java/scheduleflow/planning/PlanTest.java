@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.planning;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -48,3 +49,4 @@ class PlanTest {
         return new ScheduleEntry(start, start.plusMinutes(30), kind, "", "");
     }
 }
+// @@author

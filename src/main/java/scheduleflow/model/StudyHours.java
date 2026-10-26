@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.model;
 
 import java.time.DateTimeException;
@@ -71,3 +72,4 @@ public record StudyHours(Map<String, StudyWindow> windows) {
         throw new ValidationException("Use a lowercase full weekday or a valid YYYY-MM-DD date.");
     }
 }
+// @@author

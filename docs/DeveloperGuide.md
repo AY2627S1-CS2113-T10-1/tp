@@ -14,8 +14,9 @@ agents working on the project, as specified in the repository's root `AGENTS.md`
 RepoSense tags follow the whole-file allocation in version 2 of the supplied
 authorship redistribution plan, dated 2026-10-25. The previous scoped author
 comments have been removed from production and test Java files. The allocations
-of Ka How (`ka-how`) and Darren (`Darren50`) are applied; other files use
-Git-based attribution until their owners' tags are applied.
+of Ka How (`ka-how`), Darren (`Darren50`) and Gabriel (`GabrielYuSP`) are
+applied; other files use Git-based attribution until their owners' tags are
+applied.
 
 Ka How's files are relative to the corresponding `scheduleflow/` source root:
 
@@ -44,12 +45,24 @@ The whole dispatcher, including its task, planning, storage and rendering
 orchestration helpers, belongs to this allocation. The services and records it
 coordinates keep their own owners' allocations.
 
+Gabriel's files use the same layout with `// @@author GabrielYuSP`:
+
+- Production: `model/RecurringTask.java`, `model/StudyHours.java`,
+  `model/StudyWindow.java`, `model/TaskOccurrence.java`, every file in
+  `planning/`, and `task/RecurringTaskService.java`.
+- Tests: the corresponding model and planning tests, plus
+  `task/RecurringTaskServiceTest.java`.
+
+The complete planner, schedule projection and recurrence materialization files
+belong to this allocation, together with their assigned tests.
+
 These tags record the agreed allocation, not who originally wrote each section.
 They do not rewrite Git history, reassign historical TODOs or change behaviour.
 See the [RepoSense author-tag guide](https://reposense.org/RepoSense/ug/usingAuthorTags.html).
-For tag-only changes, verify the exact file list and marker boundaries and compare
-all 74 Java files against the plan's tag-independent fingerprints. Existing JUnit
-coverage and UI fixtures remain applicable; no new behavioural tests are needed.
+For tag-only changes, verify the exact file list and marker boundaries and
+compare the assigned Java files against the plan's tag-independent fingerprints.
+Existing JUnit coverage and UI fixtures remain applicable; no new behavioural
+tests are needed.
 
 ## Duration verification (issue #13)
 

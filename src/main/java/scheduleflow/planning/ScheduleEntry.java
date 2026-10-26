@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.planning;
 
 import java.time.LocalDateTime;
@@ -47,3 +48,4 @@ public record ScheduleEntry(LocalDateTime start, LocalDateTime end, SlotKind kin
         }
     }
 }
+// @@author

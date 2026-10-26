@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.planning;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -209,3 +210,4 @@ class PlanningRecordsTest {
         return new ScheduleEntry(DATE.atTime(startHour, 0), DATE.atTime(endHour, 0), kind, reference, name);
     }
 }
+// @@author

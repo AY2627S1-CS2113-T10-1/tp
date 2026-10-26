@@ -1,3 +1,4 @@
+// @@author GabrielYuSP
 package scheduleflow.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -47,3 +48,4 @@ class TaskOccurrenceTest {
                 TaskPriority.NORMAL, occurrence));
     }
 }
+// @@author
