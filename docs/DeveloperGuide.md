@@ -168,6 +168,102 @@ availability and `StudyPolicy` supplies optional work/break limits. The
 dispatcher calls `RecurringTaskService` before planning; the allocator does
 not generate templates or occurrences itself.
 
+Study hours and optional policy come from the plan's source snapshot. A date
+override takes precedence over weekday hours, which take precedence over the
+default. Recurrence is prepared outside the planner: the dispatcher asks
+`RecurringTaskService` to materialize a candidate before calling
+`Planner.generate`. The planner uses each occurrence's original release time
+and has no dependency on recurrence, storage or the live clock. A recurrence
+template owns its stable R ID, weekly deadline pattern, optional inclusive end
+date and processing cursor. Each generated task retains its template ID and
+original deadline, from which its one-week release is derived. Advancing the
+cursor past missed dates prevents backfilling and recreation after restart or
+deletion of a generated task.
+
+The class view focuses on generation and projection boundaries. `Task` and
+`Commitment` are source records owned by their respective modules; `Snapshot`
+is the aggregate owned by Save. Arrows show dependencies or contained results,
+not ownership of those external types.
+
+```mermaid
+classDiagram
+    class Planner {
+        <<interface>>
+        +generate(snapshot, now) Plan
+    }
+    class EarliestDeadlinePlanner
+    class TimeRules
+    class Plan
+    class StudySession
+    class UnallocatedWork
+    class ScheduleService
+    class ScheduleView
+    class StudyHours
+    class StudyWindow
+    class StudyPolicy
+    class RecurringTaskService
+    class RecurringTask
+    class TaskOccurrence
+    class Snapshot
+    class Task
+    class Commitment
+
+    Planner <|.. EarliestDeadlinePlanner
+    EarliestDeadlinePlanner ..> TimeRules
+    EarliestDeadlinePlanner ..> Snapshot
+    EarliestDeadlinePlanner ..> Task
+    EarliestDeadlinePlanner ..> Commitment
+    EarliestDeadlinePlanner ..> Plan
+    Plan --> Snapshot : frozen source
+    Plan --> StudySession : sessions
+    Plan --> UnallocatedWork : remainders
+    ScheduleService ..> Plan
+    ScheduleService ..> ScheduleView
+    Snapshot --> StudyHours
+    Snapshot --> StudyPolicy
+    StudyHours --> StudyWindow : resolves
+    Snapshot --> RecurringTask : templates
+    Task --> TaskOccurrence : optional provenance
+    RecurringTaskService ..> Snapshot : candidate
+```
+
+Generation first classifies unfinished work: overdue and beyond-horizon tasks
+retain their full remainder; other work competes for chronological slots.
+Dated tasks are ordered by deadline, priority and numeric ID, followed by
+undated tasks ordered by priority and ID. A slot must fit wholly inside that
+date's study window, start after the rounded generation cutoff and any
+occurrence release, end no later than the task deadline, and not overlap a
+fixed commitment. Required breaks reserve capacity too.
+
+For example, at Monday 10:07 with an 08:00-22:00 window, a 10:00-10:30 class
+and a 90-minute task due at 11:30, the rounded cutoff is 10:30. The task gets
+the two remaining slots through its deadline: 60 minutes scheduled and 30
+reported as insufficient capacity. Its source estimate remains 90 minutes.
+This earliest-deadline greedy policy is predictable and gives earlier
+deadlines first access to scarce time; it does not optimize for fewest sessions
+or most fully completed tasks.
+
+```mermaid
+sequenceDiagram
+    participant D as CommandDispatcher
+    participant R as RecurringTaskService
+    participant P as EarliestDeadlinePlanner
+    participant T as TimeRules
+    participant S as Storage
+    D->>R: materialize(snapshot, now)
+    R-->>D: candidate snapshot
+    D->>P: generate(candidate, now)
+    P->>T: calculate horizon and rounded cutoff
+    T-->>P: exclusive horizon and eligible start
+    loop chronological dates and half-hour slots
+        P->>P: check commitments, release and deadline
+        P->>P: allocate work or reserve a break
+    end
+    P-->>D: immutable Plan
+    D->>S: save source and plan
+    Note over D,S: Publish state only after save succeeds.
+```
+
 ### Persistence and the Snapshot aggregate
 
 `FileStorage` implements `Storage`, delegating source text to `StateCodec`
@@ -1181,14 +1277,40 @@ the supported command surface.
 
 ## Appendix D: Glossary
 
-* *Task* - A retained item with an optional deadline and exact remaining work; zero means complete.
-* *Commitment* - A busy interval repeated on one weekday, optionally within
-  inclusive dates, or a one-time busy interval on a single date.
-* *Snapshot* - Immutable tasks, commitments, study hours and independent next-ID counters.
-* *Plan* - Frozen allocations and unallocated work derived from a snapshot, saved until a successful mutation.
+* *Task* - A retained item with an optional deadline and exact remaining work;
+  zero remaining minutes means complete.
+* *Commitment* - A fixed busy interval that repeats on one weekday, optionally
+  within inclusive dates, or occurs once on a specific date. Planning never
+  moves it.
+* *Snapshot* - Immutable plan source data: tasks, commitments, study hours,
+  recurrence templates, optional policy and independent next-ID counters.
+* *Plan* - A frozen result derived from one snapshot, containing scheduled
+  sessions, reserved breaks and unallocated work. Successful saved changes
+  invalidate it; policy no-ops preserve it.
+* *Frozen plan* - The generation time, source snapshot and allocation retained
+  for schedule views until replanning or a successful saved change.
 * *Planning horizon* - The calendar range ending at midnight on the same date
   next year, with February 29 adjusted to February 28 when necessary.
-* *Slot* - A 30-minute interval within the daily study window.
+* *Study window* - The continuous daily interval available for study. A date
+  override takes precedence over weekday hours, which take precedence over the
+  default.
+* *Cutoff* - The first eligible half-hour boundary on the generation date,
+  rounded up from the current local time and limited to that date's study window.
+* *Slot* - One 30-minute interval of reserved scheduling capacity.
+* *Exact work* - Minutes credited against a task's estimate; this can be less
+  than the capacity reserved by its final slot.
+* *Reserved capacity* - Elapsed time occupied by allocated slots, measured in
+  30-minute units even when exact task work uses fewer minutes.
+* *Recurrence template* - A weekly rule with a stable R ID, first deadline,
+  optional inclusive end date and generation cursor.
+* *Occurrence* - A generated task linked to its template ID and original
+  deadline. It has its own T ID and ordinary task lifecycle.
+* *Release time* - One week before an occurrence's original deadline; the
+  planner cannot schedule that occurrence earlier, even if its editable
+  deadline changes.
+* *Generation cursor* - The latest weekly deadline already processed for a
+  template, including skipped past dates; it prevents backfilling or recreating
+  processed occurrences.
 
 ## Appendix E: Instructions for Manual Testing
 
@@ -1315,6 +1437,27 @@ schedule, use the controlled-clock
 [User Guide example](UserGuide.md#worked-schedule-example) as a reference,
 or replay the saved-plan fixtures UI-029/UI-031; the production JAR has no
 clock-setting flag. Live tests cannot promise those same timestamps.
+
+For a small exact partial-allocation check, use a second empty launch folder.
+Choose D0 as today and D1 as tomorrow, both within the next year. Replace
+`D0` and `D1` in the commands with their actual `YYYY-MM-DD` dates. Run `plan`
+after 08:30 local time on D0 so its short window has passed:
+
+```text
+hours D0 /start 08:00 /end 08:30
+hours D1 /start 08:00 /end 09:00
+commitment add n/Busy on/D1 start/0800 d/30
+task add n/Partial due/D1 0900 d/120
+plan
+schedule D0
+schedule D1
+```
+
+The plan should schedule 30 minutes and report the remaining 90 as unallocated
+for insufficient capacity; the saved task estimate remains 120 minutes.
+`schedule D0` shows its past window as unplanned. On D1, the commitment occupies
+08:00-08:30 and the only remaining slot is 08:30-09:00. Keep the data folder
+separate from other manual tests so its IDs and settings are isolated.
 
 ### Saving, restoration, failure and recovery
 
