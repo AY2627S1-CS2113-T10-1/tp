@@ -1,0 +1,77 @@
+@startuml
+' DG contribution I1: Ka How (ka-how).
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName SansSerif
+skinparam defaultFontSize 15
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 160
+skinparam ParticipantPadding 18
+skinparam BoxPadding 8
+skinparam ArrowColor #475569
+hide footbox
+
+participant ":ConsoleUi" as UI #DBEAFE
+participant ":App" as App #DBEAFE
+participant ":CommandParser" as Parser #F1F5F9
+participant ":CommandDispatcher" as Dispatcher #F1F5F9
+participant ":TextRenderer" as Renderer #DBEAFE
+
+note over UI, Renderer
+  Starts after successful restoration in App.run().
+  External parser/dispatcher are shaded grey.
+end note
+
+loop until normal termination
+    App -> UI : prompt()
+    App -> UI : readLine()
+    UI --> App : line
+
+    alt EOF
+        App -> Renderer : exit()
+        Renderer --> App : goodbye
+        App -> UI : write(goodbye)
+        break normal termination
+            note over App : return 0; no parse, dispatch or save
+        end
+    else blank line
+        note over App : Skip parsing; next iteration prompts again.
+    else nonblank line
+        App -> Parser : parse(line)
+        alt syntax rejected
+            Parser --> App : ParseException
+            App -> Renderer : parseError(exception)
+            Renderer --> App : text
+            App -> UI : write(text)
+        else command recognized
+            Parser --> App : command
+            App -> Dispatcher : execute(command, state)
+            alt command completes
+                ref over Dispatcher, Renderer
+                    Execute selected command and format its response.
+                    See command transactions; internal calls omitted.
+                end ref
+                Dispatcher --> App : response: CommandResponse
+                App -> UI : write(response.output())
+                opt response.shouldExit()
+                    break normal termination
+                        note over App : return 0; no next prompt
+                    end
+                end
+            else validation or save rejected
+                Dispatcher --> App : ValidationException or StorageException
+                App -> Renderer : error(exception.getMessage())
+                Renderer --> App : text
+                App -> UI : write(text)
+            end
+        end
+    end
+end
+
+note over App, Renderer
+  Rejections return to the next loop iteration.
+  Exception returns are simplified; unexpected exceptions propagate.
+  An input IOException stops run() with an error and status 1 (omitted).
+end note
+@enduml

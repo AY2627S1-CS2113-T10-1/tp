@@ -1,0 +1,89 @@
+@startuml
+' DG contribution D1: Ka How (ka-how).
+!pragma layout smetana
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName SansSerif
+skinparam defaultFontSize 15
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam ArrowColor #475569
+skinparam classBorderColor #475569
+skinparam packageBorderColor #94A3B8
+hide empty members
+top to bottom direction
+
+package "Console and application shell (ka-how)" {
+    class Main {
+        {static} +main(...): void
+    }
+    class App {
+        +run(): int
+        -runCommands(state): int
+    }
+    class ConsoleUi {
+        +prompt(): void
+        +readLine(): String
+        +write(text: String): void
+    }
+    class TextRenderer {
+        +help(): String
+        +parseError(...): String
+        +error(message: String): String
+        +schedule(...): String
+    }
+    class AppState {
+        +commit(saved: Snapshot): void
+        +replacePlan(plan: Plan): void
+    }
+    interface Command
+    class "Command.Help" as Help
+    class "Command.AddTask" as AddTask
+    class CommandResponse {
+        +output(): String
+        +shouldExit(): boolean
+    }
+}
+
+package "External collaborators" #F1F5F9 {
+    class CommandParser {
+        +parse(line: String): Command
+    }
+    class CommandDispatcher {
+        +execute(...): CommandResponse
+    }
+    interface Storage {
+        +load(): Snapshot
+        +loadPlan(source: Snapshot): Optional<Plan>
+    }
+    class Snapshot
+    class Plan
+}
+
+Main ..> App : creates
+App --> ConsoleUi : ui
+App --> TextRenderer : renderer
+App --> CommandParser : parser
+App --> CommandDispatcher : dispatcher
+App --> Storage : storage
+App ..> AppState : creates in run()
+Command <|.. Help
+Command <|.. AddTask
+AppState --> "1" Snapshot : snapshot
+AppState --> "0..1" Plan : currentPlan
+
+' Layout-only edges keep the two groups narrow; they are not UML relationships.
+ConsoleUi -[hidden]down-> TextRenderer
+TextRenderer -[hidden]down-> AppState
+AppState -[hidden]down-> Command
+Command -[hidden]down-> CommandResponse
+CommandParser -[hidden]down-> CommandDispatcher
+CommandDispatcher -[hidden]down-> Storage
+Storage -[hidden]down-> Snapshot
+Snapshot -[hidden]down-> Plan
+
+note bottom of Command
+  Representative records only.
+  Records are shown as classes.
+end note
+@enduml

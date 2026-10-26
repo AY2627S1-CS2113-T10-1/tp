@@ -16,13 +16,29 @@ coursework around fixed commitments. For commands and user examples, see the
 - [Acknowledgements](#acknowledgements)
 - [Setting up, getting started](#setting-up-getting-started)
 - [Design](#design)
+  - [System overview and collaboration boundaries](#system-overview-and-collaboration-boundaries)
+  - [Console application and presentation](#console-application-and-presentation)
+  - [Task model and command parsing](#task-model-and-command-parsing)
+  - [Commitments and command execution](#commitments-and-command-execution)
+  - [Planning, schedule projection and recurrence](#planning-schedule-projection-and-recurrence)
+  - [Persistence and the Snapshot aggregate](#persistence-and-the-snapshot-aggregate)
 - [Implementation](#implementation)
+  - [Recoverable console interaction and deterministic rendering](#recoverable-console-interaction-and-deterministic-rendering)
+  - [Exact task work and retained task lifecycle](#exact-task-work-and-retained-task-lifecycle)
+  - [Dated commitments and save-before-publication dispatch](#dated-commitments-and-save-before-publication-dispatch)
+  - [Slot allocation under study hours/policy and recurrence](#slot-allocation-under-study-hourspolicy-and-recurrence)
+  - [Atomic persistence and restoring frozen plans](#atomic-persistence-and-restoring-frozen-plans)
 - [Documentation, logging, testing and dev-ops](#documentation-logging-testing-and-dev-ops)
 - [Appendix A: Product Scope](#appendix-a-product-scope)
 - [Appendix B: User Stories](#appendix-b-user-stories)
 - [Appendix C: Non-Functional Requirements](#appendix-c-non-functional-requirements)
 - [Appendix D: Glossary](#appendix-d-glossary)
 - [Appendix E: Instructions for Manual Testing](#appendix-e-instructions-for-manual-testing)
+  - [Launch, help, exit and console behavior](#launch-help-exit-and-console-behavior)
+  - [Tasks and input validation](#tasks-and-input-validation)
+  - [Commitments and unavailable periods](#commitments-and-unavailable-periods)
+  - [Planning, schedules, hours, policy and recurrence](#planning-schedules-hours-policy-and-recurrence)
+  - [Saving, restoration, failure and recovery](#saving-restoration-failure-and-recovery)
 
 ## Acknowledgements
 
@@ -76,21 +92,41 @@ split ownership. Tags record the allocation, not historical authorship. See
 
 ### Console application and presentation
 
-`Main` supplies UTF-8 streams, file storage and the system clock. `App` loads
-state and owns the prompt/read/parse/dispatch loop. `ConsoleUi` alone performs
-console I/O; `TextRenderer` returns response strings. `AppState` retains the
-loaded or saved snapshot and optional matching plan.
+The shell connects text interaction to the domain without putting console I/O
+inside services. The class view shows Ka How's seven production types and the
+external collaborators needed to understand the command path. Associations
+denote retained references; dashed dependencies denote creation or use.
+`...` marks omitted parameters. Service, codec, clock and transport-use
+dependencies are omitted to keep this view focused.
 
-#### Command transport
+![Console shell classes, command transports and external collaborators](images/ka-how-console-classes.svg)
 
-The sealed `Command` interface contains implemented command transports and
-planned transports, including the two unwired unavailable-range operations.
-Records that only carry values use Java's generated canonical constructors;
-redundant empty compact constructors have been removed. Records with required
-reference fields retain their null checks. Parsing and the services still own
-syntax and business validation respectively. `CommandParserTest` and
-`ContractsTest` cover construction and dispatch vocabulary without changing
-the public record components or constructor signatures.
+[PlantUML source](diagrams/ka-how-console-classes.puml)
+
+[`Main`](../src/main/java/scheduleflow/Main.java) supplies UTF-8 streams,
+`Clock.systemDefaultZone()` and `FileStorage` for `data/scheduleflow.txt` relative
+to the launch folder. It creates `App` and turns its returned status into process
+termination. `App` receives `Storage`, `Clock` and `ConsoleUi`, then constructs
+the parser, renderer and dispatcher with their services. Constructors do no I/O;
+loading begins in `run()`. `AppState` is local to that run, rather than an `App`
+field, so command execution receives the session's live state explicitly.
+
+[`ConsoleUi`](../src/main/java/scheduleflow/cli/ConsoleUi.java) owns line reads,
+prompt/response writes and flushing.
+[`TextRenderer`](../src/main/java/scheduleflow/cli/TextRenderer.java) returns
+formatted text; it does not read the clock, perform console I/O or mutate state.
+[`AppState`](../src/main/java/scheduleflow/cli/AppState.java) retains a `Snapshot`
+and an optional matching `Plan`. `commit(saved)` publishes a saved candidate and
+clears the plan. `replacePlan(plan)` accepts an equal source snapshot, rejecting
+a stale source before changing state, even with assertions disabled.
+
+[`Command`](../src/main/java/scheduleflow/cli/Command.java) is a sealed interface
+whose nested records carry requests, for example `Help`, `AddTask` and
+`ScheduleToday`. These values have no execution method: syntax belongs to
+Nickhil's parser and domain rules to the services. `CommandResponse(output,
+shouldExit)` carries the dispatcher's formatted result and termination decision
+back to `App`. The diagram shows only representative records; the two unavailable
+range transports exist but their console routes remain unfinished.
 
 ### Task model and command parsing
 
@@ -118,9 +154,9 @@ without overdue/outside-horizon classification. Adjacent slots for one task merg
 within a day. Source task estimates remain unchanged.
 
 `ScheduleService` projects the frozen plan across the complete configured daily
-window. Each slot is classified as busy, assigned to a task, before the
-generation cutoff, or free, in that order. Merging preserves commitment and
-task identities. `Plan`, `StudySession`, `UnallocatedWork`, `ScheduleEntry` and
+window. Each slot is classified as busy, assigned to a task, reserved for a
+break, before the generation cutoff, or free, in that order. Merging preserves
+commitment and task identities. `Plan`, `StudySession`, `UnallocatedWork`, `ScheduleEntry` and
 `ScheduleView` validate their own fields and retain immutable result lists;
 allocation relationships remain the planner's responsibility. Fixed-date
 planner and projection tests verify deadline order, conservation of minutes,
@@ -146,143 +182,111 @@ boundaries. Proposed console operations are explicitly labelled.
 
 ### Recoverable console interaction and deterministic rendering
 
-#### Application lifecycle and executable entry point
+A mistyped command should leave the student able to correct it in the same
+session. The shell implements this by distinguishing recoverable command
+failures from failures that prevent the session from continuing. Its starting
+points are [`App.run()` and `runCommands()`](../src/main/java/scheduleflow/cli/App.java).
 
-`App.run` loads the snapshot and any matching saved plan before prompting, and
-stops with status 1 if storage rejects either load. Each loop prompts and reads a line, ignores blanks, parses, dispatches
-and prints the response. Parse errors include usage; domain and save errors
-print one error and allow another command. Input failure returns 1; exit and
-EOF return 0 with goodbye and no save. Unexpected programming exceptions
-propagate. Constructors do no I/O, and process termination stays in `Main`.
+#### Startup and the command loop
 
-`ConsoleUi` flushes the exact `scheduleflow> ` prompt without a newline and
-flushes each response with a final newline. `Main` supplies explicit UTF-8
-streams, `Clock.systemDefaultZone()` and `FileStorage` at
-`data/scheduleflow.txt` relative to the launch folder. Extra arguments print
-`Error: Usage: java -jar scheduleflow.jar (no arguments)` and exit 1 before
-loading. The existing Shadow JAR manifest already names `scheduleflow.Main`.
-Build with `.\gradlew.bat shadowJar`; output is `build/libs/scheduleflow.jar`.
+`run()` calls `Storage.load()`, creates `AppState`, and requests
+`Storage.loadPlan(loaded)`. A returned plan is checked through `replacePlan`.
+Neither restoration nor rendering regenerates the schedule. A `StorageException`
+during either load produces `TextRenderer.error(message)` and status 1 before
+any prompt or command read. Starting empty is allowed only for a genuinely
+missing store; corrupt data must not be silently replaced. File validation and
+atomic replacement are explained in [persistence](#atomic-persistence-and-restoring-frozen-plans).
 
-`AppTest` covers empty/corrupt startup, load counts, syntax/domain/save recovery,
-unchanged file bytes on a rejected save, stable restart IDs, overdue tasks,
-empty-plan clipping/midnight output, invalidation and input failure.
-`ConsoleUiTest` checks framing, flushes, Unicode lines, EOF and read errors.
-`MainTest` runs separate Java processes in temporary folders to check status,
-argument rejection, UTF-8 under ASCII JVM defaults and persisted restarts.
-Active process UI cases run the packaged JAR with exact per-command assertions.
+After successful startup, each iteration flushes the exact `scheduleflow> `
+prompt, calls `ConsoleUi.readLine()`, and handles one complete line. Blank input
+immediately begins the next iteration, without parsing, dispatching or saving.
+For a nonblank line, the parser returns a `Command`; the dispatcher executes it
+against the same `AppState`. `ConsoleUi.write(response.output())` adds the final
+newline and flushes the response before `shouldExit()` is inspected.
 
-#### Text rendering
+![Command loop with success, recoverable errors, blank input and termination](images/ka-how-command-loop.svg)
 
-`TextRenderer` formats help, task and commitment success messages, lists, plan
-results, schedules, errors, the absent-plan message and goodbye. It returns
-LF-separated strings without a trailing newline and performs no direct console
-I/O, clock reads or state changes. Optional stage diagnostics use the logger
-configuration described below. Task rows
-preserve the service's supplied order and stored duration. Commitment groups
-appear Monday through Sunday, preserve supplied order within each group and
-omit empty weekdays. Names remain visible in full, including Unicode.
+[PlantUML source](diagrams/ka-how-command-loop.puml)
 
-Date/time formatters use `uuuu-MM-dd HH:mm` and `HH:mm` with `Locale.ROOT`;
-weekday names explicitly use English. Commitment endpoints use
-`Commitment.endMinuteOfDay()` so midnight displays as `24:00` without wrapping.
+The diagram starts after restoration. Its success formatter is shorthand for
+the method selected by the dispatcher (`help`, `taskAdded`, and so on).
+Service calls, storage operations and publication are omitted; their ordering
+is described in [command transactions](#command-dispatch-and-live-state-transactions).
 
-Plan summaries distinguish empty task lists, complete results and partial
-allocation (including zero scheduled minutes). Scheduled and unallocated totals
-use `mapToLong` over all plan rows. A private helper formats the unallocated task
-rows and maps all three reasons to the required English text; schedule footers
-reuse it without filtering by the selected date.
+For example, after adding `commitment add n/Lecture day/MON start/1000 d/60`
+to an empty store, parsing supplies `Command.AddCommitment`. The dispatcher
+obtains a candidate, saves and publishes it, then calls
+`TextRenderer.commitmentAdded`. Only the returned `CommandResponse` reaches the
+console. Entering the same overlapping commitment again yields a validation
+error and another prompt. Correcting the interval to start at `1100` succeeds
+with C2; the rejected attempt consumed no ID. The shell owns the interaction,
+while the service and dispatcher establish candidate validation and rollback.
 
-Schedules display `ScheduleView` metadata and entries in their supplied order.
-TASK minutes come from that row's endpoints, rather than the task's whole
-estimate. BUSY retains its reference and name; FREE, UNPLANNED and BREAK have
-only their labels. BREAK is renderable through the planning API; the default
-console planner uses the stored study policy when present. Any UNPLANNED row adds the
-cutoff note. A nonempty remainder list adds a
-blank line and the whole-plan footer. The formatter never allocates, clips,
-merges, repairs or reorders schedule rows, and never recalculates generation
-time or date ranges. Range validation remains with `ScheduleService`; the
-dispatcher handles absent plans before schedule projection.
+#### Failure boundaries and termination
 
-`TextRendererTest` checks messages, fields/order, long/Unicode names, midnight,
-empty/complete/partial plans, all reasons, totals above `Integer.MAX_VALUE`,
-multiple planning dates, all schedule labels, session durations, preserved row
-boundaries, frozen metadata, footers and LF/no trailing newline. Fixed records
-avoid live clocks and saved data. The corrected schedule example also runs
-through the existing planner and projection APIs before formatting.
+| Event | Shell behavior | Session outcome |
+| --- | --- | --- |
+| `ParseException`, for example `help extra` | `parseError` prints `Error: MESSAGE` and `Expected: USAGE`; dispatch is not reached. | Next prompt. |
+| `ValidationException`, for example an overlapping commitment | `error` prints one explanation; no success response is written. | Next prompt. |
+| `StorageException` during command execution | `error` reports the rejected save; the dispatcher retains the previous live state and plan. | Next prompt; the user can retry. |
+| `exit` | The dispatcher returns goodbye with `shouldExit = true`; `App` prints it once. | Status 0, no extra save or prompt. |
+| EOF (`readLine()` returns `null`) | `App` writes `TextRenderer.exit()` without invoking parser or dispatcher. | Status 0, no save. |
+| Input `IOException` | `run()` prints `Error: Cannot read input: MESSAGE`. | Status 1. |
 
-#### Defensive boundaries and diagnostics
+Unexpected programming exceptions propagate. In particular, a null dependency,
+a stale plan or an unfinished range route is not converted to an ordinary
+input error. Extra process arguments are rejected by `Main` before loading,
+with `Error: Usage: java -jar scheduleflow.jar (no arguments)` and status 1.
+`App` returns status codes so tests and embedded callers need not terminate
+their JVM; only `Main` calls `System.exit`.
 
-Public console APIs reject null dependencies and arguments with named
-`NullPointerException` messages. `TextRenderer` also rejects null list elements
-before assembling text, and `ParseException` requires a message and usage hint.
-These checks remain active without Java assertions. Domain validation stays in
-the existing services; command records continue to carry values without
-duplicating their business rules.
+#### Deterministic presentation
 
-`AppState.replacePlan` rejects a plan whose source differs from the current
-snapshot with `IllegalArgumentException`, preserving any existing plan. An
-equal snapshot from another instance is accepted. The dispatcher rejects a null
-planner result before publication. Missing records after validated service
-operations raise descriptive `IllegalStateException` failures rather than an
-unexplained lookup error. These programming failures propagate to the caller.
+Renderer methods return LF-separated strings with no trailing newline.
+`ConsoleUi` supplies the final platform newline; tests normalize CRLF only at
+the process boundary. Explicit UTF-8 streams in `Main` preserve names such as
+`学习 Café` even when the JVM's default encoding differs. Date/time formatters use
+`uuuu-MM-dd`, `uuuu-MM-dd HH:mm` and `HH:mm` with `Locale.ROOT`; weekday labels
+explicitly use English. Validated commitment endpoints at midnight display as
+`24:00` instead of wrapping to `00:00`.
 
-Assertions check complete grammar matches, save-before-publication ordering,
-plan invalidation and live-plan source consistency. Gradle `test` and `run`
-enable assertions; use `java -ea -jar scheduleflow.jar` for a packaged launch.
-Assertions supplement runtime checks and never replace input validation.
+Formatting preserves the supplied task order and schedule entry boundaries.
+Weekly commitments are grouped Monday to Sunday, followed by one-time entries
+ordered by date; within each group the service's supplied ordering is retained.
+The renderer does not allocate, clip or merge sessions. `schedule(view)` uses
+the view's frozen generation time and rows, adds a cutoff note if UNPLANNED
+appears, and reuses the whole-plan unallocated-work footer rather than filtering
+it to the selected date.
 
-`java.util.logging` classifies diagnostics by their effect on the session:
+Exact work and reserved time have different meanings: a 45-minute task may
+occupy a 60-minute interval. Plan summaries sum `StudySession.workMinutes` and
+`UnallocatedWork.minutes` using `long` totals; TASK schedule rows show the
+wall-clock interval duration. Presentation must preserve that distinction,
+including when totals exceed a signed 32-bit integer.
 
-- `FINE` records detailed input, parsing, dispatch, validation, saving,
-  publication and formatting stages.
-- `INFO` records session startup and normal termination after exit or EOF.
-- `WARNING` records rejected syntax, domain validation and save failures that
-  allow the user to try another command.
-- `SEVERE` records startup-load and input failures that stop the session.
+#### Design considerations
 
-A failed save never produces a successful publication record. Failure records
-retain their original exception, so a file handler can record its cause and
-stack trace alongside the severity.
+The following is an analysis of the implemented design. Keeping rendering as
+returned text allows exact-output tests without redirecting global streams;
+injected readers/writers, storage and clocks allow controlled session tests.
+Printing directly inside each service would require fewer intermediate values,
+but would mix domain work with console framing and make isolated tests harder.
+The current design instead requires the dispatcher to choose the appropriate
+formatter and return `CommandResponse` consistently.
 
-For a default executable launch, `Main` sets the `scheduleflow.cli` logger
-namespace to `OFF`, preserving exact stdout and empty stderr even for errors.
-An explicit `java.util.logging.config.file` or `java.util.logging.config.class`
-setting, or a configured `scheduleflow`/`scheduleflow.cli` namespace level,
-takes precedence. Other component logger settings are preserved. Code that
-embeds `App` directly uses the caller's normal Java logging configuration.
-Stage messages omit raw command text, names and formatted output; failure
-records may include the exception and its diagnostic details.
+Catching the three expected command exceptions keeps correction local to one
+iteration. Catching every runtime exception would also keep the loop running,
+but could conceal a broken internal invariant. Propagating unexpected failures
+keeps them visible to developers. This boundary does not promise recovery from
+an output-device failure: `PrintWriter` errors are not explicitly checked.
 
-To enable diagnostics without interleaving them with console responses, create
-a local `logging.properties` file in the launch folder:
-
-```properties
-handlers=java.util.logging.FileHandler
-.level=INFO
-scheduleflow.level=FINE
-java.util.logging.FileHandler.level=FINE
-java.util.logging.FileHandler.pattern=scheduleflow-%u.log
-java.util.logging.FileHandler.encoding=UTF-8
-java.util.logging.FileHandler.formatter=java.util.logging.SimpleFormatter
-```
-
-Launch with
-`java -ea -Djava.util.logging.config.file=logging.properties -jar scheduleflow.jar`.
-To record only warnings and failures, change both `scheduleflow.level` and
-`java.util.logging.FileHandler.level` to `WARNING`; `SEVERE` records are still
-included while `INFO` and `FINE` are filtered out.
-Keep this local configuration and generated logs outside the repository.
-Constructors emit no stage logs or I/O.
-
-Regression tests cover null inputs/elements, stale and equal-source plans,
-invalid planner results, preserved state on rejection and diagnostic order on
-successful and failed transactions. `AppTest` captures records in memory,
-restores logger settings in `finally` and uses `@Isolated` to protect other
-tests. It checks severity classification, retained exceptions and filtering at
-the `WARNING` threshold. `MainTest` checks quiet default launches for recoverable
-and fatal errors, and an explicit warning-only file configuration. Existing
-exact-output tests and all maintained active packaged scenarios verify normal
-console behaviour. The User Guide's command and error behaviour remains valid.
+`AppTest` covers startup, syntax/domain/save recovery and failed-save retries;
+`AppStateTest` covers source-plan consistency. `ConsoleUiTest` checks flushes and
+framing, `MainTest` checks process status/UTF-8/quiet defaults, and
+`TextRendererTest` checks exact text, midnight, large totals and locale changes.
+Fixed clocks, temporary files and isolated logger/locale changes keep these
+checks independent of the developer's saved data. See [console verification](#build-packaging-and-console-verification)
+and [manual console tests](#launch-help-exit-and-console-behavior).
 
 ### Exact task work and retained task lifecycle
 
@@ -349,8 +353,8 @@ priority to NORMAL and still rejects null deadlines; there is no ambiguous
 four-argument Optional overload. Use `Task.withoutDeadline(id, name, minutes)`
 or the canonical constructor for explicit absence, never a sentinel date.
 HIGH/NORMAL/LOW are stored and used only for planner ties here; priority operations
-are not wired at the console. Weekly templates are implemented as described
-above; queries remain deferred.
+are not wired at the console. Weekly templates are described in
+[recurrence](#weekly-recurring-tasks); queries remain deferred.
 
 `TaskService` exposes these pure candidate APIs:
 
@@ -558,8 +562,8 @@ is rejected instead of silently losing it.
 
 `CommitmentService.skip` resolves the stable ID, rejects non-occurrence and
 duplicate dates, and replaces the record at its original stored position. The
-candidate preserves tasks, study hours and both ID counters. Printing saves the
-candidate before publishing it or returning `Skipped CNUMBER on DATE: NAME`;
+candidate preserves tasks, study hours and both ID counters. The dispatcher
+saves the candidate before publishing it or returning `Skipped CNUMBER on DATE: NAME`;
 therefore save failure leaves the live snapshot, current plan and saved data
 unchanged. The command grammar is `commitment skip CNUMBER on/YYYY-MM-DD`.
 
@@ -648,7 +652,7 @@ Hours overrides continue to control the enclosing study window.
 
 #### Command dispatch and live-state transactions
 
-`CommandDispatcher.execute` routes every nested `Command` type and captures
+`CommandDispatcher.execute` switches on the nested `Command` types and captures
 `LocalDateTime.now(clock)` exactly once, including for `schedule today`.
 Mutation services validate and return candidates. The dispatcher resolves the
 added or removed record, calls `Storage.save`, then calls `AppState.commit` and
@@ -1002,7 +1006,7 @@ Use isolated saved data and fixed clocks where exact dates matter.
 
 ### Build, packaging and console verification
 
-Run checks from the repository root with Java 25 and Node.js 22 or later:
+From the repository root, verify both the shell and Gradle JVM are Java 25:
 
 ```powershell
 java -version
@@ -1013,58 +1017,69 @@ node .agents/skills/test-ui/scripts/run-ui-tests.mjs
 node --test test/release.test.mjs
 ```
 
-For the parser alone, use
-`.\gradlew.bat test --tests scheduleflow.cli.CommandParserTest`.
-For the formatter alone, use
-`.\gradlew.bat test --tests scheduleflow.cli.TextRendererTest`.
-On Unix, replace `.\gradlew.bat` with `./gradlew`. If the default Gradle cache
-is unwritable, set `GRADLE_USER_HOME` to an accessible cache.
+On Unix use `./gradlew`. If necessary set `GRADLE_USER_HOME` to a writable cache.
+`build` runs JUnit and Checkstyle and creates `build/libs/scheduleflow.jar` with
+entry point `scheduleflow.Main`. Standalone launches require
+`java -ea -jar scheduleflow.jar` to enable assertions; Gradle `test`, `run` and
+distribution scripts enable them already. `startScripts` and normal
+distributions use the same Shadow JAR; test dependencies are not shipped.
 
-The process UI cases in [the test plan](../test/ui-test-plan.md) are active.
-They verify empty startup, commitment transactions/restart, EOF, syntax/domain
-recovery, Unicode and corrupt startup through the packaged JAR. Fixed-clock
-JUnit cases verify task and planning acceptance through injected APIs. The
-runner uses isolated temporary data and writes evidence under
-`build/ui-transcripts/`. No production clock flag was added. Unsupported atomic
-replacement and injected temporary-write failures remain unexecuted release
-checks; existing storage tests cover deterministic replacement failure.
+For focused shell checks, run `test --tests scheduleflow.MainTest --tests
+scheduleflow.cli.AppTest --tests scheduleflow.cli.AppStateTest --tests
+scheduleflow.cli.ConsoleUiTest --tests scheduleflow.cli.TextRendererTest` with
+the wrapper. The [UI plan](../test/ui-test-plan.md) explains isolated data,
+per-command comparisons and scenario readiness. The UI runner rebuilds the
+current JAR and tests without assertions; `release.test.mjs` replays maintained
+cases with `-ea` and extracts/launches the normal distribution ZIP. It checks
+both scripts' assertion defaults but executes only the current OS's script.
+Preserve the printed `build/ui-transcripts/` paths before running `clean`.
 
-`build` runs the Java tests and Checkstyle and creates
-`build/libs/scheduleflow.jar` through `shadowJar`. The JAR's manifest entry
-point is `scheduleflow.Main`; its runtime classes are included so it needs
-only Java 25 when distributed. Test dependencies stay outside the JAR.
+#### Diagnostics
 
-Assertions are explicitly enabled for Gradle `test` and `run`.
-`applicationDefaultJvmArgs = ['-ea']` also enables them in generated Windows
-and Unix launchers. A standalone JAR launch needs
-`java -ea -jar scheduleflow.jar`; JVM assertion settings are not embedded in
-the JAR itself.
+Default `Main` launches silence `scheduleflow.cli` unless logging was explicitly
+configured. Embedded `App` instances respect the caller's configuration. Stage
+logs omit raw commands/output, but failure records retain exception details;
+keep diagnostic files private and outside version control.
 
-The lean `jar` task remains disabled. Normal `startScripts` use the Shadow
-JAR as their classpath, and the main distribution includes that same JAR in
-`lib`. Without this wiring, `distZip` and `distTar` contain launchers referring
-to a missing lean JAR and fail to start. Shadow distributions continue to use
-the executable JAR as well.
+For opt-in file diagnostics, put this `logging.properties` in a disposable
+launch folder and run
+`java -ea -Djava.util.logging.config.file=logging.properties -jar scheduleflow.jar`:
 
-After `build`, run `node --test test/release.test.mjs`. It requires Java 25,
-launches the actual JAR with assertions for all maintained active fixtures,
-and extracts the normal ZIP in temporary storage. It verifies that the ZIP
-contains the exact release JAR, both launcher scripts default to `-ea`, and
-the current platform's launcher reaches the prompt and exits normally without
-creating data. The script writes a separate transcript under
-`build/ui-transcripts/` and prints its exact path. The local console skill
-also runs the same fixtures without `-ea`, checking that user validation works
-independently of assertions. Keep both transcripts before running `clean`.
+```properties
+handlers=java.util.logging.FileHandler
+.level=INFO
+scheduleflow.level=FINE
+java.util.logging.FileHandler.level=FINE
+java.util.logging.FileHandler.pattern=scheduleflow-%u.log
+java.util.logging.FileHandler.encoding=UTF-8
+java.util.logging.FileHandler.formatter=java.util.logging.SimpleFormatter
+```
 
-Packaged cases additionally cover restored overdue and out-of-horizon tasks,
-numeric listing, deletion/restart, exhausted ID sequences, overlapping saved
-commitments and duration totals beyond a 32-bit integer. These complement the
-fixed-clock JUnit planning and transaction checks; they do not inject a clock
-into the production entry point or exercise every filesystem provider failure.
-`EarliestDeadlinePlannerTest` additionally checks a partial allocation split
-across two study days and every future study window through the final date of
-a February 29 horizon. Both use fixed dates, verify the unscheduled remainder
-and confirm that stored estimates remain unchanged.
+`FINE` records stages, `INFO` session start/normal termination, `WARNING`
+recoverable rejections and `SEVERE` startup/input failures. To retain warnings
+and failures only, set both `scheduleflow.level` and the handler level to
+`WARNING`. Constructors perform no I/O or logging configuration.
+
+#### Diagram and guide maintenance
+
+PlantUML sources are in `docs/diagrams`; committed SVGs in `docs/images` let
+Markdown display the figures without a PlantUML extension. With Java 25 and a
+local PlantUML JAR (verified with 1.2025.4), render from the repository root:
+
+```powershell
+java -jar "PATH_TO_PLANTUML_JAR" -charset UTF-8 -tsvg -o ../images docs/diagrams/ka-how-console-classes.puml docs/diagrams/ka-how-command-loop.puml
+```
+
+Replace `PATH_TO_PLANTUML_JAR` with its local path. The output directory is
+relative to each source directory. The class source selects the bundled
+Smetana layout engine, so no external Graphviz installation is required.
+Commit each changed source and its rendered SVG together, check the diagram
+against the code, and inspect text size and links in the rendered guide.
+Review both guides after implementation; mark unfinished operations explicitly.
+The release maintainer must replace the candidate status with the verified
+tag/artifact before publishing. Cross-platform runtime checks and filesystem
+provider fault injection need separate evidence; passing on Windows does not
+establish those results.
 
 ### Task/parser validation and JUnit/documentation conventions
 
@@ -1116,15 +1131,29 @@ cleanup failures remain untested. Storage diagnostics are described
 
 ### Target user profile
 
-University students who need to fit unfinished coursework around weekly
-classes and other recurring commitments, and who are comfortable entering
-commands in a terminal.
+University students balancing coursework deadlines, project work, classes and
+other fixed events, who are comfortable typing commands in a terminal. They
+need to revise estimates as work progresses and see when available study time
+is insufficient.
 
-### Value proposition
+### Value proposition and boundaries
 
-Turn remaining-work estimates, deadlines and weekly busy intervals into a
-study schedule. Report work that cannot fit so students can revise their
-estimates or commitments before the deadline.
+ScheduleFlow turns remaining-work estimates, deadlines and busy intervals into
+a local study schedule. Stable IDs and saved settings let a student correct
+entries and continue later without re-entering data. Whole-plan unallocated
+work makes shortfalls visible instead of silently placing work past deadlines.
+
+The CLI supports tasks and their retained completion/progress, weekly task
+templates, recurring/one-time commitments, configurable daily hours and an
+optional work/break policy. Planning uses half-hour capacity within a rolling
+calendar year; exact task work can be any positive whole-minute estimate.
+Schedules stay frozen until regenerated or invalidated by a successful change.
+
+This release candidate is a single-user, local/offline application with one
+running instance per data file. It has no calendar synchronization, GUI,
+notifications or automatic progress timer. Multi-date unavailable commands
+remain proposed console integration; see the [User Guide](UserGuide.md) for
+the supported command surface.
 
 ## Appendix B: User Stories
 
@@ -1176,11 +1205,43 @@ for additional reproducible cases. Unfinished range commands are excluded.
 
 ### Launch, help, exit and console behavior
 
-1. Launch in an empty folder. Expect `scheduleflow> ` with no banner.
-2. Enter `help`. Expect the command-help heading and supported formats, then
-   another prompt. Enter `exit`. Expect `Goodbye for now!` and status 0.
-3. Relaunch from the same folder. Expect empty data; help and exit must not
-   create `data/scheduleflow.txt`.
+Use Java 25 and a disposable folder containing the candidate JAR. Launch from
+a terminal with `java -ea -jar scheduleflow.jar`, without extra arguments.
+`-ea` enables assertions; Gradle/distribution launchers already enable them.
+These paths assume empty saved data and default logging.
+
+| Ordered action | Expected result |
+| --- | --- |
+| Launch, then enter `help`. | No banner; exact `scheduleflow> ` prompt, then `=== ScheduleFlow Command Help ===` and supported formats, followed by another prompt. |
+| Press Enter on an empty line, then enter a spaces-only line. | Each line produces another prompt with no response text. |
+| Enter `help extra`, then `help`. | First prints `Error: This command accepts no arguments` and `Expected: help`; the corrected command works. |
+| Enter `exit extra`, then `exit`. | The extra argument is rejected with `Expected: exit`; corrected exit prints `Goodbye for now!` once, returns status 0 and produces no further prompt. |
+| Check the disposable folder, then relaunch. | Help, blanks, rejected syntax and exit created no data file; startup is still empty. |
+| Send EOF at the prompt (Ctrl+Z then Enter in a Windows terminal; Ctrl+D on an empty line in a Unix terminal). | Same goodbye and status 0; no save. |
+
+In another empty launch folder, run `java -ea -jar scheduleflow.jar --help`.
+Expect `Error: Usage: java -jar scheduleflow.jar (no arguments)`, status 1 and
+no prompt. Use `echo $LASTEXITCODE` in PowerShell, or `echo $?` in a Unix shell,
+immediately after the Java process to inspect its status.
+
+For Unicode and domain-error recovery, start a fresh normal session and run:
+
+```text
+commitment add n/学习 Café day/TUE start/1000 d/30
+commitment add n/Bad day/TUE start/1015 d/30
+commitment list
+exit
+```
+
+Expect C1 with its full Unicode name and 10:00–10:30 interval. The second command
+reports a half-hour-alignment error and another prompt; the list contains only
+C1. Relaunch and list again to check the same characters survive persistence.
+Normal stdout contains no stack traces and stderr is empty. A terminal must
+also use UTF-8 and a font supporting those characters to display them correctly.
+Detailed syntax/domain cases are in [task testing](#tasks-and-input-validation)
+and [commitment testing](#commitments-and-unavailable-periods); fatal startup
+and rejected saves are covered in [storage testing](#saving-restoration-failure-and-recovery).
+Exit before discarding the disposable folders; keep your real data untouched.
 
 ### Tasks and input validation
 
