@@ -1,3 +1,4 @@
+// @@author nickpatt
 package scheduleflow.cli;
 
 import java.time.DayOfWeek;
@@ -570,3 +571,4 @@ public final class CommandParser {
         }
     }
 }
+// @@author

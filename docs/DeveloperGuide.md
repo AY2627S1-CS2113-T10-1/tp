@@ -14,9 +14,8 @@ agents working on the project, as specified in the repository's root `AGENTS.md`
 RepoSense tags follow the whole-file allocation in version 2 of the supplied
 authorship redistribution plan, dated 2026-10-25. The previous scoped author
 comments have been removed from production and test Java files. The allocations
-of Ka How (`ka-how`), Darren (`Darren50`), Ernest (`ernestgoh-god`) and Gabriel 
-(`GabrielYuSP`) are applied; other files use Git-based attribution until their owners' 
-tags are applied.
+of Ka How (`ka-how`), Darren (`Darren50`), Ernest (`ernestgoh-god`), Gabriel
+(`GabrielYuSP`) and Nickhil (`nickpatt`) are applied.
 
 Ka How's files are relative to the corresponding `scheduleflow/` source root:
 
@@ -71,6 +70,23 @@ Gabriel's files use the same layout with `// @@author GabrielYuSP`:
 
 The complete planner, schedule projection and recurrence materialization files
 belong to this allocation, together with their assigned tests.
+
+Nickhil's files use the same layout with `// @@author nickpatt`:
+
+- Production: `cli/CommandParser.java`, `cli/ParseException.java`,
+  `common/InputRules.java`, `common/ValidationException.java`, `model/Task.java`,
+  `model/TaskPriority.java`, `task/TaskEdit.java` and `task/TaskService.java`.
+- Tests: `cli/CommandParserTest.java`, `common/InputRulesTest.java`,
+  `common/ValidationExceptionTest.java`, `model/TaskTest.java`,
+  `task/TaskEditTest.java`, `task/TaskRecurrenceTest.java` and `task/TaskServiceTest.java`.
+
+All eight production files and seven tests are whole-file allocations: exactly
+one named start tag before the package and one bare end tag after the final
+closing brace, with no interior tags. Nickhil owns every command parser and
+ParseException, including parsing for other features, plus mutations of ordinary
+and already-generated Tasks. Recurring templates and generation remain Gabriel's;
+command transport/rendering remain Ka How's; execution remains Darren's. No Java
+non-tag content, runtime behaviour, public API or tests change in this application.
 
 These tags record the agreed allocation, not who originally wrote each section.
 They do not rewrite Git history, reassign historical TODOs or change behaviour.

@@ -1,3 +1,4 @@
+// @@author nickpatt
 package scheduleflow.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -64,3 +65,4 @@ class TaskTest {
         assertThrows(NullPointerException.class, () -> new Task(1, "A", Optional.empty(), 30, null));
     }
 }
+// @@author

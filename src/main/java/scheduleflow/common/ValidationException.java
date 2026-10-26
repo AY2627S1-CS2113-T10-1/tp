@@ -1,3 +1,4 @@
+// @@author nickpatt
 package scheduleflow.common;
 
 import java.util.Objects;
@@ -17,3 +18,4 @@ public final class ValidationException extends RuntimeException {
         super(Objects.requireNonNull(message, "message"));
     }
 }
+// @@author

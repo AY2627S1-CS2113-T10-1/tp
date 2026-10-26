@@ -1,3 +1,4 @@
+// @@author nickpatt
 package scheduleflow.common;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -31,3 +32,4 @@ class InputRulesTest {
         }
     }
 }
+// @@author
