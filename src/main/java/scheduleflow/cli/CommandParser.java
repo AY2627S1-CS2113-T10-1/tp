@@ -1,4 +1,3 @@
-//@@author ka-how
 package scheduleflow.cli;
 
 import java.time.DayOfWeek;
@@ -30,56 +29,41 @@ public final class CommandParser {
     private static final String TASK_ADD_USAGE = "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES";
     private static final String TASK_DELETE_USAGE = "task delete TNUMBER";
     private static final String TASK_REOPEN_USAGE = "task reopen TNUMBER remaining/MINUTES";
-    // @@author ernestgoh-god
     private static final String TASK_LIST_USAGE = "task list OR task list completed";
     private static final String TASK_COMPLETE_USAGE = "task complete TNUMBER";
     private static final String POLICY_USAGE = "policy set max/MINUTES break/MINUTES OR policy show OR policy reset";
-    // @@author ka-how
-    // @@author nickpatt
     private static final String TASK_EDIT_USAGE = "task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]";
     private static final String TASK_RECUR_USAGE = "task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES"
             + " every/WEEKLY [until/YYYY-MM-DD] OR task recur list OR task recur delete RNUMBER";
-    // @@author ka-how
-    // @@author ernestgoh-god
     private static final String TASK_REMAINING_USAGE = "task remaining TNUMBER remaining/MINUTES";
     private static final String TASK_PROGRESS_USAGE =
             "task progress TNUMBER done/MINUTES OR task progress TNUMBER session/MINUTES percent/PERCENT";
-    //@@author Darren50
     private static final String DATE_RANGE_USAGE = " [from/YYYY-MM-DD until/YYYY-MM-DD]";
     private static final String ONE_TIME_ADD_USAGE = "commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES";
-    // @@author ka-how
     private static final String COMMITMENT_ADD_USAGE = "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
             + DATE_RANGE_USAGE
-            //@@author
             + " OR " + ONE_TIME_ADD_USAGE;
-    // @@author ka-how
     private static final String COMMITMENT_DELETE_USAGE = "commitment delete CNUMBER";
-    //@@author Darren50
     private static final String COMMITMENT_EDIT_USAGE =
             "commitment edit CNUMBER [n/NAME] [day/DAY|on/YYYY-MM-DD] [start/HHmm] [d/MINUTES]" + DATE_RANGE_USAGE;
     private static final String COMMITMENT_SKIP_USAGE = "commitment skip CNUMBER on/YYYY-MM-DD";
-    // @@author ka-how
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
     private static final String HOURS_USAGE = "hours DAY|YYYY-MM-DD [/start HH:mm /end HH:mm]"
             + " OR hours reset DAY|YYYY-MM-DD";
-    // @@author ernestgoh-god
     private static final String UNAVAILABLE_CONTINUOUS_USAGE =
             "unavailable continuous n/NAME from/YYYY-MM-DD HHmm until/YYYY-MM-DD HHmm";
     private static final String UNAVAILABLE_DAILY_USAGE =
             "unavailable daily n/NAME from/YYYY-MM-DD until/YYYY-MM-DD start/HHmm end/HHmm";
     private static final String UNAVAILABLE_USAGE = UNAVAILABLE_CONTINUOUS_USAGE
             + " OR " + UNAVAILABLE_DAILY_USAGE;
-    // @@author ka-how
     private static final String DATE_TOKEN = "[0-9]{4}-[0-9]{2}-[0-9]{2}";
     private static final String DATE_RANGE_PATTERN = "(?: +from/(?<from>" + DATE_TOKEN
             + ") +until/(?<until>" + DATE_TOKEN + "))?";
-    //@@author Darren50
     /**
      * Selects a repeating weekday or, for a one-time commitment, one calendar date in the same position.
      */
     private static final String DAY_OR_DATE_PATTERN = "(?:day/(?<day>MON|TUE|WED|THU|FRI|SAT|SUN)"
             + "|on/(?<on>" + DATE_TOKEN + "))";
-    // @@author ka-how
     private static final String TIME_TOKEN = "[0-9]{4}";
     private static final Pattern HOURS_PATTERN = Pattern.compile("hours +(?<reset>reset +)?(?<target>"
             + "monday|tuesday|wednesday|thursday|friday|saturday|sunday|" + DATE_TOKEN + ")"
@@ -87,16 +71,13 @@ public final class CommandParser {
     private static final DateTimeFormatter HOURS_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT)
             .withResolverStyle(ResolverStyle.STRICT);
     private static final String POSITIVE_INT_TOKEN = "[1-9][0-9]*";
-    // @@author ernestgoh-god
     private static final Pattern POLICY_SET_PATTERN = Pattern.compile(
             "policy +set +max/(?<max>0|" + POSITIVE_INT_TOKEN + ") +break/(?<break>0|" + POSITIVE_INT_TOKEN + ")");
-    // @@author ka-how
 
     /**
      * Matches name text while excluding slash so extra prefixes cannot be swallowed into a multiword name.
      */
     private static final String NAME_TOKEN = "[^/\\p{javaISOControl}]*";
-    // @@author ernestgoh-god
     private static final Pattern UNAVAILABLE_CONTINUOUS_PATTERN = Pattern.compile(
             "unavailable +continuous +n/(?<name>" + NAME_TOKEN + ") +from/(?<from>" + DATE_TOKEN
                     + ") +(?<start>" + TIME_TOKEN + ") +until/(?<until>" + DATE_TOKEN
@@ -105,7 +86,6 @@ public final class CommandParser {
             "unavailable +daily +n/(?<name>" + NAME_TOKEN + ") +from/(?<from>" + DATE_TOKEN
                     + ") +until/(?<until>" + DATE_TOKEN + ") +start/(?<start>" + TIME_TOKEN
                     + ") +end/(?<end>" + TIME_TOKEN + ")");
-    // @@author ka-how
     private static final Pattern TASK_ADD_PATTERN = Pattern.compile(
             "task +add +n/(?<name>" + NAME_TOKEN + ") +due/(?<date>" + DATE_TOKEN
                     + ") +(?<time>" + TIME_TOKEN + ") +d/(?<minutes>" + POSITIVE_INT_TOKEN + ")");
@@ -118,11 +98,8 @@ public final class CommandParser {
     private static final Pattern TASK_REOPEN_PATTERN = Pattern.compile(
             "task +reopen +T(?<id>" + POSITIVE_INT_TOKEN + ") +remaining/(?<minutes>"
                     + POSITIVE_INT_TOKEN + ")");
-    // @@author ernestgoh-god
     private static final Pattern TASK_COMPLETE_PATTERN = Pattern.compile(
             "task +complete +T(?<id>" + POSITIVE_INT_TOKEN + ")");
-    // @@author ka-how
-    // @@author nickpatt
     private static final Pattern TASK_EDIT_PATTERN = Pattern.compile(
             "task +edit +T(?<id>" + POSITIVE_INT_TOKEN + ")"
                     + "(?: +n/(?<name>" + NAME_TOKEN + "))?"
@@ -133,8 +110,6 @@ public final class CommandParser {
                     + " +every/WEEKLY(?: +until/(?<until>" + DATE_TOKEN + "))?");
     private static final Pattern TASK_RECUR_DELETE_PATTERN = Pattern.compile(
             "task +recur +delete +R(?<id>" + POSITIVE_INT_TOKEN + ")");
-    // @@author ka-how
-    // @@author ernestgoh-god
     private static final Pattern TASK_PROGRESS_WORK_PATTERN = Pattern.compile(
             "task +progress +T(?<id>" + POSITIVE_INT_TOKEN + ") +done/(?<done>0|" + POSITIVE_INT_TOKEN + ")");
     private static final Pattern TASK_PROGRESS_SESSION_PATTERN = Pattern.compile(
@@ -143,15 +118,11 @@ public final class CommandParser {
     private static final Pattern TASK_REMAINING_PATTERN = Pattern.compile(
             "task +remaining +T(?<id>" + POSITIVE_INT_TOKEN + ") +remaining/(?<minutes>"
                     + POSITIVE_INT_TOKEN + ")");
-    // @@author ka-how
     private static final Pattern COMMITMENT_DELETE_PATTERN = Pattern.compile(
             "commitment +delete +C(?<id>" + POSITIVE_INT_TOKEN + ")");
-    //@@author Darren50
     private static final Pattern COMMITMENT_SKIP_PATTERN = Pattern.compile(
             "commitment +skip +C(?<id>" + POSITIVE_INT_TOKEN + ") +on/(?<date>" + DATE_TOKEN + ")");
-    // @@author ka-how
     private static final Pattern SCHEDULE_PATTERN = Pattern.compile("schedule +(?<date>today|" + DATE_TOKEN + ")");
-    //@@author Darren50
     /**
      * Accepts any nonempty subset in the same field order as addition; the service rejects an empty edit.
      */
@@ -161,7 +132,6 @@ public final class CommandParser {
                     + "(?: +" + DAY_OR_DATE_PATTERN + ")?"
                     + "(?: +start/(?<time>" + TIME_TOKEN + "))?"
                     + "(?: +d/(?<minutes>" + POSITIVE_INT_TOKEN + "))?" + DATE_RANGE_PATTERN);
-    //@@author ka-how
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("uuuu-MM-dd", Locale.ROOT)
             .withResolverStyle(ResolverStyle.STRICT);
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HHmm", Locale.ROOT)
@@ -175,7 +145,6 @@ public final class CommandParser {
     public CommandParser() {
     }
 
-    // @@author ernestgoh-god
     /**
      * Parses either unavailable range mode without applying commitment service rules.
      *
@@ -242,8 +211,6 @@ public final class CommandParser {
         assert fields.start() == 0 && fields.end() == input.length() : "Grammar must match the complete input";
         return fields;
     }
-    // @@author
-    // @@author ka-how
 
     /**
      * Parses one nonblank line, translating syntax, number and date errors to ParseException.
@@ -270,29 +237,20 @@ public final class CommandParser {
                 case "help" -> parseNoArguments(input, command, new Command.Help());
                 case "task add" -> parseAddTask(input);
                 case "task reopen" -> parseReopenTask(input);
-                // @@author ernestgoh-god
                 case "task list" -> parseTaskList(input);
                 case "task complete" -> new Command.CompleteTask(Integer.parseInt(
                         match(TASK_COMPLETE_PATTERN, input, usage).group("id")));
                 case "policy" -> parsePolicy(input);
-                // @@author ka-how
                 case "task delete" -> new Command.DeleteTask(Integer.parseInt(
                         match(TASK_DELETE_PATTERN, input, usage).group("id")));
-                // @@author nickpatt
                 case "task edit" -> parseEditTask(input);
                 case "task recur" -> parseRecurringTask(input);
-                // @@author ernestgoh-god
                 case "task progress" -> parseTaskProgress(input);
                 case "task remaining" -> parseTaskRemaining(input);
-                // @@author ka-how
-                // @@author ernestgoh-god
                 case "unavailable" -> parseUnavailable(input);
-                // @@author ka-how
                 case "commitment add" -> parseAddCommitment(input);
                 case "commitment edit" -> parseEditCommitment(input);
-                // @@author
                 case "commitment skip" -> parseSkipCommitment(input);
-                // @@author ka-how
                 case "commitment list" -> parseNoArguments(input, command, new Command.ListCommitments());
                 case "commitment delete" -> new Command.DeleteCommitment(Integer.parseInt(
                         match(COMMITMENT_DELETE_PATTERN, input, usage).group("id")));
@@ -335,27 +293,17 @@ public final class CommandParser {
             case "task add" -> TASK_ADD_USAGE;
             case "task delete" -> TASK_DELETE_USAGE;
             case "task reopen" -> TASK_REOPEN_USAGE;
-            // @@author ernestgoh-god
             case "task list" -> TASK_LIST_USAGE;
             case "task complete" -> TASK_COMPLETE_USAGE;
             case "policy" -> POLICY_USAGE;
-            // @@author ka-how
-            // @@author nickpatt
             case "task edit" -> TASK_EDIT_USAGE;
             case "task recur" -> TASK_RECUR_USAGE;
-            // @@author ka-how
-            // @@author ernestgoh-god
             case "task progress" -> TASK_PROGRESS_USAGE;
             case "task remaining" -> TASK_REMAINING_USAGE;
-            // @@author ka-how
-            // @@author ernestgoh-god
             case "unavailable" -> unavailableUsage(unavailableMode(input));
-            // @@author ka-how
             case "commitment add" -> COMMITMENT_ADD_USAGE;
             case "commitment edit" -> COMMITMENT_EDIT_USAGE;
-            // @@author
             case "commitment skip" -> COMMITMENT_SKIP_USAGE;
-            // @@author ka-how
             case "commitment delete" -> COMMITMENT_DELETE_USAGE;
             case "schedule" -> SCHEDULE_USAGE;
             case "hours" -> HOURS_USAGE;
@@ -374,7 +322,6 @@ public final class CommandParser {
         return result;
     }
 
-    // @@author ernestgoh-god
     /** Selects the existing full list or completed-only view without accepting other trailing words. */
     private Command parseTaskList(String input) throws ParseException {
         String normalized = input.replaceAll(" +", " ");
@@ -400,7 +347,6 @@ public final class CommandParser {
         return new Command.SetStudyPolicy(Integer.parseInt(fields.group("max")),
                 Integer.parseInt(fields.group("break")));
     }
-    // @@author ka-how
 
     /**
      * Extracts task fields after a complete grammar match, leaving business rules to the service.
@@ -413,7 +359,6 @@ public final class CommandParser {
         return new Command.AddTask(fields.group("name").strip(), deadline, Integer.parseInt(fields.group("minutes")));
     }
 
-    // @@author nickpatt
     /** Preserves omitted fields and rejects malformed or reordered edits before execution. */
     private Command.EditTask parseEditTask(String input) throws ParseException {
         Matcher fields = match(TASK_EDIT_PATTERN, input, TASK_EDIT_USAGE);
@@ -447,7 +392,6 @@ public final class CommandParser {
         return new Command.AddRecurringTask(fields.group("name").strip(), first,
                 Integer.parseInt(fields.group("minutes")), Optional.ofNullable(until));
     }
-    // @@author ka-how
 
     /** Parses reopening without checking task existence or completion; those rules belong to TaskService. */
     private Command.ReopenTask parseReopenTask(String input) throws ParseException {
@@ -456,7 +400,6 @@ public final class CommandParser {
                 Integer.parseInt(fields.group("minutes")));
     }
 
-    // @@author ernestgoh-god
     /** Parses either progress form without applying task-state validation. */
     private Command parseTaskProgress(String input) throws ParseException {
         Matcher work = TASK_PROGRESS_WORK_PATTERN.matcher(input);
@@ -482,21 +425,18 @@ public final class CommandParser {
         return new Command.ReviseTaskRemaining(Integer.parseInt(fields.group("id")),
                 Integer.parseInt(fields.group("minutes")));
     }
-    // @@author ka-how
 
     /**
      * Extracts weekly-series fields and maps the supported three-letter weekday tokens.
      */
     private Command.AddCommitment parseAddCommitment(String input) throws ParseException {
         Matcher fields = match(COMMITMENT_ADD_PATTERN, input, COMMITMENT_ADD_USAGE);
-        //@@author Darren50
         LocalDate date = parseOneTimeDate(fields, COMMITMENT_ADD_USAGE);
         if (date != null) {
             return new Command.AddCommitment(fields.group("name").strip(), date.getDayOfWeek(),
                     LocalTime.parse(fields.group("time"), TIME_FORMAT), Integer.parseInt(fields.group("minutes")),
                     date, date);
         }
-        // @@author ka-how
         DayOfWeek day = parseWeekday(fields.group("day"), COMMITMENT_ADD_USAGE);
         return new Command.AddCommitment(fields.group("name").strip(), day,
                 LocalTime.parse(fields.group("time"), TIME_FORMAT), Integer.parseInt(fields.group("minutes")),
@@ -520,7 +460,6 @@ public final class CommandParser {
         };
     }
 
-    //@@author Darren50
     /**
      * Preserves omission explicitly so editing one field never resets the others.
      * Uses the existing strict numeric/time rules without duplicating domain validation.
@@ -575,7 +514,6 @@ public final class CommandParser {
         requireSupportedYear(date, COMMITMENT_SKIP_USAGE);
         return new Command.SkipCommitment(Integer.parseInt(fields.group("id")), date);
     }
-    //@@author ka-how
 
     /**
      * Keeps {@code today} unresolved or parses an explicit date without consulting a clock.
@@ -590,7 +528,6 @@ public final class CommandParser {
         return new Command.ScheduleDate(date);
     }
 
-    // @@author GabrielYuSP
     /** Parses explicit hours targets without reading state or validating interval ordering. */
     private Command parseHours(String input) throws ParseException {
         Matcher fields = match(HOURS_PATTERN, input, HOURS_USAGE);
@@ -611,7 +548,6 @@ public final class CommandParser {
                 LocalTime.parse(fields.group("end"), HOURS_TIME_FORMAT));
     }
 
-    // @@author ka-how
     /**
      * Requires a match of the entire input, including the final field or argument.
      */

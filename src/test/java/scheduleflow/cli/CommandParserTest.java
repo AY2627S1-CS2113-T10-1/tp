@@ -1,4 +1,3 @@
-//@@author ka-how
 package scheduleflow.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -30,12 +29,10 @@ class CommandParserTest {
     private static final String COMMITMENT_DELETE_USAGE = "commitment delete CNUMBER";
     private static final String COMMITMENT_SKIP_USAGE = "commitment skip CNUMBER on/YYYY-MM-DD";
     private static final String SCHEDULE_USAGE = "schedule today OR schedule YYYY-MM-DD";
-    // @@author ernestgoh-god
     private static final String UNAVAILABLE_CONTINUOUS_USAGE =
             "unavailable continuous n/NAME from/YYYY-MM-DD HHmm until/YYYY-MM-DD HHmm";
     private static final String UNAVAILABLE_DAILY_USAGE =
             "unavailable daily n/NAME from/YYYY-MM-DD until/YYYY-MM-DD start/HHmm end/HHmm";
-    // @@author ka-how
     private final CommandParser parser = new CommandParser();
 
     @Test
@@ -61,7 +58,6 @@ class CommandParserTest {
         assertRejected("Task reopen T1 remaining/45", HELP_USAGE);
     }
 
-    // @@author ernestgoh-god
     @Test
     void parse_policy_preservesDurationsAndRejectsMalformedOrOverflowingFields() throws ParseException {
         assertEquals(new Command.ShowStudyPolicy(), parser.parse(" policy  show "));
@@ -78,9 +74,7 @@ class CommandParserTest {
                     assertThrows(ParseException.class, () -> parser.parse(input)).usage());
         }
     }
-    // @@author ka-how
 
-    // @@author ernestgoh-god
     @Test
     void parse_completionAndCompletedView_acceptsSpacingAndLargestIdentifier() throws ParseException {
         assertEquals(new Command.CompleteTask(Integer.MAX_VALUE), parser.parse(" task  complete T2147483647 "));
@@ -100,7 +94,6 @@ class CommandParserTest {
                     () -> parser.parse(input)).usage());
         }
     }
-    // @@author ka-how
 
     @Test
     void parse_taskEdit_preservesAllThreeSubsets() throws ParseException {
@@ -153,7 +146,6 @@ class CommandParserTest {
         }
     }
 
-    // @@author ernestgoh-god
     @Test
     void parse_unavailableContinuous_preservesNamesDatesAndTimesWithoutDomainValidation() throws ParseException {
         assertEquals(new Command.AddContinuousBlock("Trip  Café | 复习",
@@ -288,9 +280,7 @@ class CommandParserTest {
             assertEquals(usage, assertThrows(ParseException.class, () -> parser.parse(input), input).usage());
         }
     }
-    // @@author ka-how
 
-    // @@author GabrielYuSP
     @Test
     void parse_hoursCommands_supportsWeekdaysDatesAndResets() throws ParseException {
         assertEquals(new Command.SetHours("tuesday", LocalTime.of(9, 0), LocalTime.of(22, 0)),
@@ -305,8 +295,6 @@ class CommandParserTest {
         }
     }
 
-    // @@author ka-how
-    //@@author Darren50
     @Test
     void parse_commitmentEdit_allFieldSubsetsPreserveOmission() throws ParseException {
         for (int mask = 1; mask < 16; mask++) {
@@ -407,7 +395,6 @@ class CommandParserTest {
             assertRejected(input, COMMITMENT_SKIP_USAGE);
         }
     }
-    //@@author ka-how
     @Test
     void parse_nullLine_rejectsWithArgumentName() {
         assertEquals("line", assertThrows(NullPointerException.class, () -> parser.parse(null)).getMessage());

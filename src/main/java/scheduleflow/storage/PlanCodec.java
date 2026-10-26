@@ -16,7 +16,6 @@ import scheduleflow.planning.StudySession;
 import scheduleflow.planning.UnallocatedReason;
 import scheduleflow.planning.UnallocatedWork;
 
-// @@author ernestgoh-god
 /**
  * Encodes a frozen plan in version 6, or version 8 when its source has a stored study policy.
  * Version 5 snapshot-only recurrence files remain distinct from the earlier saved-plan prototype.
@@ -210,4 +209,3 @@ final class PlanCodec {
         return fields;
     }
 }
-// @@author

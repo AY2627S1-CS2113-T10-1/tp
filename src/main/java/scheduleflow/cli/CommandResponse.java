@@ -1,4 +1,4 @@
-//@@author ka-how
+// @@author ka-how
 package scheduleflow.cli;
 
 import java.util.Objects;
@@ -19,3 +19,4 @@ public record CommandResponse(String output, boolean shouldExit) {
         Objects.requireNonNull(output, "output");
     }
 }
+// @@author

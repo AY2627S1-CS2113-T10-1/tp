@@ -17,7 +17,6 @@ public interface Storage {
      */
     Snapshot load() throws StorageException;
 
-    // @@author ernestgoh-god
     /**
      * Restores the plan saved with a matching snapshot, if one exists.
      *
@@ -26,7 +25,6 @@ public interface Storage {
      * @throws StorageException if the saved plan is unreadable, invalid or has a different source
      */
     Optional<Plan> loadPlan(Snapshot source) throws StorageException;
-    // @@author
 
     /**
      * Saves a candidate completely before callers publish it in memory.
@@ -38,7 +36,6 @@ public interface Storage {
      */
     void save(Snapshot state) throws StorageException;
 
-    // @@author ernestgoh-god
     /**
      * Atomically saves a frozen plan together with its source snapshot.
      * The source may include new recurring-task occurrences; callers publish it only after saving succeeds.
@@ -47,5 +44,4 @@ public interface Storage {
      * @throws StorageException if saving fails without replacing the prior file
      */
     void savePlan(Plan plan) throws StorageException;
-    // @@author
 }

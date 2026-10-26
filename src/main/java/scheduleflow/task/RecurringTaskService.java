@@ -19,7 +19,6 @@ import scheduleflow.model.Task;
 import scheduleflow.model.TaskOccurrence;
 import scheduleflow.planning.TimeRules;
 
-// @@author nickpatt
 /** Creates atomic weekly recurrence candidates without clocks, storage or live-state mutation. */
 public final class RecurringTaskService {
     /** Records optional recurrence stages without names, dates, estimates or exception payloads. */
@@ -53,10 +52,8 @@ public final class RecurringTaskService {
         List<RecurringTask> templates = new ArrayList<>(state.recurringTasks());
         templates.add(template);
         Snapshot candidate = materialize(new Snapshot(state.tasks(), state.commitments(), state.nextTaskId(),
-                // @@author ernestgoh-god
                 state.nextCommitmentId(), state.studyHours(), templates, state.nextRecurringTaskId() + 1,
                 state.studyPolicy()), now);
-        // @@author nickpatt
         assert candidate.nextRecurringTaskId() == state.nextRecurringTaskId() + 1
                 : "Adding a template must advance its counter once";
         LOGGER.log(Level.FINE, "Recurring task addition candidate created; not yet saved or published");
@@ -127,9 +124,7 @@ public final class RecurringTaskService {
                     template.minutes(), Optional.of(occurrence)));
         }
         Snapshot candidate = new Snapshot(tasks, state.commitments(), nextId, state.nextCommitmentId(),
-                // @@author ernestgoh-god
                 state.studyHours(), templates, state.nextRecurringTaskId(), state.studyPolicy());
-        // @@author nickpatt
         assert (long) nextId - state.nextTaskId() == pending.size()
                 : "Materialization must allocate exactly one task ID per new occurrence";
         LOGGER.log(Level.FINE, "Recurring occurrence candidate created; not yet saved or published");
@@ -150,10 +145,8 @@ public final class RecurringTaskService {
             throw new ValidationException("Unknown recurring task ID: R" + templateId);
         }
         Snapshot candidate = new Snapshot(state.tasks(), state.commitments(), state.nextTaskId(),
-                // @@author ernestgoh-god
                 state.nextCommitmentId(), state.studyHours(), templates, state.nextRecurringTaskId(),
                 state.studyPolicy());
-        // @@author nickpatt
         LOGGER.log(Level.FINE, "Recurring task deletion candidate created; not yet saved or published");
         return candidate;
     }

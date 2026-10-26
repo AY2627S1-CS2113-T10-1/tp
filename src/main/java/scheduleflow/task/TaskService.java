@@ -20,12 +20,10 @@ import scheduleflow.planning.TimeRules;
  * Uses the supplied command time rather than reading a clock.
  */
 public final class TaskService {
-    // @@author nickpatt
     /**
      * Records opt-in processing stages without task names, deadlines or exception payloads.
      */
     private static final Logger LOGGER = Logger.getLogger(TaskService.class.getName());
-    // @@author
 
     /**
      * Creates a stateless task service without performing I/O or logging.
@@ -33,7 +31,6 @@ public final class TaskService {
     public TaskService() {
     }
 
-    // @@author nickpatt
     /**
      * Creates a candidate with the next ID after validating the deadline against now.
      * Accepts deadlines strictly after now and at or before {@link TimeRules#horizonEnd(LocalDateTime)}.
@@ -322,5 +319,4 @@ public final class TaskService {
         LOGGER.log(Level.FINE, "Task listing completed; source snapshot unchanged");
         return tasks;
     }
-    // @@author
 }

@@ -25,7 +25,6 @@ class ScheduleServiceTest {
     private static final LocalDateTime MORNING = MONDAY.atTime(7, 0);
     private final ScheduleService schedules = new ScheduleService();
 
-    // @@author GabrielYuSP
     @Test
     void forDate_customWindow_clipsBusyAndUsesFrozenCutoff() {
         Snapshot initial = new Snapshot(List.of(), List.of(
@@ -42,7 +41,6 @@ class ScheduleServiceTest {
                 .entries().getFirst().start().toLocalTime());
     }
 
-    // @@author Darren50
     @Test
     void forDate_oneTimeCommitment_showsBusyOnlyOnItsDate() {
         LocalDate tuesday = MONDAY.plusDays(1);
@@ -59,7 +57,6 @@ class ScheduleServiceTest {
                 SlotKind.FREE, "", "")), schedules.forDate(generated, nextTuesday).entries());
     }
 
-    // @@author
     @Test
     void forDate_correctedContractExample_preservesAdjacentCommitmentIds() {
         Task task = new Task(1, "Draft", MONDAY.plusDays(1).atTime(18, 0), 180);
@@ -159,7 +156,6 @@ class ScheduleServiceTest {
         assertEquals(SlotKind.FREE, nextDay.entries().getFirst().kind());
     }
 
-    // @@author GabrielYuSP
     @Test
     void forDate_unavailableStudyPeriod_projectsRegeneratedBlockAndKeepsOriginalPlanFrozen() {
         Task draft = new Task(1, "Draft", MONDAY.atTime(12, 0), 90);
@@ -180,7 +176,6 @@ class ScheduleServiceTest {
                 MONDAY.plusWeeks(1).atTime(22, 0), SlotKind.FREE, "", "")),
                 schedules.forDate(after, MONDAY.plusWeeks(1)).entries());
     }
-    // @@author
 
     @Test
     void forDate_policyPlan_projectsMergedBreaksAndKeepsFrozenResults() {

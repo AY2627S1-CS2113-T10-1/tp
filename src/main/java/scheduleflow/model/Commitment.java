@@ -28,7 +28,6 @@ public record Commitment(int id, String name, DayOfWeek day, LocalTime start, in
     private static final int MINUTES_PER_HOUR = 60;
     private static final int MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR;
 
-    //@@author Darren50
     /** Retains the original constructor for weekly series without date limits. */
     public Commitment(int id, String name, DayOfWeek day, LocalTime start, int durationMinutes) {
         this(id, name, day, start, durationMinutes, null, null, Set.of());
@@ -39,7 +38,6 @@ public record Commitment(int id, String name, DayOfWeek day, LocalTime start, in
             LocalDate startDate, LocalDate endDate) {
         this(id, name, day, start, durationMinutes, startDate, endDate, Set.of());
     }
-    //@@author
 
     /**
      * Creates an aligned commitment and normalizes its name using the shared validation rules.
@@ -63,12 +61,10 @@ public record Commitment(int id, String name, DayOfWeek day, LocalTime start, in
                 throw new ValidationException("Skipped date must be an occurrence of the commitment.");
             }
         }
-        //@@author Darren50
         // Skipping the only date of a one-time commitment would leave a record that never blocks time.
         if (startDate != null && startDate.equals(endDate) && !skippedDates.isEmpty()) {
             throw new ValidationException("A one-time commitment cannot skip its only occurrence.");
         }
-        //@@author
         name = InputRules.normalizeName(name);
         InputRules.requireDuration(durationMinutes);
         if (start.getSecond() != 0 || start.getNano() != 0 || start.getMinute() % TimeRules.SLOT_MINUTES != 0) {
@@ -81,7 +77,6 @@ public record Commitment(int id, String name, DayOfWeek day, LocalTime start, in
         }
     }
 
-    //@@author Darren50
     /** Validates a paired inclusive range containing at least one occurrence of the weekday. */
     private static void validateDates(DayOfWeek day, LocalDate first, LocalDate last) {
         if (first == null && last == null) {
@@ -158,7 +153,6 @@ public record Commitment(int id, String name, DayOfWeek day, LocalTime start, in
         }
         return false;
     }
-    //@@author
 
     /**
      * Returns the stable commitment identifier with no zero padding.

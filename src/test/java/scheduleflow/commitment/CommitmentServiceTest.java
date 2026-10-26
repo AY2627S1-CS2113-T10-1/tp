@@ -1,4 +1,3 @@
-//@@author Darren50
 package scheduleflow.commitment;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -48,7 +47,6 @@ import scheduleflow.task.TaskService;
 class CommitmentServiceTest {
     private final CommitmentService service = new CommitmentService();
 
-    // @@author nickpatt
     @Test
     void mutations_recurrence_preserveHistoryHoursAndCountersThroughStorageAndDiscardedCandidates(
             @TempDir Path directory) throws Exception {
@@ -83,7 +81,6 @@ class CommitmentServiceTest {
         }
         assertEquals(added, service.add(source, "New", DayOfWeek.TUESDAY, LocalTime.NOON, 30));
     }
-    // @@author Darren50
 
     @Test
     void addContinuousBlock_multiDayExample_splitsAtMidnightAndPreservesSource() {
@@ -968,4 +965,3 @@ class CommitmentServiceTest {
         assertEquals(original.tasks(), candidate.tasks());
     }
 }
-//@@author

@@ -1,4 +1,4 @@
-//@@author ka-how
+// @@author ka-how
 package scheduleflow.cli;
 
 import java.time.DayOfWeek;
@@ -54,7 +54,6 @@ public final class TextRenderer {
     public TextRenderer() {
     }
 
-    // @@author ka-how
     /**
      * Confirms only the newly saved unavailable periods in the supplied chronological order.
      *
@@ -97,7 +96,6 @@ public final class TextRenderer {
                 + " | Credited: " + creditedMinutes + " min | Remaining: " + task.remainingMinutes() + " min");
     }
 
-    // @@author ernestgoh-god
     /**
      * Reports a validated remaining-work estimate without implying that unchanged values were saved again.
      *
@@ -111,7 +109,6 @@ public final class TextRenderer {
         return finish("Remaining time for " + task.displayId() + ": " + task.name()
                 + " | " + task.remainingMinutes() + " min");
     }
-    // @@author ka-how
 
     /**
      * Returns command help.
@@ -123,40 +120,31 @@ public final class TextRenderer {
                 "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES - Add a task.",
                 "task list - List stored tasks.",
                 "task delete TNUMBER - Delete a task.",
-                // @@author ernestgoh-god
                 "task complete TNUMBER - Mark a task complete without deleting it.",
                 "task list completed - List completed tasks.",
                 "policy set max/MINUTES break/MINUTES - Set continuous-work and required-break durations.",
                 "policy show - View the current study policy.",
                 "policy reset - Restore unrestricted planning.",
-                // @@author ka-how
                 "task reopen TNUMBER remaining/MINUTES - Reopen a completed task; run plan again.",
-                // @@author nickpatt
                 "task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm] - Edit at least one field; run plan again.",
                 "task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES every/WEEKLY [until/YYYY-MM-DD]"
                         + " - Add a weekly task template and generate occurrences.",
                 "task recur list - List weekly task templates (R IDs).",
                 "task recur delete RNUMBER - Stop future generation; existing tasks remain.",
-                // @@author ernestgoh-god
                 "task remaining TNUMBER remaining/MINUTES - Revise a task's remaining time.",
-                // @@author ka-how
                 "task progress TNUMBER done/MINUTES - Record whole minutes of completed work.",
                 "task progress TNUMBER session/MINUTES percent/PERCENT"
                         + " - Credit a percentage of a session, rounded down to whole minutes.",
                 "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
                         + " [from/YYYY-MM-DD until/YYYY-MM-DD] - Add a weekly commitment.",
-                // @@author
                 "commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES - Add a one-time commitment.",
                 "commitment list - List weekly and one-time commitments.",
                 "commitment delete CNUMBER - Delete a weekly or one-time commitment.",
                 "commitment skip CNUMBER on/YYYY-MM-DD - Skip one occurrence.",
-                // @@author ka-how
                 "hours DAY|YYYY-MM-DD /start HH:mm /end HH:mm - Set study hours.",
                 "hours DAY|YYYY-MM-DD - View effective study hours (full lowercase weekday).",
                 "hours reset DAY|YYYY-MM-DD - Restore inherited study hours.",
-                // @@author
                 "commitment edit CNUMBER [n/NAME] [day/DAY|on/YYYY-MM-DD] [start/HHmm] [d/MINUTES]"
-                        // @@author ka-how
                         + " [from/YYYY-MM-DD until/YYYY-MM-DD]"
                         + " - Edit at least one field; saves and clears the plan. Run plan again.",
                 "plan - Generate or replace the study plan.",
@@ -164,7 +152,6 @@ public final class TextRenderer {
                 "exit - Close the application."));
     }
 
-    // @@author GabrielYuSP
     /** Formats the effective window for a selected weekday or calendar date. */
     public String hours(String target, StudyWindow window) {
         Objects.requireNonNull(target, "target");
@@ -184,7 +171,6 @@ public final class TextRenderer {
                 + ".\nRun plan to regenerate.";
     }
 
-    // @@author ka-how
     /**
      * Formats the added task.
      *
@@ -195,14 +181,11 @@ public final class TextRenderer {
     public String taskAdded(Task task) {
         Objects.requireNonNull(task, "task");
         LOGGER.log(Level.FINE, "Formatting task addition response");
-        // @@author nickpatt
         return finish("Added " + task.displayId() + ": " + task.name() + "\nDue: "
                 + task.deadline().map(DATE_TIME::format).orElse("No deadline")
                 + " | Duration: " + task.remainingMinutes() + " min");
-        // @@author ka-how
     }
 
-    // @@author nickpatt
     /**
      * Formats validated task details without changing estimates, IDs or occurrence provenance.
      *
@@ -254,7 +237,6 @@ public final class TextRenderer {
                 + " min | Until: " + task.until().map(DATE::format).orElse("No end date");
     }
 
-    // @@author ka-how
     /**
      * Confirms retained completion without implying that the task was deleted.
      *
@@ -282,8 +264,6 @@ public final class TextRenderer {
                 + " | Remaining: " + task.remainingMinutes() + " min");
     }
 
-    // @@author
-    // @@author ka-how
 
     /**
      * Formats the removed task.
@@ -306,7 +286,6 @@ public final class TextRenderer {
      * @throws NullPointerException if the list or an element is null
      */
     public String tasks(List<Task> tasks) {
-        // @@author ernestgoh-god
         return formatTaskList(tasks, "=== Actionable Tasks ===", "No tasks found.");
     }
 
@@ -332,23 +311,16 @@ public final class TextRenderer {
 
     /** Shares task row formatting between the full list and completed-only view without reordering inputs. */
     private String formatTaskList(List<Task> tasks, String title, String emptyMessage) {
-        // @@author ka-how
         requireElements(tasks, "tasks");
         LOGGER.log(Level.FINE, "Formatting task list");
         if (tasks.isEmpty()) {
-            // @@author ernestgoh-god
             return finish(emptyMessage);
-            // @@author ka-how
         }
         StringJoiner lines = new StringJoiner("\n");
-        // @@author ernestgoh-god
         lines.add(title).add("ID | Name | Duration | Deadline");
-        // @@author ka-how
         for (Task task : tasks) {
-            // @@author nickpatt
             lines.add(task.displayId() + " | " + task.name() + " | " + task.remainingMinutes()
                     + " min | " + task.deadline().map(DATE_TIME::format).orElse("No deadline"));
-            // @@author ka-how
         }
         return finish(lines.add("Total: " + tasks.size() + " task(s).").toString());
     }
@@ -364,12 +336,9 @@ public final class TextRenderer {
         Objects.requireNonNull(commitment, "commitment");
         LOGGER.log(Level.FINE, "Formatting commitment addition response");
         return finish("Added " + commitment.displayId() + ": " + commitment.name()
-                // @@author
                 + " | " + formatCommitmentTiming(commitment));
-        // @@author ka-how
     }
 
-    //@@author Darren50
     /**
      * Shows all saved fields after an edit, retaining the stable ID and displaying midnight as 24:00.
      *
@@ -383,7 +352,6 @@ public final class TextRenderer {
         return finish("Edited " + commitment.displayId() + ": " + commitment.name()
                 + " | " + formatCommitmentTiming(commitment));
     }
-    //@@author ka-how
 
     /**
      * Formats the removed commitment.
@@ -398,14 +366,12 @@ public final class TextRenderer {
         return finish("Deleted commitment " + commitment.displayId() + ": " + commitment.name());
     }
 
-    //@@author Darren50
     /** Formats confirmation after one recurring occurrence is successfully skipped and saved. */
     public String commitmentSkipped(Commitment commitment, LocalDate date) {
         Objects.requireNonNull(commitment, "commitment");
         Objects.requireNonNull(date, "date");
         return finish("Skipped " + commitment.displayId() + " on " + DATE.format(date) + ": " + commitment.name());
     }
-    //@@author ka-how
 
     /**
      * Formats the already sorted commitments, listing weekly series before dated one-time commitments.
@@ -421,7 +387,6 @@ public final class TextRenderer {
             return finish("No commitments found.");
         }
         StringJoiner lines = new StringJoiner("\n");
-        //@@author Darren50
         List<Commitment> recurring = commitments.stream().filter(commitment -> !commitment.isOneTime()).toList();
         if (!recurring.isEmpty()) {
             appendRecurringCommitments(lines, recurring);
@@ -444,7 +409,6 @@ public final class TextRenderer {
         return finish(lines.toString());
     }
 
-    // @@author ka-how
     /**
      * Appends weekly series grouped by English weekday, preserving supplied order within each group.
      */
@@ -459,16 +423,13 @@ public final class TextRenderer {
             for (Commitment commitment : group) {
                 lines.add(commitment.displayId() + ". " + TIME.format(commitment.start()) + " - "
                         + formatCommitmentEnd(commitment) + " | " + commitment.name()
-                        // @@author
                         + formatCommitmentRange(commitment) + formatCommitmentSkips(commitment));
-                // @@author ka-how
             }
             lines.add("");
         }
         lines.add("Total: " + commitments.size() + " recurring commitments across the week.");
     }
 
-    //@@author Darren50
     /**
      * Describes when a commitment occurs for addition and edit confirmations.
      * Weekly series keep their legacy weekday text, while one-time commitments name their exact date.
@@ -504,7 +465,6 @@ public final class TextRenderer {
                 .collect(Collectors.joining(", "));
         return " | skipped: " + dates;
     }
-    //@@author ka-how
 
     /**
      * Formats complete or partial allocation results with whole-plan totals.
@@ -522,9 +482,7 @@ public final class TextRenderer {
         if (plan.isComplete()) {
             return finish("Study plan generated successfully! Type 'schedule today' to view your sessions.");
         }
-        // @@author nickpatt
         long scheduled = plan.sessions().stream().mapToLong(StudySession::workMinutes).sum();
-        // @@author ka-how
         long unallocated = plan.unallocated().stream().mapToLong(UnallocatedWork::minutes).sum();
         StringJoiner lines = new StringJoiner("\n");
         lines.add("Study plan generated with unallocated work.");
@@ -655,15 +613,11 @@ public final class TextRenderer {
             String reason = switch (work.reason()) {
                 case DEADLINE_PASSED -> "deadline passed";
                 case OUTSIDE_HORIZON -> "outside planning horizon";
-                // @@author nickpatt
                 case INSUFFICIENT_CAPACITY -> work.deadline().isEmpty()
                         ? "insufficient available study time" : "insufficient time before deadline";
-                        // @@author ka-how
             };
-            // @@author nickpatt
             lines.add("T" + work.taskId() + ": " + work.taskName() + " | Unallocated: " + work.minutes()
                     + " min | Reason: " + reason + (work.deadline().isEmpty() ? " | No deadline" : ""));
-            // @@author ka-how
         }
     }
 
@@ -678,3 +632,4 @@ public final class TextRenderer {
         return TIME.format(LocalTime.of(endMinute / MINUTES_PER_HOUR, endMinute % MINUTES_PER_HOUR));
     }
 }
+// @@author

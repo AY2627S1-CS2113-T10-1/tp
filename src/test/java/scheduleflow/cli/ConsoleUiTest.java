@@ -1,4 +1,4 @@
-//@@author ka-how
+// @@author ka-how
 package scheduleflow.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -71,3 +71,4 @@ class ConsoleUiTest {
         }
     }
 }
+// @@author

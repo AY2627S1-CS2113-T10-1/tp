@@ -1,4 +1,4 @@
-//@@author ka-how
+// @@author ka-how
 package scheduleflow.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -47,7 +47,6 @@ class TextRendererTest {
     private static final LocalDateTime NOW = DATE.atTime(7, 0);
     private final TextRenderer renderer = new TextRenderer();
 
-    // @@author ernestgoh-god
     @Test
     void studyPolicy_setShowAndReset_reportsValuesAndDistinguishesNoop() {
         Optional<StudyPolicy> configured = Optional.of(new StudyPolicy(90, 30));
@@ -62,9 +61,7 @@ class TextRendererTest {
         assertThrows(NullPointerException.class, () -> renderer.studyPolicy(null));
         assertThrows(NullPointerException.class, () -> renderer.studyPolicyUpdated(null, true));
     }
-    // @@author ka-how
 
-    // @@author ernestgoh-god
     @Test
     void completedTasks_emptyAndMixedDeadlines_preservesSuppliedOrderAndFraming() {
         assertOutput("No completed tasks found.", renderer.completedTasks(List.of()));
@@ -77,7 +74,6 @@ class TextRendererTest {
         assertThrows(NullPointerException.class, () -> renderer.completedTasks(null));
         assertThrows(NullPointerException.class, () -> renderer.completedTasks(Arrays.asList(dated, null)));
     }
-    // @@author ka-how
 
     @Test
     void unavailablePeriodsAdded_continuousBatch_matchesHandoffAndPreservesInput() {
@@ -203,7 +199,6 @@ class TextRendererTest {
         assertEquals("tasks element", assertThrows(NullPointerException.class,
                 () -> renderer.recurringTasks(Arrays.asList((RecurringTask) null))).getMessage());
     }
-    // @@author nickpatt
     @Test
     void existingTaskOutput_absentDeadlineAndExactMinutes_usesExplicitAbsence() {
         Task task = Task.withoutDeadline(1, "Draft", 45);
@@ -230,9 +225,7 @@ class TextRendererTest {
         assertOutput("Study plan generated with unallocated work.\nScheduled: 45 min | Unallocated: 1 min"
                 + "\nT2: Old | Unallocated: 1 min | Reason: deadline passed", renderer.plan(plan));
     }
-    // @@author ka-how
 
-    //@@author Darren50
     @Test
     void commitmentEdited_reportsStoredFieldsAndMidnight() {
         assertOutput("Edited C12: 新 lecture | Sunday 23:30 - 24:00 (30 min)", renderer.commitmentEdited(
@@ -242,16 +235,13 @@ class TextRendererTest {
         assertEquals("commitment", assertThrows(NullPointerException.class,
                 () -> renderer.commitmentEdited(null)).getMessage());
     }
-    //@@author ka-how
 
     @Test
     void publicMethods_nullInputs_rejectWithArgumentNames() {
         assertEquals("task", assertThrows(NullPointerException.class, () -> renderer.taskAdded(null)).getMessage());
         assertEquals("task", assertThrows(NullPointerException.class, () -> renderer.taskDeleted(null)).getMessage());
-        // @@author ernestgoh-god
         assertEquals("task", assertThrows(NullPointerException.class,
                 () -> renderer.taskRemainingUpdated(null)).getMessage());
-        // @@author ka-how
         assertEquals("tasks", assertThrows(NullPointerException.class, () -> renderer.tasks(null)).getMessage());
         assertEquals("commitment",
                 assertThrows(NullPointerException.class, () -> renderer.commitmentAdded(null)).getMessage());
@@ -288,17 +278,13 @@ class TextRendererTest {
         assertTrue(output.startsWith("=== ScheduleFlow Command Help ===\n"));
         List<String> formats = List.of("help", "task add n/NAME due/YYYY-MM-DD HHmm d/MINUTES", "task list",
                 "task delete TNUMBER",
-                // @@author ernestgoh-god
                 "task complete TNUMBER", "task list completed",
                 "policy set max/MINUTES break/MINUTES", "policy show", "policy reset",
-                // @@author ka-how
                 "task reopen TNUMBER remaining/MINUTES",
                 "task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]",
                 "task recur add n/NAME due/YYYY-MM-DD HHmm d/MINUTES every/WEEKLY [until/YYYY-MM-DD]",
                 "task recur list", "task recur delete RNUMBER",
-                // @@author ernestgoh-god
                 "task remaining TNUMBER remaining/MINUTES",
-                // @@author ka-how
                 "task progress TNUMBER done/MINUTES", "task progress TNUMBER session/MINUTES percent/PERCENT",
                 "commitment add n/NAME day/DAY start/HHmm d/MINUTES"
                         + " [from/YYYY-MM-DD until/YYYY-MM-DD]",
@@ -326,14 +312,12 @@ class TextRendererTest {
         assertOutput("Deleted task T10: " + LONG_NAME, renderer.taskDeleted(task));
     }
 
-    // @@author ernestgoh-god
     @Test
     void taskRemainingUpdated_stableIdAndUnicodeName_reportsExactEstimate() {
         Task task = new Task(10, LONG_NAME, DEADLINE, 90);
         assertOutput("Remaining time for T10: " + LONG_NAME + " | 90 min", renderer.taskRemainingUpdated(task));
         assertEquals(90, task.remainingMinutes());
     }
-    // @@author ka-how
 
     @Test
     void tasks_empty_returnsExactMessage() {
@@ -405,7 +389,6 @@ class TextRendererTest {
         assertOutput("Added C3: Away | Sunday 00:00 - 24:00 (1440 min)", renderer.commitmentAdded(fullDay));
     }
 
-    //@@author Darren50
     @Test
     void commitmentMessages_boundedSeries_displaysInclusiveRange() {
         Commitment bounded = new Commitment(4, "Semester lecture", DayOfWeek.MONDAY, LocalTime.of(10, 0), 120,
@@ -468,7 +451,6 @@ class TextRendererTest {
                 + "\nTotal: 2 one-time commitments.", output);
         assertFraming(output);
     }
-    //@@author ka-how
 
     @Test
     void commitments_empty_returnsExactMessage() {
@@ -738,3 +720,4 @@ class TextRendererTest {
         assertFalse(output.endsWith("\n"));
     }
 }
+// @@author

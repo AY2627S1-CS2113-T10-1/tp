@@ -1,4 +1,4 @@
-//@@author ka-how
+// @@author ka-how
 package scheduleflow.cli;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -42,18 +42,10 @@ class ContractsTest {
         assertEquals(-1, new Command.ReopenTask(0, -1).remainingMinutes());
         assertThrows(NullPointerException.class, () -> new Command.AddTask(null, command.deadline(), 30));
         assertThrows(NullPointerException.class, () -> new Command.ScheduleDate(null));
-        // @@author ernestgoh-god
         assertEquals(0, new Command.RecordTaskWork(1, 0).doneMinutes());
         assertEquals(101, new Command.RecordTaskSession(1, 1, 101).percent());
         assertEquals(0, new Command.ReviseTaskRemaining(1, 0).remainingMinutes());
-        // @@author
-        // @@author nickpatt
-        // @@author ernestgoh-god
         assertEquals(31, Command.class.getPermittedSubclasses().length);
-        // @@author ka-how
-        // @@author ka-how
-        // @@author ernestgoh-god
-        // @@author ka-how
     }
 
     @Test
@@ -84,7 +76,6 @@ class ContractsTest {
                 throw new AssertionError("Constructor must not load");
             }
 
-            // @@author ernestgoh-god
             @Override
             public Optional<Plan> loadPlan(Snapshot source) {
                 throw new AssertionError("Constructor must not load a plan");
@@ -94,7 +85,6 @@ class ContractsTest {
             public void savePlan(Plan plan) {
                 throw new AssertionError("Constructor must not save a plan");
             }
-            // @@author ka-how
 
             @Override
             public void save(Snapshot state) {
@@ -113,3 +103,4 @@ class ContractsTest {
         assertEquals("", output.toString());
     }
 }
+// @@author

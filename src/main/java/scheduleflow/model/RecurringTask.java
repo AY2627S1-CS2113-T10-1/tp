@@ -8,7 +8,6 @@ import java.util.Optional;
 import scheduleflow.common.InputRules;
 import scheduleflow.common.ValidationException;
 
-// @@author nickpatt
 /**
  * Stores a weekly template and its last processed deadline, including skipped past dates.
  *

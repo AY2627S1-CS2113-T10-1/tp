@@ -1,4 +1,4 @@
-//@@author ka-how
+// @@author ka-how
 package scheduleflow.cli;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -148,7 +148,6 @@ class AppTest {
         assertFalse(Files.exists(file.getParent()));
     }
 
-    // @@author ernestgoh-god
     @Test
     void run_policySetPlanAndRestart_enforcesBreaksAndResetsWithoutLosingTasks() throws Exception {
         Path file = directory.resolve("data/scheduleflow.txt");
@@ -266,7 +265,6 @@ class AppTest {
         assertFalse(result.output().contains("scheduleflow>"));
         assertEquals(corrupt, Files.readString(file));
     }
-    // @@author ka-how
 
     @Test
     void run_exitAndEof_loadOnceAndNeverSave() {
@@ -355,7 +353,6 @@ class AppTest {
         assertEquals(0, storage.saveCalls);
     }
 
-    // @@author nickpatt
     @Test
     void run_task45_acceptsExactWorkAndReservesWholeSlots() {
         FakeStorage storage = new FakeStorage(Snapshot.empty());
@@ -367,7 +364,6 @@ class AppTest {
         assertEquals(45, storage.saved.tasks().getFirst().remainingMinutes());
         assertEquals(1, storage.saveCalls);
     }
-    // @@author ka-how
 
     @Test
     void run_saveFailure_preservesPlanAndRetriesSameIdWithoutFalseSuccess() {
@@ -399,7 +395,6 @@ class AppTest {
                 return delegate.load();
             }
 
-            // @@author ernestgoh-god
             @Override
             public Optional<Plan> loadPlan(Snapshot source) throws StorageException {
                 return delegate.loadPlan(source);
@@ -409,7 +404,6 @@ class AppTest {
             public void savePlan(Plan plan) throws StorageException {
                 delegate.savePlan(plan);
             }
-            // @@author ka-how
 
             @Override
             public void save(Snapshot state) throws StorageException {
@@ -421,11 +415,9 @@ class AppTest {
         assertTrue(result.output().contains("Error: Save rejected before replacement"));
         assertFalse(result.output().contains("Added T3"));
         assertTrue(result.output().contains("08:00 - 08:30 | [TASK] T2: Existing (30 min)"));
-        // @@author ernestgoh-god
         assertFalse(Arrays.equals(bytes, Files.readAllBytes(file)));
         assertTrue(Files.readString(file).startsWith("SCHEDULEFLOW|6\n"));
         assertTrue(delegate.loadPlan(original).isPresent());
-        // @@author ka-how
         assertEquals(original, delegate.load());
     }
 
@@ -452,9 +444,7 @@ class AppTest {
         Result second = run("schedule today\n" + ADD_TASK + "\ntask list\nexit\n",
                 new FileStorage(file, new StateCodec()));
         assertEquals(0, second.status());
-        // @@author ernestgoh-god
         assertTrue(second.output().startsWith("scheduleflow> === Schedule for Monday (2026-09-21) ==="));
-        // @@author ka-how
         assertTrue(second.output().contains("Added T2: Draft"));
         assertEquals(2, new FileStorage(file, new StateCodec()).load().tasks().getFirst().id());
     }
@@ -470,11 +460,9 @@ class AppTest {
         assertEquals(0, result.status());
         assertTrue(result.output().contains("T1 | Overdue | 60 min"));
         assertTrue(result.output().contains("T1: Overdue | Unallocated: 60 min | Reason: deadline passed"));
-        // @@author ernestgoh-god
         assertFalse(Arrays.equals(bytes, Files.readAllBytes(file)));
         assertTrue(storage.loadPlan(overdue).isPresent());
         assertEquals(overdue, storage.load());
-        // @@author ka-how
     }
 
     @Test
@@ -500,7 +488,6 @@ class AppTest {
                 throw new IllegalStateException("Storage defect");
             }
 
-            // @@author ernestgoh-god
             @Override
             public Optional<Plan> loadPlan(Snapshot source) {
                 throw new AssertionError("Must not load plan after defective load");
@@ -510,7 +497,6 @@ class AppTest {
             public void savePlan(Plan plan) {
                 throw new AssertionError("Must not save plan after defective load");
             }
-            // @@author ka-how
 
             @Override
             public void save(Snapshot state) {
@@ -602,14 +588,12 @@ class AppTest {
         return run(input, storage, CLOCK);
     }
 
-    // @@author ernestgoh-god
     /** Runs an isolated session at a selected time to verify restart does not regenerate frozen plans. */
     private Result run(BufferedReader input, Storage storage, Clock clock) {
         StringWriter output = new StringWriter();
         int status = new App(storage, clock, new ConsoleUi(input, new PrintWriter(output))).run();
         return new Result(status, output.toString().replace("\r\n", "\n"));
     }
-    // @@author ka-how
 
     /**
      * Holds observable status and complete console output from one session.
@@ -622,11 +606,9 @@ class AppTest {
      */
     private static final class FakeStorage implements Storage {
         private Snapshot saved;
-        // @@author ernestgoh-god
         private Optional<Plan> savedPlan = Optional.empty();
         private int planSaveCalls;
         private boolean failPlanSave;
-        // @@author ka-how
         private int loadCalls;
         private int saveCalls;
         private boolean failLoad;
@@ -651,7 +633,6 @@ class AppTest {
             return saved;
         }
 
-        // @@author ernestgoh-god
         @Override
         public Optional<Plan> loadPlan(Snapshot source) throws StorageException {
             if (!saved.equals(source)) {
@@ -659,7 +640,6 @@ class AppTest {
             }
             return savedPlan;
         }
-        // @@author ka-how
 
         @Override
         public void save(Snapshot state) throws StorageException {
@@ -668,12 +648,9 @@ class AppTest {
                 throw new StorageException("Save rejected");
             }
             saved = state;
-            // @@author ernestgoh-god
             savedPlan = Optional.empty();
-            // @@author ka-how
         }
 
-        // @@author ernestgoh-god
         @Override
         public void savePlan(Plan plan) throws StorageException {
             planSaveCalls++;
@@ -683,6 +660,6 @@ class AppTest {
             saved = plan.source();
             savedPlan = Optional.of(plan);
         }
-        // @@author ka-how
     }
 }
+// @@author

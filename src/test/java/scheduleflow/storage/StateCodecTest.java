@@ -21,14 +21,12 @@ import scheduleflow.model.TaskOccurrence;
 import scheduleflow.model.TaskPriority;
 import scheduleflow.planning.StudyPolicy;
 
-// @@author ernestgoh-god
 /**
  * Checks text conversion independently of files and console integration.
  */
 class StateCodecTest {
     private final StateCodec codec = new StateCodec();
 
-    // @@author ernestgoh-god
     @Test
     void encodeAndDecode_studyPolicy_preservesRecurrenceAndRejectsMissingDuplicateOrInvalidValues() throws Exception {
         LocalDateTime first = LocalDateTime.of(2026, 10, 26, 18, 0);
@@ -51,9 +49,7 @@ class StateCodecTest {
         assertEquals(reset, codec.decode(codec.encode(reset)));
         assertTrue(codec.decode("SCHEDULEFLOW|1\nNEXT|1|1\n").studyPolicy().isEmpty());
     }
-    // @@author
 
-    // @@author nickpatt
     @Test
     void encodeAndDecode_recurrence_preservesNamesCursorsProvenanceAndWidestCommitments() throws Exception {
         LocalDateTime first = LocalDateTime.of(2026, 10, 26, 18, 0);
@@ -147,9 +143,7 @@ class StateCodecTest {
             assertThrows(StorageException.class, () -> codec.decode(header + occurrence));
         }
     }
-    // @@author ernestgoh-god
 
-    // @@author Darren50
     @Test
     void encodeAndDecode_boundedCommitments_usesVersionThreeAndRetainsLegacyRows() throws StorageException {
         Commitment bounded = new Commitment(1, "Semester | lecture", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60,
@@ -220,7 +214,6 @@ class StateCodecTest {
         }
     }
 
-    // @@author GabrielYuSP
     @Test
     void encodeAndDecode_hours_preservesSettingsAndLoadsLegacyData() throws StorageException {
         Snapshot empty = Snapshot.empty();
@@ -240,7 +233,6 @@ class StateCodecTest {
                 () -> codec.decode("SCHEDULEFLOW|1\nNEXT|1|1\nHOURS|tuesday|09:00|22:00"));
     }
 
-    // @@author ernestgoh-god
     @Test
     void encode_nullSnapshot_reportsNamedPrecondition() {
         assertEquals("state", assertThrows(NullPointerException.class, () -> codec.encode(null)).getMessage());
@@ -293,7 +285,6 @@ class StateCodecTest {
         }
     }
 
-    // @@author nickpatt
     @Test
     void decode_legacyVersions_preservesValuesDefaultsAndPipes() throws StorageException {
         for (int version : new int[] {1, 2}) {
@@ -327,7 +318,6 @@ class StateCodecTest {
         assertEquals(state, codec.decode(codec.encode(state)));
     }
 
-    // @@author ernestgoh-god
     @Test
     void encodeAndDecode_extendedTasksWithBoundedAndSkippedCommitments_preservesBothVersions()
             throws StorageException {
@@ -353,7 +343,6 @@ class StateCodecTest {
         assertEquals(versionFour, codec.decode(encodedFour));
     }
 
-    // @@author nickpatt
     @Test
     void decode_corruptExtendedTasks_rejectsWholeState() {
         for (String row : List.of("TASK2|1|NONE|-1|NORMAL|A", "TASK2|1|NONE|2147483648|NORMAL|A",
@@ -370,7 +359,6 @@ class StateCodecTest {
         assertThrows(StorageException.class,
                 () -> codec.decode("SCHEDULEFLOW|2\nNEXT|2|1\nTASK|1|2000-01-01T09:00|0|A"));
     }
-    // @@author ernestgoh-god
 
     @Test
     void decode_duplicateIdsBadCountersOrOverlaps_rejects() {
@@ -382,4 +370,3 @@ class StateCodecTest {
         }
     }
 }
-// @@author

@@ -18,13 +18,11 @@ import scheduleflow.planning.Plan;
  * Owns UTF-8 loading and atomic file replacement at a fixed absolute path.
  */
 public final class FileStorage implements Storage {
-    // @@author ernestgoh-god
     /**
      * Records opt-in storage stages without paths, saved text or exception payloads.
      * Failures remain available to callers through {@link StorageException}.
      */
     private static final Logger LOGGER = Logger.getLogger(FileStorage.class.getName());
-    // @@author
 
     /**
      * Identifies the normalized absolute target, independent of later working-directory changes.
@@ -48,7 +46,6 @@ public final class FileStorage implements Storage {
         this.codec = Objects.requireNonNull(codec, "codec");
     }
 
-    // @@author ernestgoh-god
     /**
      * Reads UTF-8 and validates the entire snapshot without modifying the saved file.
      * A definitely absent target returns an empty snapshot; other failures never do.
@@ -82,7 +79,6 @@ public final class FileStorage implements Storage {
         }
     }
 
-    // @@author ernestgoh-god
     /** Restores only a plan whose embedded source equals the snapshot already loaded at startup. */
     @Override
     public Optional<Plan> loadPlan(Snapshot source) throws StorageException {
@@ -116,7 +112,6 @@ public final class FileStorage implements Storage {
             throw new StorageException("Cannot load saved data: " + file, exception);
         }
     }
-    // @@author
 
     /**
      * Writes a sibling temporary file and atomically replaces the target before returning.
@@ -134,7 +129,6 @@ public final class FileStorage implements Storage {
         writeAtomically(text);
     }
 
-    // @@author ernestgoh-god
     /** Saves a plan and its candidate source in one replacement, including newly materialized recurring tasks. */
     @Override
     public void savePlan(Plan plan) throws StorageException {
@@ -169,7 +163,6 @@ public final class FileStorage implements Storage {
             throw failure;
         }
     }
-    // @@author
 
     /**
      * Removes an abandoned temporary file, attaching cleanup errors to the original save failure.
@@ -191,5 +184,4 @@ public final class FileStorage implements Storage {
             LOGGER.log(Level.FINE, "Temporary saved data cleanup failed; original failure retained");
         }
     }
-    // @@author
 }

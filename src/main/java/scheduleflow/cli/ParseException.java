@@ -1,4 +1,3 @@
-//@@author ka-how
 package scheduleflow.cli;
 
 import java.util.Objects;

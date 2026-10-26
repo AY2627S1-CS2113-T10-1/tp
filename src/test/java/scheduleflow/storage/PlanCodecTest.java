@@ -29,7 +29,6 @@ import scheduleflow.planning.TimeRules;
 import scheduleflow.planning.UnallocatedReason;
 import scheduleflow.planning.UnallocatedWork;
 
-// @@author ernestgoh-god
 /** Verifies complete frozen-plan text independently of filesystem access. */
 class PlanCodecTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 10, 5, 7, 0);
@@ -150,4 +149,3 @@ class PlanCodecTest {
         assertEquals(source, snapshots.decode(encoded));
     }
 }
-// @@author
