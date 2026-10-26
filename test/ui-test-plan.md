@@ -239,8 +239,9 @@ active scenarios), not success. Activate cases as their dependencies are
 implemented and move verified cases to the main fixture. Existing 22 active
 scenarios must continue passing throughout integration.
 
-The Developer Guide's handoff contains the corresponding owner-specific JUnit
-matrix, including injected save failure, whole-batch rollback and ID exhaustion.
+The Developer Guide summarizes the proposed integration and links to the
+planned fixtures. Transaction acceptance must cover injected save failure,
+whole-batch rollback and ID exhaustion before those fixtures are activated.
 Two active planner tests supply the expected dated records manually through
 the existing one-time API to verify allocation/projection compatibility for
 continuous and daily representations. `CommitmentServiceTest` separately

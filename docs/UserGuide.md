@@ -762,8 +762,8 @@ be rejected if any period conflicts with an existing commitment.
 The batch confirmation and syntax parsing are implemented and unit-tested, but
 the console dispatch still cannot run these commands. For now, use the existing
 single-date `commitment add ... on/DATE` commands.
-The [Developer Guide handoff](DeveloperGuide.md#multi-date-unavailable-periods-implementation-handoff-planned)
-contains proposed outputs, owner responsibilities and acceptance tests.
+The [Developer Guide proposal](DeveloperGuide.md#multi-date-unavailable-periods-implementation-handoff-planned)
+summarizes the integration boundary and links to the proposed acceptance fixtures.
 
 ### Session limits and breaks
 
