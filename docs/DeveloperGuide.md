@@ -13,9 +13,9 @@ agents working on the project, as specified in the repository's root `AGENTS.md`
 
 RepoSense tags follow the whole-file allocation in version 2 of the supplied
 authorship redistribution plan, dated 2026-10-25. The previous scoped author
-comments have been removed from production and test Java files. This change
-applies only Ka How's (`ka-how`) allocation; other files use Git-based attribution
-until their owners' tags are applied.
+comments have been removed from production and test Java files. The allocations
+of Ka How (`ka-how`) and Darren (`Darren50`) are applied; other files use
+Git-based attribution until their owners' tags are applied.
 
 Ka How's files are relative to the corresponding `scheduleflow/` source root:
 
@@ -32,6 +32,17 @@ There are no interior author tags. The entire file, including nested command
 records, imports, helpers and documentation, belongs to this allocation.
 `CommandParser`, `ParseException` and `CommandDispatcher` are outside Ka How's
 allocation even though they share the `cli` package.
+
+Darren's files use the same layout with `// @@author Darren50`:
+
+- Production: `cli/CommandDispatcher.java`, `commitment/CommitmentService.java`
+  and `model/Commitment.java`.
+- Tests: `cli/CommandDispatcherTest.java`,
+  `commitment/CommitmentServiceTest.java` and `model/CommitmentTest.java`.
+
+The whole dispatcher, including its task, planning, storage and rendering
+orchestration helpers, belongs to this allocation. The services and records it
+coordinates keep their own owners' allocations.
 
 These tags record the agreed allocation, not who originally wrote each section.
 They do not rewrite Git history, reassign historical TODOs or change behaviour.
