@@ -384,6 +384,14 @@ Fixed clocks, temporary files and isolated logger/locale changes keep these
 checks independent of the developer's saved data. See [console verification](#build-packaging-and-console-verification)
 and [manual console tests](#launch-help-exit-and-console-behavior).
 
+`MainTest` also checks corrupt saved-plan metadata and a directory at the saved-file
+path: both must exit with status 1 before prompting and preserve existing bytes.
+Separate child JVMs verify class-based logging configuration and explicitly set
+CLI/application logger levels remain effective without changing command output.
+The logging probes exist only on the test classpath, and assertions are enabled
+for these startup/error paths. Each child JVM uses an English locale for stable
+diagnostic severity text and keeps logger configuration inside that process.
+
 ### Exact task work and retained task lifecycle
 
 #### Task operations and defensive checks

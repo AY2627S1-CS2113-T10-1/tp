@@ -7,17 +7,21 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.ConsoleHandler;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Exercises process status, UTF-8 production wiring and real saved restarts without exiting JUnit.
+ * Exercises process status, UTF-8 production wiring, saved restarts and startup diagnostics in isolated JVMs.
  */
 class MainTest {
     @TempDir
@@ -107,6 +111,80 @@ class MainTest {
         assertFalse(log.contains("Starting command parsing"));
     }
 
+    @Test
+    void main_loggingConfigurationClass_preservesWarningDiagnostics() throws Exception {
+        ProcessResult result = launch("exit extra\nexit\n", List.of(),
+                List.of("-ea", "-Djava.util.logging.config.class=" + WarningConfiguration.class.getName()));
+
+        assertWarningDiagnostics(result);
+        assertFalse(Files.exists(directory.resolve("data")));
+    }
+
+    @Test
+    void main_preconfiguredCliLogger_preservesWarningDiagnostics() throws Exception {
+        ProcessResult result = launch("exit extra\nexit\n", List.of("cli"), List.of("-ea"), ConfiguredMain.class);
+
+        assertWarningDiagnostics(result);
+        assertFalse(Files.exists(directory.resolve("data")));
+    }
+
+    @Test
+    void main_preconfiguredApplicationLogger_preservesWarningDiagnostics() throws Exception {
+        ProcessResult result = launch("exit extra\nexit\n", List.of("application"), List.of("-ea"),
+                ConfiguredMain.class);
+
+        assertWarningDiagnostics(result);
+        assertFalse(Files.exists(directory.resolve("data")));
+    }
+
+    @Test
+    void main_corruptSavedPlan_exitsBeforePromptAndPreservesBytes() throws Exception {
+        Path data = directory.resolve("data/scheduleflow.txt");
+        Files.createDirectories(data.getParent());
+        byte[] original = ("SCHEDULEFLOW|6\nNEXT|1|1|1\n"
+                + "PLAN|2026-11-02T07:00|2027-11-02T00:00|1|0|0\n").getBytes(StandardCharsets.UTF_8);
+        Files.write(data, original);
+
+        ProcessResult result = launch("exit\n", List.of(), List.of("-ea"));
+
+        assertEquals(1, result.status());
+        assertEquals("Error: Saved plan row counts do not match its records.\n", result.output());
+        assertEquals("", result.error());
+        assertArrayEquals(original, Files.readAllBytes(data));
+    }
+
+    @Test
+    void main_directoryAtStorePath_exitsBeforePromptAndPreservesDirectory() throws Exception {
+        Path data = directory.resolve("data/scheduleflow.txt");
+        Files.createDirectories(data);
+        Path marker = data.resolve("keep.txt");
+        byte[] original = "Existing directory contents\n".getBytes(StandardCharsets.UTF_8);
+        Files.write(marker, original);
+
+        ProcessResult result = launch("exit\n", List.of(), List.of("-ea"));
+
+        assertEquals(1, result.status());
+        assertEquals("Error: Cannot load saved data: " + data.toAbsolutePath().normalize() + "\n", result.output());
+        assertEquals("", result.error());
+        assertTrue(Files.isDirectory(data));
+        assertArrayEquals(original, Files.readAllBytes(marker));
+    }
+
+    /**
+     * Checks that explicit warning logging preserves the public response while filtering lower-severity stages.
+     *
+     * @param result completed process with a rejected exit followed by a valid exit
+     */
+    private void assertWarningDiagnostics(ProcessResult result) {
+        assertEquals(0, result.status());
+        assertEquals("scheduleflow> Error: This command accepts no arguments\nExpected: exit\n"
+                + "scheduleflow> Goodbye for now!\n", result.output());
+        assertTrue(result.error().contains("WARNING: Command syntax rejected"));
+        assertTrue(result.error().contains("ParseException: This command accepts no arguments"));
+        assertFalse(result.error().contains("Starting application session"));
+        assertFalse(result.error().contains("Starting command parsing"));
+    }
+
     /**
      * Launches the actual entry point using Java 25 and redirects output to avoid pipe-buffer deadlocks.
      */
@@ -124,11 +202,29 @@ class MainTest {
      * @throws Exception if process startup, input or output collection fails
      */
     private ProcessResult launch(String input, List<String> arguments, List<String> vmArguments) throws Exception {
+        return launch(input, arguments, vmArguments, Main.class);
+    }
+
+    /**
+     * Runs the production entry point directly or through test-only logging setup with a fixed English locale.
+     *
+     * @param input complete UTF-8 session input
+     * @param arguments arguments for the selected entry point
+     * @param vmArguments JVM options supplied before the classpath
+     * @param entryPoint production main class or logging setup launcher
+     * @return process status and captured console streams
+     * @throws Exception if process startup, input or output collection fails
+     */
+    private ProcessResult launch(String input, List<String> arguments, List<String> vmArguments,
+            Class<?> entryPoint) throws Exception {
         Path classes = Path.of(Main.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        Path testClasses = Path.of(MainTest.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        String classpath = classes + File.pathSeparator + testClasses;
         List<String> command = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin", "java")
-                .toString(), "-Dfile.encoding=US-ASCII", "-Dstdout.encoding=US-ASCII"));
+                .toString(), "-Dfile.encoding=US-ASCII", "-Dstdout.encoding=US-ASCII",
+                "-Duser.language=en", "-Duser.country=US"));
         command.addAll(vmArguments);
-        command.addAll(List.of("-cp", classes.toString(), "scheduleflow.Main"));
+        command.addAll(List.of("-cp", classpath, entryPoint.getName()));
         command.addAll(arguments);
         Path output = directory.resolve("stdout.txt");
         Path error = directory.resolve("stderr.txt");
@@ -146,6 +242,64 @@ class MainTest {
                 process.destroyForcibly();
                 process.waitFor(10, TimeUnit.SECONDS);
             }
+        }
+    }
+
+    /**
+     * Configures warning output in memory; constructing a console handler does not emit any records.
+     *
+     * @param logger logger whose explicit level must survive production startup
+     */
+    private static void configureWarningLogger(Logger logger) {
+        logger.setLevel(Level.WARNING);
+        logger.setUseParentHandlers(false);
+        logger.addHandler(new ConsoleHandler());
+    }
+
+    /**
+     * Supplies class-based logging configuration; Java logging loads this public type by name in the child JVM.
+     */
+    public static final class WarningConfiguration {
+        /**
+         * Installs an inherited root warning level without assigning either application namespace a level.
+         */
+        public WarningConfiguration() {
+            configureWarningLogger(Logger.getLogger(""));
+        }
+    }
+
+    /**
+     * Sets an application logger before invoking the actual entry point in the child process.
+     */
+    public static final class ConfiguredMain {
+        /**
+         * Keeps the configured child logger reachable throughout the process.
+         */
+        private static final Logger CLI_LOGGER = Logger.getLogger("scheduleflow.cli");
+        /**
+         * Keeps the configured application logger reachable throughout the process.
+         */
+        private static final Logger APPLICATION_LOGGER = Logger.getLogger("scheduleflow");
+
+        /**
+         * Prevents instantiation of this test launcher.
+         */
+        private ConfiguredMain() {
+        }
+
+        /**
+         * Configures the selected logger and starts Main without application arguments.
+         *
+         * @param args exactly one selector: {@code cli} or {@code application}
+         */
+        public static void main(String[] args) {
+            Logger logger = switch (args[0]) {
+                case "cli" -> CLI_LOGGER;
+                case "application" -> APPLICATION_LOGGER;
+                default -> throw new IllegalArgumentException("Unknown test logger selector: " + args[0]);
+            };
+            configureWarningLogger(logger);
+            Main.main(new String[0]);
         }
     }
 
