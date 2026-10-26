@@ -14,8 +14,8 @@ agents working on the project, as specified in the repository's root `AGENTS.md`
 RepoSense tags follow the whole-file allocation in version 2 of the supplied
 authorship redistribution plan, dated 2026-10-25. The previous scoped author
 comments have been removed from production and test Java files. This change
-applies only Ka How's (`ka-how`) allocation; other files use Git-based attribution
-until their owners' tags are applied.
+includes Ka How's (`ka-how`) and Ernest's (`ernestgoh-god`) allocations; other
+files use Git-based attribution until their owners' tags are applied.
 
 Ka How's files are relative to the corresponding `scheduleflow/` source root:
 
@@ -32,6 +32,22 @@ There are no interior author tags. The entire file, including nested command
 records, imports, helpers and documentation, belongs to this allocation.
 `CommandParser`, `ParseException` and `CommandDispatcher` are outside Ka How's
 allocation even though they share the `cli` package.
+
+Ernest's files are relative to the corresponding `scheduleflow/` source root:
+
+- Production (`src/main/java/scheduleflow/`): `model/Snapshot.java`,
+  `storage/FileStorage.java`, `storage/PlanCodec.java`, `storage/StateCodec.java`,
+  `storage/Storage.java` and `storage/StorageException.java`.
+- Tests (`src/test/java/scheduleflow/`): `model/SnapshotTest.java`,
+  `storage/FileStorageTest.java`, `storage/PlanCodecTest.java` and
+  `storage/StateCodecTest.java`.
+
+Each of Ernest's ten files starts with one `// @@author ernestgoh-god` before
+its package declaration and ends with one bare `// @@author` after its final
+closing brace. There are no interior tags. The entire Snapshot aggregate is
+included, along with all storage contracts, validation, codecs and helpers.
+Imports of another member's types do not split a file's ownership. Application
+startup, AppState, command parsing and dispatch remain outside this allocation.
 
 These tags record the agreed allocation, not who originally wrote each section.
 They do not rewrite Git history, reassign historical TODOs or change behaviour.

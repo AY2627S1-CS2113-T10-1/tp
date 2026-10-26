@@ -1,3 +1,4 @@
+// @@author ernestgoh-god
 package scheduleflow.model;
 
 import java.util.HashMap;
@@ -184,3 +185,4 @@ public record Snapshot(List<Task> tasks, List<Commitment> commitments, int nextT
         }
     }
 }
+// @@author
