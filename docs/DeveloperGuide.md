@@ -1,12 +1,5 @@
 # Developer Guide
 
-> **Guide status:** Draft for the upcoming v2.0 release, describing source
-> revision `99a50dd` and the candidate `build/libs/scheduleflow.jar`. No v2.0
-> tag or published JAR exists yet. The latest published release checked on
-> 26 October 2026 is [v1.0](https://github.com/AY2627S1-CS2113-T10-1/tp/releases/tag/v1.0);
-> its JAR does not include all enhancements described here. Reconcile this
-> guide with the release tag and artifact before publication.
-
 ScheduleFlow is a Java 25 console application for university students planning
 coursework around fixed commitments. For commands and user examples, see the
 [User Guide](UserGuide.md).
@@ -226,52 +219,14 @@ original deadline, from which its one-week release is derived. Advancing the
 cursor past missed dates prevents backfilling and recreation after restart or
 deletion of a generated task.
 
-The class view focuses on generation and projection boundaries. `Task` and
-`Commitment` are source records owned by their respective modules; `Snapshot`
-is the aggregate owned by Save. Arrows show dependencies or contained results,
-not ownership of those external types.
+The class view focuses on the planner and daily schedule projection boundaries.
+`Task` and `Commitment` are source records owned by their respective modules;
+`Snapshot` is the aggregate owned by the persistence component. Arrows show
+dependencies or contained results, not ownership of those external types.
 
-```mermaid
-classDiagram
-    class Planner {
-        <<interface>>
-        +generate(snapshot, now) Plan
-    }
-    class EarliestDeadlinePlanner
-    class TimeRules
-    class Plan
-    class StudySession
-    class UnallocatedWork
-    class ScheduleService
-    class ScheduleView
-    class StudyHours
-    class StudyWindow
-    class StudyPolicy
-    class RecurringTaskService
-    class RecurringTask
-    class TaskOccurrence
-    class Snapshot
-    class Task
-    class Commitment
+![Planning and schedule projection classes](images/gabriel-planning-classes.svg)
 
-    Planner <|.. EarliestDeadlinePlanner
-    EarliestDeadlinePlanner ..> TimeRules
-    EarliestDeadlinePlanner ..> Snapshot
-    EarliestDeadlinePlanner ..> Task
-    EarliestDeadlinePlanner ..> Commitment
-    EarliestDeadlinePlanner ..> Plan
-    Plan --> Snapshot : frozen source
-    Plan --> StudySession : sessions
-    Plan --> UnallocatedWork : remainders
-    ScheduleService ..> Plan
-    ScheduleService ..> ScheduleView
-    Snapshot --> StudyHours
-    Snapshot --> StudyPolicy
-    StudyHours --> StudyWindow : resolves
-    Snapshot --> RecurringTask : templates
-    Task --> TaskOccurrence : optional provenance
-    RecurringTaskService ..> Snapshot : candidate
-```
+[PlantUML source](diagrams/gabriel-planning-classes.puml)
 
 Generation first classifies unfinished work: overdue and beyond-horizon tasks
 retain their full remainder; other work competes for chronological slots.
@@ -289,31 +244,19 @@ This earliest-deadline greedy policy is predictable and gives earlier
 deadlines first access to scarce time; it does not optimize for fewest sessions
 or most fully completed tasks.
 
-```mermaid
-sequenceDiagram
-    participant D as CommandDispatcher
-    participant R as RecurringTaskService
-    participant P as EarliestDeadlinePlanner
-    participant T as TimeRules
-    participant S as Storage
-    D->>R: materialize(snapshot, now)
-    R-->>D: candidate snapshot
-    D->>P: generate(candidate, now)
-    P->>T: calculate horizon and rounded cutoff
-    T-->>P: exclusive horizon and eligible start
-    loop chronological dates and half-hour slots
-        P->>P: check commitments, release and deadline
-        P->>P: allocate work or reserve a break
-    end
-    P-->>D: immutable Plan
-    D->>S: save source and plan
-    Note over D,S: Publish state only after save succeeds.
-```
+The sequence view follows a successful `plan` command from time capture through
+plan publication. The planner computes the horizon once and the daily cutoff
+for each date; it then evaluates half-hour slots. The dispatcher renders and
+saves the plan before publishing the candidate snapshot and current plan.
+
+![Plan generation and persistence sequence](images/gabriel-planning-sequence-Generate_and_save_a_study_plan.svg)
+
+[PlantUML source](diagrams/gabriel-planning-sequence.puml)
 
 ### Persistence and the Snapshot aggregate
 
-This section describes candidate source `cd06171` for the upcoming v2.0 release.
-It does not describe the older v1.0 JAR. The persistence boundary separates
+This section describes the current source implementation, not the older v1.0
+JAR. The persistence boundary separates
 filesystem access, text conversion and aggregate validation:
 
 | Type | Responsibility |
@@ -1291,8 +1234,8 @@ Smetana layout engine, so no external Graphviz installation is required.
 Commit each changed source and its rendered SVG together, check the diagram
 against the code, and inspect text size and links in the rendered guide.
 Review both guides after implementation; mark unfinished operations explicitly.
-The release maintainer must replace the candidate status with the verified
-tag/artifact before publishing. Cross-platform runtime checks and filesystem
+Before publication, the release maintainer must reconcile this guide with the
+verified release tag and artifact. Cross-platform runtime checks and filesystem
 provider fault injection need separate evidence; passing on Windows does not
 establish those results.
 
@@ -1413,7 +1356,7 @@ optional work/break policy. Planning uses half-hour capacity within a rolling
 calendar year; exact task work can be any positive whole-minute estimate.
 Schedules stay frozen until regenerated or invalidated by a successful change.
 
-This release candidate is a single-user, local/offline application with one
+The application is a single-user, local/offline application with one
 running instance per data file. It has no calendar synchronization, GUI,
 notifications or automatic progress timer. Multi-date unavailable commands
 remain proposed console integration; see the [User Guide](UserGuide.md) for
@@ -1491,9 +1434,9 @@ platform/provider behavior; see [storage verification](#storage-diagnostics-and-
 
 ## Appendix E: Instructions for Manual Testing
 
-Use the candidate JAR identified at the top of this guide, Java 25 and a
-fresh disposable launch folder for each group. Copy `scheduleflow.jar` there
-and run `java -ea -jar scheduleflow.jar`. IDs below assume empty saved data.
+Use the JAR produced at `build/libs/scheduleflow.jar`, Java 25 and a fresh
+disposable launch folder for each group. Copy `scheduleflow.jar` there and run
+`java -ea -jar scheduleflow.jar`. IDs below assume empty saved data.
 Enter only the commands, without the `scheduleflow>` prompt. After `exit`,
 retain any evidence you need, then discard the disposable folder.
 
@@ -1519,8 +1462,9 @@ excluded until their dispatch is implemented.
 
 ### Launch, help, exit and console behavior
 
-Use Java 25 and a disposable folder containing the candidate JAR. Launch from
-a terminal with `java -ea -jar scheduleflow.jar`, without extra arguments.
+Use Java 25 and a disposable folder containing the JAR copied from
+`build/libs/scheduleflow.jar`. Launch from a terminal with
+`java -ea -jar scheduleflow.jar`, without extra arguments.
 `-ea` enables assertions; Gradle/distribution launchers already enable them.
 These paths assume empty saved data and default logging.
 
