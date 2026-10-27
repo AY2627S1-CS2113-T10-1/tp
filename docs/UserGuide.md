@@ -806,10 +806,12 @@ be rejected if any period conflicts with an existing commitment.
 The batch confirmation and syntax parsing are implemented and unit-tested, but
 the console dispatch still cannot run these commands.
 
-> **Warning:** Do not enter `unavailable continuous` or `unavailable daily` yet.
-> In this version they stop the application with an internal error instead of
-> showing a message. Changes saved before that command are kept; relaunch to
-> continue.
+Entering either command now shows an error and changes nothing:
+
+```text
+scheduleflow> unavailable continuous n/Trip from/2026-11-02 1500 until/2026-11-04 1100
+Error: unavailable continuous is not available yet. Add each date with commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES instead.
+```
 
 For now, use one single-date `commitment add ... on/DATE` command per date.
 The [Developer Guide proposal](DeveloperGuide.md#multi-date-unavailable-periods-implementation-handoff-planned)
