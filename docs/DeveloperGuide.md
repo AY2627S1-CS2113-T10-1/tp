@@ -135,10 +135,41 @@ range transports exist but their console routes remain unfinished.
 
 ### Task model and command parsing
 
-`TaskService` returns immutable mutation candidates. `Task`, `TaskPriority`,
-`TaskEdit` and `InputRules` express task structure and validation.
-`CommandParser` converts input to the nested `Command` records without
-reading time, state or storage; `ParseException` carries the usage hint.
+**Candidate scope:** the Task sections describe source revision `f7d21f4`,
+checked for the upcoming release, not the published v1.0 JAR. Reconcile these
+claims with the actual release artifact before publication. The implementation
+explanation concerns the Task lifecycle enhancement; the later whole-file
+allocation also assigns the complete parser to Nickhil, but does not establish
+who originally wrote every parser or integration method.
+
+![Task lifecycle and parser classes, with external aggregate and transport types](images/nickhil-task-parser-classes.svg)
+
+[PlantUML source](diagrams/nickhil-task-parser-classes.puml)
+
+The two groups have different responsibilities. The stateless
+[`CommandParser`](../src/main/java/scheduleflow/cli/CommandParser.java) matches
+the entire input and constructs Ka How's nested `Command` records. It does not
+look up IDs, read a clock, save data or invoke a service. `ParseException`
+preserves a message and the recognized command's usage hint. This applies to
+all command families, not just tasks; a syntactically recognized unavailable
+range command is not evidence that its deferred dispatch is implemented.
+
+[`TaskService`](../src/main/java/scheduleflow/task/TaskService.java) reads
+Ernest's immutable `Snapshot` and returns a validated candidate or the identical
+source for a no-op. It never owns live application state.
+[`Task`](../src/main/java/scheduleflow/model/Task.java) is a record containing a
+stable ID, normalized name, optional deadline, exact remaining minutes,
+`TaskPriority`, and optional external `TaskOccurrence` provenance. Zero remaining
+means retained completion. `TaskEdit` distinguishes omitted replacements from
+an explicit API-level deadline clear. `InputRules` centralizes name and duration
+validation; `ValidationException` reports rejected domain values.
+
+Dashed arrows denote creation/use dependencies, not lifetime ownership.
+`Task` retains value references to its priority and optional provenance.
+Gabriel owns template generation and the provenance type; Nickhil's service
+preserves that provenance when changing an already-generated task. Snapshot
+validation and storage remain external. The diagram intentionally omits
+repetitive accessors, parser patterns and constructor overloads.
 
 ### Commitments and command execution
 
@@ -429,209 +460,103 @@ diagnostic severity text and keeps logger configuration inside that process.
 
 ### Exact task work and retained task lifecycle
 
-#### Task operations and defensive checks
+The enhancement lets a student record actual work without losing task identity
+or confusing remaining work with scheduled capacity. Suppose T1 has 90 minutes
+remaining. A reported 61-minute session at 25% credits **15**, leaving **75**.
+The percentage describes that session, not the original task estimate. Planning
+may reserve 90 minutes for the resulting 75-minute estimate, but does not alter
+it. See [allocation](#slot-allocation-under-study-hourspolicy-and-recurrence) for
+capacity accounting and [the candidate scope](#task-model-and-command-parsing)
+for release status and contribution boundaries.
 
-`Task` owns structural validation: positive IDs, normalized nonblank names,
-optional minute-precision deadlines in years 0001-9999 and nonnegative whole-minute
-remaining work (zero is retained completion). It uses `InputRules` and permits
-overdue or out-of-horizon saved deadlines. `ValidationException` carries the
-user-facing explanation and rejects a null message as programmer misuse.
+#### Parsing and domain validation
 
-`TaskService.add` requires positive work and checks the captured command time, accepting
-`now < deadline <= TimeRules.horizonEnd(now)`. The horizon moves with each
-command date, including the February 29 adjustment. Additions append to the
-stored task order and advance only the task counter. The last allocatable ID
-is `2147483646`; the next counter can be `2147483647`, at which point additions
-are rejected before incrementing. Duplicate names are valid. Deletion removes
-one known ID without resetting counters; listing returns an immutable copy in
-numeric ID order and includes overdue work without reducing estimates.
+`task progress T1 session/61 percent/25` becomes
+`Command.RecordTaskSession(1, 61, 25)`. Its direct-work counterpart becomes
+`Command.RecordTaskWork`. Full-line matching rejects missing, reordered, repeated
+or extra prefixes. Positive decimal tokens reject signs, leading zeroes,
+non-ASCII digits and `int` overflow; progress explicitly permits zero credit
+and percentages 0..100. The parser rejects percentages above 100, while the
+service repeats its domain bounds for direct API callers. `ParseException`
+contains the relevant usage; a well-formed but unknown T ID instead produces
+`ValidationException` during execution.
 
-Services reject null snapshots or command times with named
-`NullPointerException` preconditions. Invalid domain values and unknown IDs use
-`ValidationException`; runtime checks also work with assertions disabled.
-Assertions check normalization and candidate postconditions: preserved records,
-the exact add/delete count change and unchanged unrelated counters/commitments.
-They diagnose implementation defects rather than replace user-input validation.
-Neither services nor models save candidates, read the clock or invalidate plans;
-the dispatcher saves before publishing and reporting success.
+Dates use strict `uuuu-MM-dd HHmm`, minute precision and years 0001..9999.
+`Locale.ROOT` avoids machine-locale grammar changes. Syntax validation never
+decides whether a deadline is future: the dispatcher supplies one captured
+`now` to operations needing time. Likewise `schedule today` remains unresolved
+until dispatch. This boundary makes the same Task service usable by tests and
+non-console callers without pretending a parsed command is already valid.
 
-#### Task detail editing
+#### Exact progress and immutable candidates
 
-`TaskService.edit(state, id, TaskEdit, now)` implements immutable partial name and
-deadline edits. `TaskEdit` uses nonnull `Optional` containers; omitted fields retain
-their values. Empty edits, unknown IDs and simultaneous `clearDeadline` plus a
-replacement deadline raise `ValidationException`. Clearing alone explicitly
-removes the deadline, including on completed or overdue tasks.
-The full replacement is validated by `Task`. Only an actually changed deadline
-must satisfy `now < deadline <= TimeRules.horizonEnd(now)`. Renaming overdue or
-out-of-horizon work, or explicitly retaining its existing deadline, is valid.
+![Session progress returns an unchanged source or a validated candidate before external publication](images/nickhil-task-progress.svg)
 
-Edits preserve completion, priority, occurrence provenance, exact stored position,
-ID, remaining estimate, other records, recurrence definitions/cursors, all counters
-(including exhausted counters) and configured study hours. A valid
-edit with no effective change after normalization returns the original snapshot
-instance. The API does not save, publish or invalidate plans. FINE diagnostics
-omit private values; assertions check candidate preservation.
+[PlantUML source](diagrams/nickhil-task-progress.puml)
 
-`Command.EditTask` transports a partial edit and `CommandParser` accepts
-`task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]`. At least one field is required,
-in name/deadline order. `TextRenderer.taskEdited` is implemented and reports the
-stored ID, name, deadline and estimate without mutating or saving anything.
-The dispatcher prepares the response before saving, then publishes changed
-candidates only after save succeeds. A normalized no-op returns a confirmation
-without saving or invalidating the current plan. Failed syntax, validation or
-saving retains the old snapshot, counters, file and plan.
+`recordSessionProgress` first validates positive session minutes and an integer
+percentage in 0..100. It computes `(int) ((long) sessionMinutes * percentage / 100)`.
+Integer division floors the nonnegative result; promotion before multiplication
+avoids overflow even for `Integer.MAX_VALUE` session minutes. The credit then
+passes through `recordWork`, the common authority for direct and session input.
+It resolves the existing task, rejects a completed record, and requires credit
+between zero and that task's remaining estimate. Overreported work is rejected,
+not clamped to zero remaining.
 
-#### Task progress and lifecycle
+`replaceRemaining` returns the **identical Snapshot instance** when no minutes
+change. Otherwise it copies the task list, replaces the selected record at its
+original position, and calls `Snapshot.withTasks` with the unchanged next T ID.
+The new Task copies name, optional deadline, priority and occurrence provenance;
+the aggregate helper preserves other records, all counters, templates/cursors,
+hours and policy. The original remains valid and unchanged. TaskService neither
+saves nor publishes this candidate and does not invalidate or regenerate a plan.
 
-The canonical model is `Task(id, name, Optional<LocalDateTime>, remainingMinutes,
-TaskPriority, Optional<TaskOccurrence>)`. The five-argument optional-deadline
-constructor creates an ordinary task without provenance. The original
-four-argument concrete-date constructor defaults
-priority to NORMAL and still rejects null deadlines; there is no ambiguous
-four-argument Optional overload. Use `Task.withoutDeadline(id, name, minutes)`
-or the canonical constructor for explicit absence, never a sentinel date.
-HIGH/NORMAL/LOW are stored and used only for planner ties here; priority operations
-are not wired at the console. Weekly templates are described in
-[recurrence](#weekly-recurring-tasks); queries remain deferred.
+The external dispatcher derives actual credited minutes from the before/after
+estimates and prepares Ka How's confirmation. For a changed candidate it invokes
+[Darren's transaction](#dated-commitments-and-save-before-publication-dispatch);
+zero-credit identity no-ops skip saving and preserve the current plan. A save
+failure publishes nothing, so retrying applies the work once. Two *successful*
+submissions record work twice: there is no duplicate-command detection. Durable
+restart behavior belongs to [Ernest's persistence](#atomic-persistence-and-restoring-frozen-plans).
 
-`TaskService` exposes these pure candidate APIs:
+#### Completion, reopening and corrections
 
-- `addWithoutDeadline(state, name, minutes)` requires positive whole minutes,
-  appends the next ID and does not need a clock.
-- `recordWork(state, id, done)` requires an active task and
-  `0 <= done <= remaining`; it subtracts reported work, not elapsed time.
-- `recordSessionProgress(state, id, sessionMinutes, percentage)` requires positive
-  int minutes and integer 0..100, then credits floor of their long product / 100.
-  Overreported credit rejects atomically. Percent means a fraction of that
-  session, not a whole-task completion percentage.
-- `reviseRemaining(state, id, remaining)` requires active work and a positive
-  estimate; increases are allowed and are not credited as work done.
-- `complete(state, id)` retains the record and ID with zero remaining.
-- `reopen(state, id, positiveRemaining)` requires a completed task and preserves
-  all metadata, including an overdue or absent deadline.
+| Operation | Domain result and boundary |
+| --- | --- |
+| `complete` | Retains the same task with zero remaining. Repeated completion is an identity no-op. |
+| `reopen` | Requires a completed task and an explicit positive estimate; no earlier estimate is silently restored. Overdue/undated records may reopen. |
+| `reviseRemaining` | Replaces an active estimate, allowing increases; it does not credit completed work. An equal estimate is a no-op. |
+| `edit` | Requires a supplied name/deadline change or explicit API clear. It preserves work/status; a normalized equal result is a no-op. |
+| `delete` | Permanently removes a record, without resetting or reusing IDs. It is not completion. |
 
-Zero credited work and equal revisions return the identical source snapshot;
-completion is idempotent with the same identity guarantee. Completed tasks reject
-progress even with zero credit, and require explicit reopening before revision.
-Every candidate preserves stored position, priority, optional deadline, occurrence
-provenance, unrelated records, recurrence definitions/cursors, all counters and
-custom study hours. No API saves, publishes, invalidates plans, reads a clock or replans.
-Callers honor no-op identity to avoid unnecessary saves/invalidation.
-New lifecycle methods add no diagnostics;
-existing structural/edit diagnostics retain privacy protections.
+The model permits zero work, but creation, revision and reopening require positive
+whole minutes. Completed tasks reject progress even for `done/0`. Their records
+remain in `task list`; the dispatcher implements the completed-only view using
+the service's numeric-ID list. A generated task has the same lifecycle, but its
+original release and template provenance survive every replacement. These
+mutations neither generate occurrences nor modify Gabriel's templates.
 
-`taskProgressUpdated(Task,int)` reports the stable ID/name, actual credited
-minutes and resulting remaining estimate. It does not recompute percentages or
-claim an unchanged value was saved. Both progress forms use the existing
-candidate transaction: changed candidates save before publication; zero-credit
-no-ops preserve the snapshot and plan. Negative renderer credit is programmer
-misuse and raises `IllegalArgumentException`; task validation stays in TaskService.
-`taskCompleted(Task)` prints `Completed TNUMBER: NAME` and `taskReopened(Task)`
-prints `Reopened TNUMBER: NAME | Remaining: N min` for validated lifecycle
-results. The completion and reopening formatters are connected to `task complete`
-and `task reopen` respectively.
-`taskEdited(Task)` is wired for issue #39's concrete-deadline/name edits.
-`taskRemainingUpdated(Task)` formats issue #41's active remaining-time command.
-Weekly recurrence commands, completion and reopening are implemented at the console.
-Existing renderer compatibility changes only display `No deadline` in add/list
-output and undated remainder rows, use an undated capacity-shortfall reason, and
-sum exact session work in plan summaries. Existing schedule interval durations
-still show reserved wall-clock capacity, not exact credited work; slot-aligned
-output remains unchanged. `task list completed` provides the completed-only view.
+Only a changed, present deadline is checked against
+`now < deadline <= TimeRules.horizonEnd(now)`. Renaming an overdue task or retaining
+its old deadline therefore works. Empty edits and simultaneous clear/replacement
+requests fail atomically. Optional deadlines and priority mutation exist at the
+API/storage layer; console addition still requires `due/`, and the edit grammar
+does not accept `due/NONE` or priority changes. Do not advertise those APIs as
+commands. Unknown IDs and rejected fields leave candidates, counters and plans
+unchanged; assertions supplement rather than replace runtime validation.
 
-#### Completion and completed-task view
+#### Design considerations
 
-`Command.CompleteTask` and `ListCompletedTasks` add exact, case-sensitive grammar
-for `task complete TNUMBER` and `task list completed`. Parsing validates the ID
-shape and overflow; `TaskService.complete` retains domain validation and returns
-an immutable zero-work candidate. The dispatcher formats the existing
-`TextRenderer.taskCompleted` confirmation, saves a changed candidate, then
-publishes it. Repeated completion returns the same source and does not save or
-invalidate a plan. Failed saves preserve the snapshot and its saved plan.
-
-The completed view filters the service's numeric-ID list and shares row formatting
-with the original full list. No data or plan changes occur during listing.
-
-#### Reopening completed tasks
-
-`Command.ReopenTask(id, remainingMinutes)` transports
-`task reopen TNUMBER remaining/MINUTES`. The parser requires positive decimal
-32-bit integer tokens with no signs or leading zeroes, matches the full input
-and reports that command's usage for malformed fields or overflow. It does not
-inspect task state. `TaskService.reopen` already implements the domain behavior:
-only completed tasks accept an explicit positive estimate, because completion
-retains zero work rather than a previous estimate to restore.
-
-The dispatcher uses that existing service and `TextRenderer.taskReopened` without
-changing their signatures or the storage format. It prepares the confirmation,
-saves the candidate once, then publishes it and invalidates the current plan.
-Validation or save failure preserves the original snapshot, counters and saved
-and live plans. Reopening preserves the task's stored position, name, priority,
-optional deadline and occurrence provenance, as well as unrelated records,
-templates, cursors, settings and all counters, including exhausted counters.
-Overdue and undated completed records can be reopened without inventing a deadline.
-The next `plan` includes the restored work under the existing allocation rules;
-overdue work remains unallocated. The completed-only view excludes reopened tasks.
-
-#### Commands and parsing
-
-Issue #40 parser preparation recognizes `task progress TNUMBER done/MINUTES`
-and `task progress TNUMBER session/MINUTES percent/PERCENT`. It returns
-`RecordTaskWork` or `RecordTaskSession` transport values without reading state.
-The dispatcher uses the Task service to validate and calculate a candidate,
-then derives actual credited minutes from the old and new remaining estimates.
-It requests a Printing confirmation before saving or publishing the candidate.
-`TextRenderer.taskProgressUpdated` now supplies the confirmation, so changed
-candidates save before publication; zero-credit candidates avoid an unnecessary
-save or plan invalidation. Fixed-clock dispatcher tests cover actual credit,
-successful publication, no-ops, failed-save preservation and retry. UI-030 covers
-the existing parsed forms through the packaged application and saved restarts.
-
-Issue #41 parses `task remaining TNUMBER remaining/MINUTES` into
-`ReviseTaskRemaining` without reading state. The parser requires positive decimal
-tokens; `TaskService.reviseRemaining` checks the ID and requires a positive
-whole-minute estimate on an active task. It preserves the task's priority and
-optional deadline, replaces only the estimate at its stored position, preserves
-both counters, commitments and study hours, and
-returns the original snapshot for an unchanged estimate. The dispatcher prepares
-the candidate and its confirmation before saving. Changed candidates save
-before live publication and plan invalidation; unchanged candidates report the
-stored value without saving or clearing the plan. `TextRenderer.taskRemainingUpdated`
-formats the stable ID, name and new minutes without claiming that an unchanged
-value was saved again. A failed save preserves the live snapshot and plan.
-Parser, service, renderer and dispatcher JUnit tests cover syntax, values,
-successful publication, no-op behavior and rollback. The Task regression saves
-a revised candidate to an isolated file, reloads it and verifies higher planning
-demand. UI-019 checks exact console responses, plan invalidation, replanning and
-two restarts against a fixed overdue task.
-
-`CommandParser.parse` implements all command formats in the User Guide and
-returns the existing nested `Command` records. The parser has no clock, storage
-or application-state dependency. `schedule today` produces `Command.ScheduleToday`;
-the dispatcher resolves its date from the time captured for command execution.
-
-After stripping outer whitespace, the parser recognizes the command words and
-matches the entire input. Field patterns allow ordinary spaces and multiword
-Unicode names, while excluding slash from names so duplicate, reordered and
-unknown prefixes cannot be swallowed as name text. Embedded control characters
-are rejected. Quotes remain literal characters. Names are stripped at their ends
-without changing internal spaces.
-
-Dates and times use strict `uuuu-MM-dd`, `HHmm` and `uuuu-MM-dd HHmm` formatters
-with `Locale.ROOT`. Fixed-width ASCII tokens and an explicit year-zero rejection
-limit dates to years 0001–9999. Positive decimal integer tokens reject signs,
-leading zeroes and non-ASCII digits; overflow is translated to `ParseException`.
-Each parse failure includes the recognized command's exact usage, or
-`Type help to see available commands` for an unknown command. A direct blank
-parser input is rejected; the App loop ignores blank lines before parsing.
-
-Parsing does not create domain records or validate nonblank names, duration
-multiples, commitment alignment/end times, future deadlines, overlaps or ID
-existence. Those remain the responsibility of the existing domain constructors
-and services. No other member's implementation or shared public API is changed.
-The existing command records and `ParseException` satisfy the parsing contract.
-Application integration uses these existing parser and service boundaries.
+This is a present-day comparison of observable tradeoffs, not a claim about
+unrecorded historical deliberations. Mutating live tasks in place would allocate
+less, but require explicit rollback after saving failed. Immutable candidates
+make the save/publication boundary testable at the cost of list copies. Using a
+stored completion flag could represent another state independently of work, but
+would require reconciling inconsistent flag/estimate combinations. Here zero is
+the single completion authority. Rejecting excess credit exposes an inaccurate
+report instead of silently losing its meaning. The design intentionally stores
+neither an original-work baseline nor a timer/history, so it cannot report a
+whole-task completion percentage or reconstruct earlier estimates.
 
 ### Dated commitments and save-before-publication dispatch
 
@@ -1241,17 +1166,29 @@ establish those results.
 
 ### Task/parser validation and JUnit/documentation conventions
 
-Tests mirror production packages under `src/test/java` and use JUnit 5.
-See [test conventions](../src/test/AGENTS.md) for isolation and naming,
-and [the Java standard](../.agents/skills/seedu-java-coding-standard/SKILL.md)
-for Javadoc and quality requirements. `TaskServiceTest`, `TaskEditTest`,
-`TaskRecurrenceTest`, `InputRulesTest` and `CommandParserTest` cover exact
-progress, no-ops, deadlines, recurrence preservation and strict syntax.
+Run the owned tests with Java 25 from the repository root:
 
-Task diagnostics use `FINE` on `scheduleflow.task`, `scheduleflow.model.Task`
-and `scheduleflow.common.InputRules`, omitting names, dates and durations.
-Use the file-handler configuration in the console diagnostics section and
-select those logger namespaces. Services install no handlers.
+```shell
+./gradlew test --tests 'scheduleflow.task.TaskServiceTest' --tests 'scheduleflow.task.TaskEditTest' --tests 'scheduleflow.task.TaskRecurrenceTest' --tests 'scheduleflow.model.TaskTest' --tests 'scheduleflow.common.*' --tests 'scheduleflow.cli.CommandParserTest'
+```
+
+[`TaskServiceTest`](../src/test/java/scheduleflow/task/TaskServiceTest.java)
+checks 0/50/100% credit, floor rounding, large products, no-op identity,
+completion/reopening, and captured-time deadline boundaries. TaskRecurrenceTest
+checks generated-task metadata preservation; it does not replace Gabriel's
+generation tests. TaskEditTest and InputRulesTest cover transport/null rules and
+normalization. CommandParserTest covers all families' grammar and usage hints,
+not whether deferred commands execute. Tests use explicit times, temporary data,
+and restored logger/locale settings; see [test conventions](../src/test/AGENTS.md).
+Link documentation claims to those tests rather than adding tests for prose.
+
+Opt-in `FINE` diagnostics on `scheduleflow.task`, `scheduleflow.model.Task`,
+`scheduleflow.common.InputRules` and `scheduleflow.cli.CommandParser` omit raw
+names/command values. Use the existing [file-handler configuration](#build-packaging-and-console-verification);
+these classes install no handlers. Public validation works without `-ea`;
+assertions check internal invariants. Lifecycle methods do not all emit stage
+logs. [JUnit/documentation standards](../AGENTS.md) remain the authority for
+Javadoc, isolation and verification; builds alone are not manual acceptance.
 
 ### Commitment/dispatch transaction verification
 
@@ -1364,15 +1301,31 @@ the supported command surface.
 
 ## Appendix B: User Stories
 
-|Version| As a ... | I want to ... | So that I can ...|
-|--------|----------|---------------|------------------|
-|Current|new user|see command help|refer to the supported syntax when I need it|
-|Current|student|add and list tasks with deadlines and estimates|keep track of unfinished coursework|
-|Current|student|add and remove recurring commitments|reserve my weekly busy periods|
-|Current|student with project meetings and other fixed events|add one-time commitments|keep those periods unavailable for studying|
-|Current|student|generate a plan and view a date's schedule|find available time before my deadlines|
-|Current|student|see unallocated work|recognize when my available time is insufficient|
-|Current|returning user|restore saved tasks and commitments|continue without reentering my data|
+These are product stories, not a redistribution of implementation credit.
+**Candidate** means supported by the inspected source, newer than published
+v1.0; **Planned** means not a working console feature. Feature owners should
+review their rows against the final release tag before publication.
+
+| Status | As a... | I want to... | So that I can... |
+| --- | --- | --- | --- |
+| Candidate | new user | launch locally and request help | learn the accepted commands without leaving the terminal. |
+| Candidate | student | add and list coursework with deadlines and exact estimates | keep an identifiable record of unfinished work. |
+| Candidate | student with changed requirements | edit task details | correct my plan inputs without replacing task IDs. |
+| Candidate | student working across sessions | report completed minutes or a session percentage | keep the remaining estimate accurate. |
+| Candidate | student revising an estimate | replace remaining work without recording progress | account for newly discovered work. |
+| Candidate | student finishing an assignment | retain a completed task and view completed work | distinguish completion from permanent removal. |
+| Candidate | student correcting mistaken completion | reopen a task with an explicit estimate | return its remaining work to planning. |
+| Candidate | student | permanently delete unwanted tasks | remove work I no longer need to schedule. |
+| Candidate | student with weekly coursework | create a weekly task template | avoid re-entering each occurrence. |
+| Candidate | student with fixed classes or meetings | manage weekly, bounded and one-time commitments | prevent study sessions from overlapping busy time. |
+| Candidate | student whose class is cancelled | skip one commitment occurrence | release that date without deleting the series. |
+| Candidate | unexpectedly busy student | block one date through a one-time commitment | move study work into other available periods. |
+| Candidate | student with a regular routine | configure weekday hours and date overrides | plan within realistic study windows. |
+| Candidate | student needing rest | configure work limits and breaks | avoid excessive continuous study. |
+| Candidate | student balancing deadlines | generate a plan and view daily schedules | see when to work and which work does not fit. |
+| Candidate | returning student | restore records, settings and the exact saved plan | continue without re-entry or a changed schedule. |
+| Candidate | student encountering invalid input or a rejected save | receive an error without partial changes | correct and safely retry the request. |
+| Planned | student unavailable across multiple dates | submit a continuous or daily unavailable range | avoid entering each date separately once dispatch is implemented. |
 
 ## Appendix C: Non-Functional Requirements
 
@@ -1503,25 +1456,60 @@ Exit before discarding the disposable folders; keep your real data untouched.
 
 ### Tasks and input validation
 
-Choose `D` as tomorrow's local date in `YYYY-MM-DD`; replace every `D` below
-before entering commands. This keeps deadlines in the rolling horizon.
+Use Java 25 and a JAR built from the candidate source described in
+[Task design](#task-model-and-command-parsing), not v1.0. Launch
+`java -ea -jar scheduleflow.jar` from an empty disposable folder. Choose `D`
+as tomorrow's local date and `E` as the following day, both `YYYY-MM-DD` and
+within the next year. Replace `D`/`E` before entering commands; they are not
+special app tokens. Start with no other records, so the first task is T1.
 
-| Ordered command | Expected result |
-| --- | --- |
-| `task add n/Draft due/D 1800 d/90` | Adds T1 with 90 minutes. |
-| `task list` | Lists T1 and its stored deadline/estimate. |
-| `task edit T1 n/Final draft` | Renames T1, retaining its ID and estimate. |
-| `task remaining T1 remaining/60` | Reports 60 remaining minutes. |
-| `task progress T1 done/15` | Credits 15, leaving 45. |
-| `task progress T1 session/61 percent/25` | Credits 15, leaving 30. |
-| `task progress T1 done/31` | Error; remaining work stays 30. |
-| `task complete T1` | Retains T1 with zero remaining. |
-| `task list completed` | Lists T1 with zero minutes. |
-| `task reopen T1 remaining/45` | Retains T1 with 45 remaining; completed view excludes it. |
-| `task delete T1`, then `task list` | Deletes T1; no tasks remain. |
+**One continuous task lifecycle recipe**
 
-Use [task command examples](UserGuide.md#tasks) for further syntax/boundary
-variations. No timer runs and planning never subtracts completed work.
+```text
+task add n/Draft due/D 1800 d/90
+task list
+task edit T1 n/Final draft due/E 1800
+task remaining T1 remaining/60
+task progress T1 done/15
+task progress T1 session/61 percent/25
+task progress T1 done/31
+task complete T1
+task list completed
+task progress T1 done/0
+task reopen T1 remaining/45
+task list completed
+task delete T1
+task list
+task add n/Next due/D 1800 d/1
+```
+
+Expect T1 with 90 minutes; the edit retains T1 and 90, changing its name/deadline.
+The revision leaves 60, direct credit leaves 45, and the session credits 15,
+leaving 30. `done/31` must reject overreporting without changing 30. Completion
+prints `Completed T1: Final draft`; the completed list shows T1 at zero.
+Progress on that completed record must reject even zero credit. Reopening
+prints `Reopened T1: Final draft | Remaining: 45 min`; the completed view is now
+empty. Deletion leaves `No tasks found.` The next addition is T2, not reused T1,
+with a valid one-minute estimate. No timer subtracts work between commands.
+
+**Rejection and no-op checks**
+
+With active T2, try `task delete T02`, `task edit T2`,
+`task edit T2 due/2026-02-30 1800`, `task add n/Bad d/30`,
+`task progress T2 session/60 percent/101`, and
+`task progress T2 done/2147483648`. Each must show `Error:` and `Expected:` and
+return to the prompt. `task delete T999` is a value error with no usage line.
+`task reopen T2 remaining/45` must reject the active task. Check `task list`:
+T2 still has its original name, deadline and one minute.
+
+Run `plan`, record `schedule today`'s timestamp/rows, then enter
+`task progress T2 session/1 percent/1` and `task remaining T2 remaining/1`.
+The first credits zero and the second is unchanged; another schedule view must
+retain the same plan. A changed `remaining/2` must clear it. Repeating completion
+of an already-completed task similarly preserves an existing plan. See
+[storage testing](#saving-restoration-failure-and-recovery) for failed-save/restart
+recipes and [Task syntax](UserGuide.md#tasks) for more fields. Exit before
+discarding only this disposable folder. Live timing is not a fixed-clock test.
 
 ### Commitments and unavailable periods
 
