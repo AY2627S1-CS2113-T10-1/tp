@@ -425,8 +425,10 @@ and [manual console tests](#launch-help-exit-and-console-behavior).
 
 `MainTest` also checks corrupt saved-plan metadata and a directory at the saved-file
 path: both must exit with status 1 before prompting and preserve existing bytes.
-The directory-path assertion uses the existing target's real path so working-directory
-aliases such as macOS's `/var` and `/private/var` match the child JVM's resolved path.
+The directory-error assertion requires one complete error line and an absolute path
+that identifies the expected target using `Files.isSameFile`. File identity handles
+both Windows short/long names and macOS working-directory aliases without requiring
+the parent and child JVMs to spell the path identically.
 Separate child JVMs verify class-based logging configuration and explicitly set
 CLI/application logger levels remain effective without changing command output.
 The logging probes exist only on the test classpath, and assertions are enabled

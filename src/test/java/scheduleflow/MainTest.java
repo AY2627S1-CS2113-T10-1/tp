@@ -164,8 +164,15 @@ class MainTest {
         ProcessResult result = launch("exit\n", List.of(), List.of("-ea"));
 
         assertEquals(1, result.status());
-        // The child JVM resolves working-directory aliases, such as /var on macOS.
-        assertEquals("Error: Cannot load saved data: " + data.toRealPath() + "\n", result.output());
+        List<String> outputLines = result.output().lines().toList();
+        assertEquals(1, outputLines.size());
+        String errorPrefix = "Error: Cannot load saved data: ";
+        assertTrue(outputLines.getFirst().startsWith(errorPrefix));
+        Path reportedData = Path.of(outputLines.getFirst().substring(errorPrefix.length()));
+        assertEquals(errorPrefix + reportedData + "\n", result.output());
+        assertTrue(reportedData.isAbsolute());
+        // Child JVMs may retain Windows short names or resolve macOS working-directory aliases.
+        assertTrue(Files.isSameFile(data, reportedData), "Reported path must identify the rejected save target");
         assertEquals("", result.error());
         assertTrue(Files.isDirectory(data));
         assertArrayEquals(original, Files.readAllBytes(marker));
