@@ -1,0 +1,59 @@
+@startuml
+' Nickhil contribution I2: a pure session-progress candidate, not a storage transaction.
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName SansSerif
+skinparam defaultFontSize 15
+skinparam sequenceMessageAlign center
+skinparam ArrowColor #475569
+hide footbox
+
+participant "dispatcher: CommandDispatcher\nexternal: Darren" as dispatcher #F1F5F9
+participant "tasks: TaskService\nNickhil" as tasks
+participant "source: Snapshot\nexternal: Ernest" as source #F1F5F9
+
+note over dispatcher, tasks
+  Input is already parsed as Command.RecordTaskSession.
+  Example: T1 has 90 remaining; session 61 at 25% credits 15.
+  The source and all existing Task values remain unchanged.
+end note
+dispatcher -> tasks : recordSessionProgress(source, taskId, minutes, percent)
+activate tasks
+alt invalid session minutes or percentage
+    tasks --> dispatcher : throws ValidationException
+else valid session input
+    tasks -> tasks : done = (int) ((long) minutes * percent / 100)
+    tasks -> tasks : recordWork(source, taskId, done)
+    tasks -> tasks : findTask(source, taskId)
+    tasks -> source : tasks()
+    source --> tasks : immutable list
+    alt unknown / completed task or done outside [0, remaining]
+        tasks --> dispatcher : throws ValidationException
+    else valid active task and credited work
+        tasks -> tasks : replaceRemaining(source, task, remaining - done)
+        alt same remaining value (zero credited work)
+            tasks --> dispatcher : identical source Snapshot
+        else changed remaining value
+            create participant "replacement: Task\nNickhil" as replacement
+            tasks -> replacement : new Task(id, name, deadline, remaining - done,\npriority, occurrence)
+            tasks -> tasks : copy list; replace at original position
+            tasks -> source : withTasks(replacements, source.nextTaskId())
+            source --> tasks : candidate: Snapshot
+            tasks --> dispatcher : candidate: Snapshot
+        end
+    end
+end
+deactivate tasks
+
+ref over dispatcher
+  Darren's save-before-publication transaction:
+  prepare response; changed candidate -> Storage.save -> AppState.commit.
+  Identity no-op -> no save or plan invalidation.
+  Validation/save failure -> no candidate publication.
+end ref
+note over tasks, source
+  The aggregate returns a new Snapshot for changed work.
+  TaskService never saves, publishes, reads time or replans.
+  Rendering, file mechanics and later planning are external.
+end note
+@enduml
