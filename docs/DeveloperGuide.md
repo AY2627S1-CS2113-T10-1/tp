@@ -149,9 +149,43 @@ reading time, state or storage; `ParseException` carries the usage hint.
 
 ### Commitments and command execution
 
-`Commitment` defines occurrence membership and overlap. `CommitmentService`
-returns validated candidates; `CommandDispatcher` coordinates services,
-storage and rendering, saving changes before publishing live state.
+This component has two jobs. It models the student's fixed commitments, and it
+executes every parsed command as one transaction: validate, save, then publish.
+The class view shows Darren's three production types and the collaborators the
+dispatcher holds. Solid arrows are retained references; dashed arrows are use or
+creation. Other members' types are shaded and labelled with their owners.
+
+![Commitment and dispatch classes with their external collaborators](images/darren-commitment-dispatch-classes.svg)
+
+[PlantUML source](diagrams/darren-commitment-dispatch-classes.puml)
+
+| Type | Responsibility |
+| --- | --- |
+| [`Commitment`](../src/main/java/scheduleflow/model/Commitment.java) | Immutable record of one fixed commitment. Its compact constructor validates the name, half-hour start, positive 30-minute-multiple duration, same-day end, date range and skipped dates. `occursOn(date)` and `overlaps(other)` are the only calendar-membership and conflict rules used elsewhere. |
+| [`CommitmentService`](../src/main/java/scheduleflow/commitment/CommitmentService.java) | Stateless operations (`add`, `edit`, `skip`, `delete`, `list`) that take a `Snapshot` and return a new candidate `Snapshot` or an ordered view. It never saves, publishes or reads the clock. |
+| [`CommandDispatcher`](../src/main/java/scheduleflow/cli/CommandDispatcher.java) | Routes each nested `Command` record to one handler, captures the command time once, and owns the save-before-publication transaction for every mutating command, not only commitments. |
+
+A `Commitment` takes one of three shapes, all stored in the same record:
+
+| Shape | `startDate` / `endDate` | Occurs on |
+| --- | --- | --- |
+| Unbounded weekly series | both `null` | every `day` |
+| Bounded weekly series | ordered dates containing `day` | every `day` within the inclusive range |
+| One-time commitment | equal dates | that single date (its `day` is derived from it) |
+
+Weekly shapes may also hold `skippedDates`, which `occursOn` excludes. Two
+commitments overlap only when their times intersect, they share a weekday and
+at least one unskipped date falls in both. This lets separate semesters reuse
+a time slot while still rejecting real clashes.
+
+The dispatcher separates three steps that other components keep apart too.
+A service validates and returns a candidate, but nothing changes yet. `Storage.save`
+then makes the candidate durable, using Ernest's [atomic persistence](#atomic-persistence-and-restoring-frozen-plans).
+Only after that does `AppState.commit` publish it and clear the now-stale plan.
+The dispatcher reuses other members' services rather than duplicating their rules:
+task changes come from Nickhil's `TaskService`, recurring occurrences and plans
+from Gabriel's `RecurringTaskService` and `Planner`, and output text from Ka How's
+`TextRenderer`. Importing those types does not make them part of this component.
 
 ### Planning, schedule projection and recurrence
 
@@ -314,6 +348,20 @@ that state nor invokes the planner.
 
 These sections describe the important state transitions and failure
 boundaries. Proposed console operations are explicitly labelled.
+
+Each section traces one enhancement and links to the others instead of
+repeating them. A typical mutating command crosses all five:
+
+1. [Console interaction](#recoverable-console-interaction-and-deterministic-rendering)
+   reads and parses the line and later prints the response.
+2. [Task lifecycle](#exact-task-work-and-retained-task-lifecycle),
+   [commitment](#dated-commitments-and-save-before-publication-dispatch) or
+   [planning](#slot-allocation-under-study-hourspolicy-and-recurrence) services
+   validate it and return a candidate.
+3. The [dispatcher transaction](#command-dispatch-and-live-state-transactions)
+   saves the candidate before publishing it.
+4. [Atomic persistence](#atomic-persistence-and-restoring-frozen-plans) makes that
+   save all-or-nothing.
 
 ### Recoverable console interaction and deterministic rendering
 
@@ -643,6 +691,44 @@ Application integration uses these existing parser and service boundaries.
 
 ### Dated commitments and save-before-publication dispatch
 
+Students' fixed time changes in irregular ways: a lecture series ends mid-semester,
+one tutorial is cancelled, or a single afternoon becomes unavailable. This
+enhancement lets one `Commitment` record represent weekly, date-bounded and
+one-time time, checks conflicts against actual calendar dates, and guarantees
+that a rejected or unsaved change never reaches the live state.
+
+#### Walkthrough: editing a commitment
+
+Suppose C1 is `Lecture`, Monday 10:00–11:00 from 2026-11-02 until 2026-11-30, and the
+student enters `commitment edit C1 start/1030`.
+
+![Editing a commitment: validate, save, then publish](images/darren-commitment-edit.svg)
+
+[PlantUML source](diagrams/darren-commitment-edit.puml)
+
+1. Nickhil's parser produces `Command.EditCommitment(1, null, null, 10:30, null, null, null)`.
+   `null` means "keep the stored value".
+2. `CommandDispatcher.execute` captures `LocalDateTime.now(clock)` once, then
+   `editCommitment` passes the live snapshot to `CommitmentService.edit`.
+3. The service rejects a nonpositive ID or an edit with no fields. It then finds C1,
+   fills each omitted field from the original, and constructs the replacement
+   `Commitment`. The constructor checks alignment, duration and dates.
+4. `rejectOverlaps` compares the replacement with every other commitment. C1 itself
+   is excluded, so keeping or shifting its own time is never a self-conflict.
+5. The service returns a new `Snapshot` with C1 replaced at its original list position.
+   Tasks, study hours and both ID counters are unchanged.
+6. The dispatcher calls `saveAndCommit`. `Storage.save(candidate)` runs first;
+   only if it returns does `AppState.commit(candidate)` publish the change and clear
+   the current plan. `TextRenderer.commitmentEdited` then formats
+   `Edited C1: Lecture | Monday 10:30 - 11:30 (60 min) | 2026-11-02 to 2026-11-30`.
+
+If step 3 or 4 throws `ValidationException`, nothing was saved and `App` prints
+the message. If `save` throws `StorageException`, the dispatcher rethrows it
+before `commit`, so the live snapshot, current plan and saved file stay as they
+were and the same command can be retried. Add, skip and delete follow the same
+pattern; they differ only in the service call and which record the confirmation
+names.
+
 #### Recurring commitment addition
 
 `CommitmentService.add` creates an immutable candidate snapshot. It reuses
@@ -799,25 +885,92 @@ Hours overrides continue to control the enclosing study window.
 
 #### Command dispatch and live-state transactions
 
-`CommandDispatcher.execute` switches on the nested `Command` types and captures
-`LocalDateTime.now(clock)` exactly once, including for `schedule today`.
-Mutation services validate and return candidates. The dispatcher resolves the
-added or removed record, calls `Storage.save`, then calls `AppState.commit` and
-formats success. A failed save propagates without publishing the candidate,
-consuming an ID or clearing the current plan. Existing command and service
-interfaces are preserved; issue #68 adds `loadPlan` and `savePlan` to Storage.
+`CommandDispatcher.execute` is an exhaustive `switch` over the sealed `Command`
+type, so adding a record without a route is a compile error. It captures
+`LocalDateTime.now(clock)` exactly once per command and passes that value to every
+time-dependent step, including `schedule today`, so one command never sees two
+different "now" values.
 
-Help, lists, schedule and exit preserve state and make no save call. Planning
-saves and replaces the frozen plan; partial and empty results remain usable.
-Schedule requests project that frozen plan; absence takes precedence over date
-validation. Exceptions from domain services remain their owners' validation.
+Commands fall into four groups:
+
+| Group | Examples | Saves? | Effect on the current plan |
+| --- | --- | --- | --- |
+| Read-only | `help`, lists, `hours DATE`, `policy show`, `schedule`, `exit` | No | Kept |
+| Source mutation | task, commitment, hours, policy and recurring-template changes | `Storage.save(candidate)` | Cleared after a successful save |
+| Unchanged mutation | zero-credit progress, an unchanged task edit or policy | No | Kept |
+| Planning | `plan` | `Storage.savePlan(plan)` once | Replaced |
+
+Every source mutation goes through the private `saveAndCommit(candidate, state)`.
+It calls `Storage.save` and, only on success, `AppState.commit`. Assertions check
+that the state is untouched before saving and that the plan is empty afterwards.
+Handlers that may return the original snapshot unchanged compare it with the
+candidate by reference and skip the save, so a no-op neither writes the file nor
+discards a valid plan. Commitment edits are not treated as no-ops: an edit with
+identical values still saves and clears the plan, consistent with other
+successful edits.
+
+`generatePlan` is a single transaction across Gabriel's and Ernest's components:
+
+1. `RecurringTaskService.materialize(source, now)` returns the same snapshot, or a
+   candidate with newly released weekly occurrences and advanced cursors.
+2. `Planner.generate(candidate, now)` allocates sessions. The dispatcher rejects a
+   plan whose `source()` differs from the candidate.
+3. `TextRenderer.plan(plan)` prepares the output before anything is saved.
+4. `Storage.savePlan(plan)` writes the source and frozen result together.
+5. Only then is the live state updated: `commit(candidate)` if materialization
+   changed the source, followed by `replacePlan(plan)`.
+
+There is deliberately no separate snapshot save followed by a plan save. If
+step 4 fails, the previous snapshot, plan and file all remain current.
+
+`showSchedule` checks for a current plan before projecting a date, so "no current
+plan" takes precedence over date-range errors. Domain exceptions remain their
+owners' validation; the dispatcher neither catches nor rewords them.
+
+#### Design considerations
+
+**Aspect: when to publish a change**
+
+* **Alternative 1 (current): save, then publish.** Services build immutable
+  candidates; the dispatcher saves before calling `AppState.commit`.
+  * Pros: a failed save leaves memory, disk and plan consistent, so a retry
+    reuses the same ID. Services stay free of I/O and are easy to test.
+  * Cons: each mutation builds a new `Snapshot`, and every handler must call
+    `saveAndCommit` rather than mutating state directly.
+* **Alternative 2: mutate live state, then save (rolling back on failure).**
+  * Pros: less copying.
+  * Cons: a failed save would need a hand-written undo for every operation. A
+    missed rollback would show the student data that is not on disk and
+    consume an ID that the file never recorded.
+
+**Aspect: representing one-time and dated commitments**
+
+* **Alternative 1 (current): one record, with equal dates meaning one-time.**
+  * Pros: no new type, command or storage version. The planner and schedule use
+    the same `occursOn` and `overlaps` for every shape.
+  * Cons: a weekly series entered with the same `from/` and `until/` date is
+    shown as one-time. That is equivalent, because it has exactly one occurrence.
+* **Alternative 2: separate weekly and one-time classes, or a kind flag.**
+  * Cons: every consumer would need type checks, the storage format would need
+    another field, and overlap logic would need pairwise variants.
+
+**Aspect: where conflicts are checked**
+
+Overlaps are checked in `CommitmentService` against all other commitments,
+including outside study hours, rather than in the planner. Planning therefore
+never has to choose between two clashing fixed commitments. A task session may
+still be overlapped by a new commitment; the next `plan` simply allocates around
+it.
 
 #### Multi-date unavailable periods: implementation handoff (planned)
 
 **Proposed console integration:** `AddContinuousBlock` and `AddDailyBlocks`
 have parsed transports, service implementations and a batch formatter, but
 their dispatcher routes throw `UnsupportedOperationException`. They are
-not supported console commands and are omitted from help.
+not supported console commands and are omitted from help. `App` does not catch
+that exception, so entering either command currently ends the session with a
+stack trace and exit status 1; earlier saved changes are kept. The User Guide
+warns users not to enter them.
 
 The proposal expands a continuous interval (exclusive end), or a daily
 window across inclusive dates, into ordinary one-time commitments. The
@@ -1158,11 +1311,24 @@ select those logger namespaces. Services install no handlers.
 
 ### Commitment/dispatch transaction verification
 
-Fixed-clock `CommandDispatcherTest` and `CommitmentServiceTest` cover
-candidate preservation, overlap/adjacency, date bounds, skips, counter
-exhaustion, failed-save retries and saved-before-live ordering. Duration
-integration tests save/reload 90-minute tasks and commitments and check
-that planning preserves estimates.
+Three JUnit classes cover this component, all with a fixed `Clock` and in-memory
+or temporary storage, so no test reads the real time or the developer's data:
+
+| Test class | Tests | What it establishes |
+| --- | --- | --- |
+| [`CommitmentTest`](../src/test/java/scheduleflow/model/CommitmentTest.java) | 13 | Record validation boundaries, `occursOn`/`recursOn`, adjacency versus overlap, shared-occurrence checks for bounded and skipped series. |
+| [`CommitmentServiceTest`](../src/test/java/scheduleflow/commitment/CommitmentServiceTest.java) | 52 | Each operation returns a candidate and leaves its source unchanged; conflict messages and ordering; edits keep position, ID and study hours; skip/one-time rules; counter exhaustion; unavailable-range expansion. |
+| [`CommandDispatcherTest`](../src/test/java/scheduleflow/cli/CommandDispatcherTest.java) | 42 | Every route and a single clock read per command; save-before-publication for each mutation; failed saves preserving state, plan, counters and the retry ID; no-op and read-only commands making no save; the one-`savePlan` planning transaction. |
+
+The dispatcher tests use an in-memory `FakeStorage` that records attempts and can
+fail on demand. For example, `execute_eachFailedSave_preservesStatePlanCountersAndRetryId`
+makes every mutating command fail once. It asserts that the live snapshot, plan
+and ID counters are unchanged, then retries and checks that the identical
+candidate is saved. `execute_planRejectedAfterMaterialization_preservesSourcePlanAndDisk`
+covers a plan rejected after recurrence materialization. Packaged console
+scenarios UI-014 (partial edits, rejection, plan invalidation and restart) and
+UI-017 (occurrence skips and restart) exercise the same rules through the JAR.
+The proposed range routes are deliberately not covered as passing behaviour.
 
 #### Commitment defensive checks and diagnostics
 
@@ -1335,6 +1501,21 @@ The [User Guide command summary](UserGuide.md#command-summary) gives the full
 syntax and the [UI fixtures](../test/ui-scenarios.json) supply exact outputs
 for additional reproducible cases. Unfinished range commands are excluded.
 
+Every supported console command has one primary group below. Saving is
+automatic, so persistence is tested by restarting after ordinary commands
+rather than through a save command.
+
+| Commands | Group |
+| --- | --- |
+| `help`, `exit`, blank input, end of input, launch arguments | [Launch, help, exit](#launch-help-exit-and-console-behavior) |
+| `task add`, `task list`, `task list completed`, `task edit`, `task remaining`, `task progress`, `task complete`, `task reopen`, `task delete` | [Tasks](#tasks-and-input-validation) |
+| `commitment add` (weekly, bounded and `on/` one-time), `commitment list`, `commitment edit`, `commitment skip`, `commitment delete` | [Commitments](#commitments-and-unavailable-periods) |
+| `plan`, `schedule today`, `schedule DATE`, `hours` set/show/reset, `policy` set/show/reset, `task recur add/list/delete` | [Planning](#planning-schedules-hours-policy-and-recurrence) |
+| Restart, saved IDs/estimates/settings/templates/plan, missing or invalid data, failed saves | [Saving and recovery](#saving-restoration-failure-and-recovery) |
+
+The proposed `unavailable continuous` and `unavailable daily` commands are
+excluded until their dispatch is implemented.
+
 ### Launch, help, exit and console behavior
 
 Use Java 25 and a disposable folder containing the candidate JAR. Launch from
@@ -1399,23 +1580,56 @@ variations. No timer runs and planning never subtracts completed work.
 
 ### Commitments and unavailable periods
 
-Run in a separate empty folder. The fixed dates test occurrence membership,
-not live-clock allocation.
+Run each part in a separate empty folder. Parts 1 and 2 use fixed dates because
+they test calendar membership, not live-clock allocation; commitments do not
+need future dates. Part 3 uses the live date.
+
+**Part 1: lifecycle and conflicts**
 
 | Ordered command | Expected result |
 | --- | --- |
-| `commitment add n/Lecture day/MON start/1000 d/60 from/2026-11-02 until/2026-11-30` | Adds bounded weekly C1. |
-| `commitment edit C1 start/1030` | Retains C1, now 10:30–11:30. |
-| `commitment add n/Clash day/MON start/1100 d/30` | Overlap error; C1 unchanged and no ID consumed. |
-| `commitment skip C1 on/2026-11-02` | Skips that Monday only. |
-| `commitment add n/Unavailable on/2026-11-02 start/1030 d/60` | Adds one-time C2 in the released interval. |
-| `commitment list` | Weekly C1 shows its bounds/skip; separate dated section shows C2. |
-| `commitment delete C2`, then `commitment delete C1` | Deletes both; listing is empty. |
+| `commitment add n/Lecture day/MON start/1000 d/60 from/2026-11-02 until/2026-11-30` | `Added C1: Lecture \| Monday 10:00 - 11:00 (60 min) \| 2026-11-02 to 2026-11-30` |
+| `commitment edit C1 start/1030` | `Edited C1: Lecture \| Monday 10:30 - 11:30 (60 min) \| 2026-11-02 to 2026-11-30`; same ID. |
+| `commitment add n/Clash day/MON start/1100 d/30` | `Error: Commitment overlaps C1: Lecture`; no ID consumed. |
+| `commitment skip C1 on/2026-11-02` | `Skipped C1 on 2026-11-02: Lecture` |
+| `commitment add n/Unavailable on/2026-11-02 start/1030 d/60` | `Added C2: Unavailable \| One-time on 2026-11-02 (Monday) 10:30 - 11:30 (60 min)`. It fits because that Monday's lecture is skipped. |
+| `commitment list` | A weekly section with `C1. 10:30 - 11:30 \| Lecture \| 2026-11-02 to 2026-11-30 \| skipped: 2026-11-02`, then a one-time section with C2. |
+| `commitment delete C2`, then `commitment delete C1` | `Deleted commitment C2: Unavailable`, then `Deleted commitment C1: Lecture`. |
+| `commitment list` | `No commitments found.` |
 
-To inspect BUSY projection, choose a date in a freshly generated plan and
-repeat the [single-date blocking path](UserGuide.md#marking-a-study-period-unavailable).
-After adding/deleting a block, schedule requests must report no current plan
-until `plan` runs again. Do not enter the proposed multi-date commands.
+**Part 2: validation and restart**
+
+| Ordered command | Expected result |
+| --- | --- |
+| `commitment add n/Tutorial day/WED start/0915 d/60` | `Error: Commitment start must be on a half-hour boundary.` |
+| `commitment add n/Tutorial day/WED start/0900 d/45` | `Error: Duration must be a positive multiple of 30 minutes.` |
+| `commitment add n/Tutorial day/WED start/0900 d/60` | Adds C1 (the rejections consumed no ID). |
+| `commitment add n/Lab day/WED start/1000 d/60` | Adds C2; adjacent intervals do not overlap. |
+| `commitment edit C1` | `Error: Provide at least one commitment field to edit.` |
+| `commitment edit C9 start/1200` | `Error: Unknown commitment ID: C9` |
+| `commitment add n/Exam on/2026-11-04 start/1400 d/120` | Adds one-time C3 on Wednesday 2026-11-04. |
+| `commitment skip C3 on/2026-11-04` | `Error: C3 is a one-time commitment; use commitment delete instead.` |
+| `commitment edit C3 day/THU` | `Error: C3 is a one-time commitment; use on/YYYY-MM-DD to change its date.` |
+| `commitment skip C1 on/2026-11-05` | `Error: C1 has no occurrence on 2026-11-05.` (a Thursday) |
+| `commitment add n/Bad day/MON start/1000 d/60 from/2026-11-03 until/2026-11-08` | `Error: Commitment date range must contain its weekday.` |
+| `commitment add n/Bad day/MON start/1000 d/60 from/2026-11-09 until/2026-11-02` | `Error: Commitment start date must not be after its end date.` |
+| `exit`, relaunch in the same folder, then `commitment list` | C1, C2 and C3 are listed unchanged. |
+
+**Part 3: unavailable period and plan invalidation**
+
+Replace `D` with tomorrow's date and `E` with the day after, both as `YYYY-MM-DD`.
+
+| Ordered command | Expected result |
+| --- | --- |
+| `task add n/Essay due/E 2200 d/60`, then `plan` | Adds T1 and generates a plan. |
+| `commitment add n/Unavailable on/D start/0800 d/840` | Adds one-time C1 covering the default 08:00–22:00 window. |
+| `schedule D` | `No current plan. Run plan to generate one.` The addition cleared the plan. |
+| `plan`, then `schedule D` | The whole day shows `08:00 - 22:00 \| [BUSY] C1: Unavailable`, with no T1 session. T1 is placed in another free slot (today's remaining hours or E, depending on launch time). |
+| `commitment delete C1`, then `schedule D` | No current plan again until `plan` runs. |
+
+Do not enter the proposed multi-date commands. For a failed-save case, use the
+[storage tests](#saving-restoration-failure-and-recovery); the outcome is the same
+for every mutating command.
 
 ### Planning, schedules, hours, policy and recurrence
 
