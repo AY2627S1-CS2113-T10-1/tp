@@ -106,10 +106,8 @@ public final class CommandDispatcher {
         LOGGER.log(Level.FINE, "Command time captured");
         String output = switch (command) {
             // TODO(ernestgoh-god): implement both range routes with one save before publication and output.
-            case Command.AddContinuousBlock ignored -> throw new UnsupportedOperationException(
-                    "Continuous unavailable dispatch is not implemented yet.");
-            case Command.AddDailyBlocks ignored -> throw new UnsupportedOperationException(
-                    "Daily unavailable dispatch is not implemented yet.");
+            case Command.AddContinuousBlock ignored -> throw unfinishedRangeRoute("continuous");
+            case Command.AddDailyBlocks ignored -> throw unfinishedRangeRoute("daily");
             case Command.Help ignored -> renderer.help();
             case Command.SetHours hours -> changeHours(hours.target(), state.snapshot().studyHours()
                     .withWindow(hours.target(), new StudyWindow(hours.start(), hours.end())), state);
@@ -147,6 +145,19 @@ public final class CommandDispatcher {
         CommandResponse response = new CommandResponse(output, command instanceof Command.Exit);
         LOGGER.log(Level.FINE, "Command execution completed");
         return response;
+    }
+
+    /**
+     * Rejects an unfinished multi-date route as an ordinary user error so the session keeps running.
+     * Nothing is validated, saved or published, and the current plan is preserved.
+     *
+     * @param mode the {@code unavailable} mode the user entered
+     * @return rejection naming the single-date alternative
+     */
+    private static ValidationException unfinishedRangeRoute(String mode) {
+        LOGGER.log(Level.FINE, "Rejected unfinished unavailable-range route");
+        return new ValidationException("unavailable " + mode + " is not available yet. Add each date with "
+                + "commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES instead.");
     }
 
     /** Saves hours before clearing a plan, preserving the live settings and plan if saving fails. */

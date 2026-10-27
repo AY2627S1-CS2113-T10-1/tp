@@ -219,8 +219,10 @@ into transport records with deterministic JUnit coverage. The commitment service
 operations are implemented with JUnit coverage. The batch renderer is tested
 for exact counts, new ID/date rows, leap day, Unicode, midnight, framing and
 invalid batches.
-The dispatcher skeletons still throw explicitly, so no range case can run yet
-and none is a feature pass. New
+The dispatcher routes are not implemented: they reject both modes with an
+ordinary `Error: unavailable MODE is not available yet...` message, leaving the
+session, saved data and plan unchanged (`CommandDispatcherTest` covers this).
+No range case can run yet and that rejection is not a feature pass. New
 command-record tests cover only their implemented transport/reference contracts.
 
 | ID | Proposed acceptance coverage | Status |
