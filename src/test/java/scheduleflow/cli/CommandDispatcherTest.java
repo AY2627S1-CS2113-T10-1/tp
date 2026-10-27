@@ -709,6 +709,29 @@ class CommandDispatcherTest {
     }
 
     @Test
+    void execute_unfinishedRangeRoutes_rejectAsUserErrorsWithoutSavingOrInvalidatingPlan() {
+        Snapshot original = populatedSnapshot();
+        AppState state = new AppState(original);
+        Plan plan = new EarliestDeadlinePlanner().generate(original, NOW);
+        state.replacePlan(plan);
+        FakeStorage storage = new FakeStorage(original);
+        CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
+        Map<Command, String> routes = Map.of(
+                new Command.AddContinuousBlock("Trip", NOW.plusDays(1), NOW.plusDays(2)), "continuous",
+                new Command.AddDailyBlocks("Appointment", NOW.toLocalDate().plusDays(1),
+                        NOW.toLocalDate().plusDays(2), LocalTime.of(15, 0), LocalTime.of(17, 0)), "daily");
+        for (Map.Entry<Command, String> route : routes.entrySet()) {
+            ValidationException exception = assertThrows(ValidationException.class,
+                    () -> dispatcher.execute(route.getKey(), state));
+            assertEquals("unavailable " + route.getValue() + " is not available yet. Add each date with "
+                    + "commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES instead.", exception.getMessage());
+            assertSame(original, state.snapshot());
+            assertSame(plan, state.currentPlan().orElseThrow());
+        }
+        assertEquals(0, storage.saveCalls);
+    }
+
+    @Test
     void execute_nonmutatingCommands_preserveSnapshotPlanAndDisk() throws Exception {
         Snapshot snapshot = populatedSnapshot();
         AppState state = new AppState(snapshot);
