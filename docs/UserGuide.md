@@ -62,38 +62,47 @@ Study hours default to **08:00–22:00 every day**, including weekends. You can 
 
 ## Quick start
 
-1. Install **Java 25**. Check your version in a terminal:
+1. Install **Java 25** and check it in a terminal:
 
    ```shell
    java -version
    ```
 
-2. Obtain `scheduleflow.jar` from the project's release distribution and place it in a dedicated folder.
+2. Place `scheduleflow.jar` in a dedicated folder. This guide targets the
+   upcoming v2.0 development build; use its matching candidate JAR for these
+   commands. The older published v1.0 JAR has fewer features. A developer can
+   build the candidate using the [Developer Guide](DeveloperGuide.md#build-packaging-and-console-verification).
 
-3. Open a terminal in that folder and launch the application:
+3. Open a terminal **in that folder** and launch:
 
    ```shell
    java -ea -jar scheduleflow.jar
    ```
 
-   `-ea` enables the program's internal assertions. The application takes no
-   additional command line arguments. Generated distribution launchers enable
-   assertions automatically.
+   `-ea` enables internal assertions; distribution launchers enable them
+   automatically. Supply no additional application arguments. The folder you
+   launch from determines which [saved data](#saving-and-restoring-data) is used.
+   An absent file starts an empty session at `scheduleflow>`.
 
-4. At the `scheduleflow>` prompt, type `help` and press Enter. Do not type the prompt itself.
-
-5. Add a task and a recurring commitment, generate a plan, then view today's schedule:
+4. Type `help` and press Enter. Do not type the prompt itself. Then try:
 
    ```text
-   task add n/CS2113 draft due/2026-10-20 1800 d/180
+   task add n/CS2113 draft due/2026-11-02 1800 d/45
    commitment add n/CS2113 lecture day/MON start/1000 d/120
    plan
    schedule today
    ```
 
-   Replace the example deadline with a future date within the [allowed date range](#planning-hours-and-date-range) when necessary.
+   Replace the deadline with a future date within the
+   [allowed range](#planning-hours-and-date-range) before entering it. Allocation
+   depends on the current time and available study hours; partial plans report
+   work that did not fit.
 
-6. Enter `exit` when finished. Successful task, commitment and study-hours changes are already saved automatically.
+5. Enter `exit`. Successful changes and the generated plan are already saved.
+   Relaunch from the same folder and use `task list`, `commitment list` and
+   `schedule today` to view them. After a date change, use `schedule YYYY-MM-DD`
+   for the date you originally viewed. Viewing a saved schedule does not move
+   its sessions forward.
 
 ## Command format
 
@@ -160,39 +169,39 @@ available through `task list completed`; priority commands remain unavailable.
 
 ### Recording duration (tasks and commitments)
 
-Enter duration when adding a task or commitment using `d/MINUTES`; there is no
-separate duration command or timer. For example, `d/90` records 90 minutes.
-Tasks accept positive whole minutes, including `d/1` and `d/45`. Commitments
-still require positive multiples of 30, so commitment `d/45` is rejected.
-Both additions reject `d/0`.
+Use `d/MINUTES` when adding a task or commitment; there is no separate duration
+command or running timer. Tasks accept positive whole minutes, such as `d/1`
+or `d/45`. Commitments require positive multiples of 30, so commitment `d/45`
+is rejected. Both additions reject `d/0`.
 
-For a task, duration is the estimated remaining work, which may be split into
-several sessions. For a commitment, it is the length of each weekly occurrence
-from its start time, and that occurrence must not cross midnight. Planning
-does not reduce either stored value. Saving and loading preserve both values.
+For a task, duration is the **estimated remaining work**, which may be split
+across sessions. For a commitment, it is the length of each occurrence from its
+start time; the interval must not cross midnight. Both values survive restart.
 
-A task's duration is the exact remaining-work estimate; zero in restored data
-means retained completion. Generating a plan or letting time pass does not
-reduce that estimate. Slot capacity rounds up: 45 minutes needs 60 minutes of
-schedule space, but remains 45 minutes of actual work. If only 30 minutes fits,
-the unallocated work is 15 minutes (requiring another 30-minute slot).
+Planning reserves half-hour slots without changing those stored values. A
+45-minute task needs 60 minutes of schedule space but remains 45 minutes of
+work. If only 30 minutes fits, 15 minutes remains unallocated and needs another
+30-minute slot. Viewing a plan or letting time pass does not record progress.
 
-Use [progress](#recording-progress) to subtract completed work from an estimate.
-A percentage describes the reported session, not the whole task.
+Use [progress](#recording-progress) to subtract work actually completed. Its
+percentage form describes the reported session, not the whole task. Completion
+retains a task with zero remaining minutes; use the
+[reopening command](#reopening-a-completed-task) to give it a new estimate.
 
-To revise a task's remaining-work estimate without recording completed work, use:
+To correct an active task's estimate without recording completed work:
 
 ```text
 scheduleflow> task remaining T1 remaining/90
 Remaining time for T1: CS2113 draft | 90 min
 ```
 
-Use an existing task ID and a positive whole-minute estimate; `remaining/45`
-is accepted. A changed estimate saves automatically and clears the current
-plan; run `plan` again to reflect it. Repeating the same value
-reports the stored estimate without saving or clearing the plan. Unknown IDs,
-invalid values, attempts to revise a completed task and failed saves leave
-saved data and the current plan unchanged.
+Use an existing active task ID and a positive whole-minute estimate;
+`remaining/45` is accepted. A changed estimate saves automatically and clears
+the plan; run `plan` again. Repeating the same value reports the stored estimate
+without another save or plan invalidation. Unknown IDs, invalid values,
+attempts to revise a completed task and failed saves preserve the prior data
+and plan. For example, if a save fails while changing 45 to 90 minutes, the
+stored estimate remains 45 until a retry succeeds.
 
 ### Recording progress
 
@@ -265,24 +274,27 @@ task names, deadlines or durations. Normal launches keep the same console output
 task list
 ```
 
-Lists all stored tasks, including overdue tasks, in ascending numeric ID order. Each row shows the ID, name, duration, and deadline.
+Lists **all stored tasks**, including overdue and completed records, in numeric
+ID order. The existing heading `Actionable Tasks` does not filter out completed
+records. For example, these stored tasks produce:
 
 ```text
 scheduleflow> task list
 === Actionable Tasks ===
-ID | Name                | Duration | Deadline
-T1 | CS2113 draft        | 180 min  | 2026-10-20 18:00
-T2 | EE2026 preparation  | 90 min   | 2026-10-21 12:00
+ID | Name | Duration | Deadline
+T1 | CS2113 draft | 45 min | 2026-11-02 18:00
+T2 | Reading | 0 min | 2026-11-02 18:00
 Total: 2 task(s).
 ```
 
-An empty list displays:
+An empty store displays `No tasks found.` Use
+[`task list completed`](#completing-and-viewing-completed-tasks) for only the
+retained completed records. Template R IDs appear in
+[`task recur list`](#weekly-recurring-tasks); generated occurrences appear here
+with ordinary T IDs.
 
-```text
-No tasks found.
-```
-
-The listed duration is the stored work estimate, not the unallocated remainder of the latest plan.
+Duration is the saved remaining-work estimate, not the unallocated remainder
+of the latest plan. Listing neither credits work nor changes the saved plan.
 
 ### Editing a task
 
@@ -944,7 +956,10 @@ When trying this at another time, use a future deadline within the allowed range
 
 ### Planning partway through the day
 
-If you generate a plan at **10:07** on 5 October 2026 with one 30-minute task named `Draft`, a future deadline within the horizon, and no commitments:
+This is an illustrative fixed-time example, not a clock-setting command. Suppose
+you generate a plan at **10:07 on 5 October 2026**, using default 08:00–22:00
+hours, no policy or commitments, and one 30-minute task `Draft` due at 11:00
+that day. The next usable half-hour boundary is 10:30:
 
 ```text
 === Schedule for Monday (2026-10-05) ===
@@ -955,22 +970,25 @@ Generated at: 2026-10-05 10:07
 UNPLANNED periods were before the planning cutoff.
 ```
 
-When any work is unallocated, every schedule view also includes a footer for the **whole plan**, even if the affected task is due on another date. For the partial-plan example above, that footer is:
+If `Draft` instead needs 90 minutes with that same deadline, only 30 minutes
+fits. The schedule also includes this footer for the **whole plan**, even when
+viewing another date:
 
 ```text
 Unallocated work for the whole plan:
 T1: Draft | Unallocated: 60 min | Reason: insufficient time before deadline
 ```
 
-If no plan exists, the app displays:
+**The saved plan stays frozen.** Restarting and entering `schedule 2026-10-05`
+shows the same generation time and rows; viewing it later does not move its
+sessions or regenerate recurring tasks. Use `plan` when you want a fresh
+allocation based on the current time.
 
-```text
-No current plan. Run plan to generate one.
-```
-
-A selected date must fall within the current plan's date range. An out-of-range request reports the earliest and latest allowed dates; it does not produce an empty schedule. Run `plan` again when you need a fresh range.
-
-**Plans remain fixed until regenerated.** Viewing a schedule later, including after a restart, does not move its sessions or update its generation time. Successful changes to tasks, recurring-task templates, commitments, study hours or policy settings clear the saved plan; failed commands preserve it.
+Choose a date within the saved plan's range. An out-of-range request reports
+the allowed dates. If no plan exists, the response is
+`No current plan. Run plan to generate one.` Successful source changes clear
+the saved plan; rejected commands and recognized no-ops preserve it. See
+[why schedules disappear](#why-did-my-schedule-disappear) for details.
 
 ## Help and exit
 
@@ -1000,39 +1018,49 @@ End of input (EOF) also prints `Goodbye for now!` and exits normally without ano
 
 ## Saving and restoring data
 
-The application loads saved data and any saved schedule before its first prompt.
-It automatically saves each successful task, commitment or study-hours change,
-including changed remaining-work estimates, and each generated plan.
+ScheduleFlow loads saved records and any frozen plan **before its first prompt**.
+It saves successful changes automatically; there is no `save` or `load` command.
+Tasks and their exact remaining work/completion, commitments and skipped dates,
+study hours, policy, recurring templates, occurrence history and independent
+T/C/R ID counters survive restart. Deleting records does not reset those counters.
 
-Tasks, commitments, study hours and the next ID counters are saved automatically after each successful change and restored at startup. No manual save or load command is needed.
+The data is a UTF-8 **text file** at `data/scheduleflow.txt`, relative to the
+folder from which you launch the app. Use the same launch folder to reopen the
+same data. A definitely absent file starts an empty session without creating a
+folder; the first successful change or `plan` creates the saved data. Reading
+lists or simply exiting an empty session does not create it.
 
-New saves use version 2, 3 or 4 depending on commitment date bounds and skipped
-occurrences, or version 5 when templates, occurrence provenance or an allocated
-template ID counter require it. Ordinary tasks use `TASK2` rows, including in
-version 5; generated tasks use `OCCURRENCE` rows with exact remaining minutes,
-optional deadlines, priority and original template/deadline provenance. Templates,
-generation cursors, custom study hours and all ID counters are preserved.
-Configured study policies use version 7 snapshots. Generating a plan writes
-version 6 without a policy or version 8 with one, containing the complete source
-data and the exact schedule, including credited work, generation time,
-unallocated work and breaks. Versions 1 through 6 remain readable; loading does not rewrite them.
-Snapshot-only saves use at least version 2. Older executables cannot read version 5, and older
-applications without `TASK2` support cannot read those extended rows. See the
-[Developer Guide](DeveloperGuide.md#basic-saving-and-loading) for the precise
-layout. Saved schedules are restored exactly, without regenerating recurring
-tasks or moving sessions during startup.
+Generating a plan saves its complete source together with the exact generation
+time, task sessions, unallocated work and reserved breaks. Restart restores that
+result without reallocating work or advancing recurrence. A successful change
+to tasks, templates, commitments, hours or policy invalidates the saved plan.
+Recognized no-ops preserve it. Run `plan` again after a change.
 
-- **Location:** `data/scheduleflow.txt`, relative to the folder from which you launch the application. Launch from the same folder to use the same data.
-- **First launch:** If the file is absent, the app starts empty. The first successful change or `plan` creates the saved data.
-- **Saved plans:** The latest generated schedule, generation time, sessions and unallocated work survive restarting. Successful changes to tasks, commitments, study hours or policy settings clear it; run `plan` again afterward.
-- **Compatibility:** Older releases cannot read the new policy or saved-plan formats. Keep a backup before opening the same data folder with an older JAR.
-- **Failed save:** The change is rejected. Existing tasks, commitments, ID counters, saved data, and the current plan remain unchanged. Resolve the reported file or folder problem, then retry.
-- **Invalid or unreadable file:** The app reports an error and stops before accepting commands. It preserves the file instead of silently starting empty or loading only part of it.
-- **Overdue tasks:** Valid saved tasks remain available after their deadlines pass. Replanning reports their work as unallocated with reason `deadline passed`.
+**Compatibility.** The candidate reads snapshot formats 1–5 and 7, frozen-plan
+formats 6 and 8, and the earlier version 5 plan layout. Loading is read-only and
+does not migrate the file. A later successful save chooses the format needed
+for the current records: snapshot versions 2–5 or 7, or plan version 6/8. These
+numbers are file formats, not application release numbers. Older JARs may reject
+newer data; keep a backup before changing versions. The
+[DG compatibility table](DeveloperGuide.md#file-formats-and-compatibility)
+documents the layouts.
 
-Use one running instance per data file. Saving requires a filesystem that supports atomic file replacement; if it does not, the app reports a save error and retains the previous data.
+**If saving fails**, the command reports an error. Its candidate records,
+counters and plan are not published; the previous live state and saved data
+remain in use. Resolve the file/folder problem and retry. Use one running
+instance per data file and a filesystem supporting atomic replacement.
+This does not guarantee recovery after a power failure.
 
-To back up your data, close the app and copy `data/scheduleflow.txt`. To transfer it, place the copy in the destination launch folder's `data` subfolder and use the Java 25 and JAR setup described in [Quick start](#quick-start). Back up any existing destination file before replacing it.
+**If loading fails**, the app reports an error and stops before the first prompt.
+It preserves the invalid/unreadable file rather than silently starting empty
+or accepting part of it. Valid overdue tasks still load; a new plan reports
+their remaining work as `deadline passed`.
+
+**Backup or transfer:** close the app, then copy `data/scheduleflow.txt` to a safe
+location. To transfer, put a copy in the destination launch folder's `data`
+subfolder, backing up any existing destination file first, and launch a compatible
+JAR there using Java 25. Confirm the records and saved schedule before discarding
+the original backup. The app does not maintain an automatic backup history.
 
 ## Troubleshooting and FAQ
 
@@ -1061,11 +1089,16 @@ without recording completed work.
 
 ### Why did my schedule disappear?
 
-A successful task or commitment addition, deletion, task edit, template change,
-progress update, completion, reopening, remaining-work revision, commitment edit or
-occurrence skip, a study-hours set or reset, or a changed study policy clears the current plan. Plans
-remain available after restarting until a successful change invalidates them.
-Run `plan` to generate another one.
+A successful change to task details or remaining work, completion/reopening,
+templates, commitments (including skips), study hours or policy clears the
+current and saved plan. Those changes can make its sessions stale; use `plan`
+to generate another schedule.
+
+Restarting alone preserves a valid frozen plan. Rejected commands and recognized
+no-ops also preserve it: for example, zero credited progress, repeating the same
+remaining estimate or setting an equal policy. If you launched from a different
+folder, check the [data location](#saving-and-restoring-data) before assuming your
+original schedule was lost.
 
 ### Can I change the study hours or slot size?
 
@@ -1087,12 +1120,18 @@ Task duration `45` is valid, but task duration `060` is not.
 
 ### What should I do if the application cannot load my data?
 
-Keep a backup of the reported file, resolve access problems, or restore a known-good backup before restarting. A malformed or unreadable file is a startup error; the app will not overwrite it with an empty store.
+Close the app and copy the reported file somewhere safe before attempting a
+repair. Check the launch folder, access permissions and JAR compatibility.
+Restore a known-good backup if available, keeping a copy of the failing file
+for investigation. A malformed/unreadable file is a startup error; the app
+does not overwrite it with an empty store or silently discard invalid rows.
+If you choose to start afresh, move the failing file aside first and retain it.
 
-Optional storage diagnostics can help investigate save/load failures. Follow the
-[storage logging instructions](DeveloperGuide.md#storage-defensive-checks-and-diagnostics)
-to record processing stages in a separate log file. Normal launches remain quiet;
-these storage logs do not include your task names or saved file contents.
+Optional [storage diagnostics](DeveloperGuide.md#storage-defensive-checks-and-diagnostics)
+record processing stages in a separate log file. Storage stage records omit
+task names and saved contents; broader application errors can contain paths or
+other details, so inspect any logs before sharing them. Logging does not repair
+the file. Normal launches stay quiet.
 
 ## Command summary
 
