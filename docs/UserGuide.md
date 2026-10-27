@@ -447,8 +447,8 @@ deleted, or use inclusive start and end dates for a semester or other limited pe
 Add separate entries for commitments on different weekdays. A one-time commitment,
 such as a project meeting, reserves a period on a single calendar date.
 
-Commitment addition, editing, deletion and listing run directly at the console. Each
-successful change saves automatically and clears the current plan.
+Commitment addition, editing, skipping, deletion and listing run directly at the
+console. Each successful change saves automatically and clears the current plan.
 
 ### Adding a commitment
 
@@ -763,9 +763,9 @@ Use a one-time commitment to block time on a particular date, including time
 that a previous plan assigned to a task:
 
 ```text
-commitment add n/Unavailable on/2026-10-26 start/1000 d/60
+commitment add n/Unavailable on/2026-11-04 start/1000 d/60
 plan
-schedule 2026-10-26
+schedule 2026-11-04
 ```
 
 Replace the example date with your chosen date within the current planning
@@ -804,8 +804,14 @@ its own commitment ID for independent editing/deletion. The full request will
 be rejected if any period conflicts with an existing commitment.
 
 The batch confirmation and syntax parsing are implemented and unit-tested, but
-the console dispatch still cannot run these commands. For now, use the existing
-single-date `commitment add ... on/DATE` commands.
+the console dispatch still cannot run these commands.
+
+> **Warning:** Do not enter `unavailable continuous` or `unavailable daily` yet.
+> In this version they stop the application with an internal error instead of
+> showing a message. Changes saved before that command are kept; relaunch to
+> continue.
+
+For now, use one single-date `commitment add ... on/DATE` command per date.
 The [Developer Guide proposal](DeveloperGuide.md#multi-date-unavailable-periods-implementation-handoff-planned)
 summarizes the integration boundary and links to the proposed acceptance fixtures.
 
