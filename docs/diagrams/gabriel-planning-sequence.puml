@@ -1,0 +1,34 @@
+@startuml
+title Generate and save a study plan
+
+participant "CommandDispatcher\n(shared component)" as D
+participant RecurringTaskService as R
+participant EarliestDeadlinePlanner as P
+participant TimeRules as T
+participant "TextRenderer\n(shared component)" as V
+participant "Storage\n(shared component)" as S
+participant "AppState\n(shared component)" as A
+
+D -> D: Capture command time
+D -> R: materialize(snapshot, now)
+R --> D: candidate snapshot
+D -> P: generate(candidate, now)
+P -> T: horizonEnd(now)
+T --> P: exclusive horizon
+
+loop dates and half-hour slots
+    P -> T: eligibleStart(date, now, window)
+    T --> P: rounded cutoff
+    P -> P: Check task eligibility, commitments, breaks
+end
+
+P --> D: immutable Plan
+D -> V: plan(plan)
+V --> D: formatted summary
+D -> S: savePlan(plan)
+S --> D: saved
+opt candidate differs from original snapshot
+    D -> A: commit(candidate)
+end
+D -> A: replacePlan(plan)
+@enduml

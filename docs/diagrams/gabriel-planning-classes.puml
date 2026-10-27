@@ -1,0 +1,39 @@
+@startuml
+!pragma layout smetana
+left to right direction
+
+interface Planner {
+  +generate(state: Snapshot, now: LocalDateTime): Plan
+}
+class EarliestDeadlinePlanner
+class ScheduleService {
+  +forDate(plan: Plan, date: LocalDate): ScheduleView
+}
+class TimeRules
+class Plan
+class StudySession
+class UnallocatedWork
+class ScheduleEntry
+class ScheduleView
+class StudyHours
+class StudyWindow
+class StudyPolicy
+class Snapshot <<Ernest>>
+class Task <<Nickhil>>
+class Commitment <<Darren>>
+
+Planner <|.. EarliestDeadlinePlanner
+EarliestDeadlinePlanner ..> TimeRules
+EarliestDeadlinePlanner ..> Snapshot
+EarliestDeadlinePlanner ..> Task
+EarliestDeadlinePlanner ..> Commitment
+EarliestDeadlinePlanner ..> Plan
+Plan --> Snapshot : frozen source
+Plan --> StudySession : sessions
+Plan --> UnallocatedWork : remainders
+ScheduleService ..> Plan
+ScheduleService ..> ScheduleView
+Snapshot --> StudyHours
+Snapshot --> StudyPolicy
+StudyHours --> StudyWindow : resolves
+@enduml

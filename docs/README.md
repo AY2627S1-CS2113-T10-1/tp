@@ -30,8 +30,6 @@ mutation and are not saved between application runs.
 
 - [User Guide](UserGuide.md) — installation, commands, examples, scheduling
   rules, persistence, and troubleshooting.
-- [Task editing](UserGuide.md#editing-a-task) and
-  [weekly recurring tasks](UserGuide.md#weekly-recurring-tasks) — supported Task command examples.
 - [Developer Guide](DeveloperGuide.md) — architecture, implementation details,
   design decisions, testing, and release verification.
 - [About Us](AboutUs.md) — project team information.
