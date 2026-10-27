@@ -164,7 +164,8 @@ class MainTest {
         ProcessResult result = launch("exit\n", List.of(), List.of("-ea"));
 
         assertEquals(1, result.status());
-        assertEquals("Error: Cannot load saved data: " + data.toAbsolutePath().normalize() + "\n", result.output());
+        // The child JVM resolves working-directory aliases, such as /var on macOS.
+        assertEquals("Error: Cannot load saved data: " + data.toRealPath() + "\n", result.output());
         assertEquals("", result.error());
         assertTrue(Files.isDirectory(data));
         assertArrayEquals(original, Files.readAllBytes(marker));
