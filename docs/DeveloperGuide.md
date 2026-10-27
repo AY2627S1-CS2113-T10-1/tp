@@ -416,9 +416,10 @@ while the service and dispatcher establish candidate validation and rollback.
 | EOF (`readLine()` returns `null`) | `App` writes `TextRenderer.exit()` without invoking parser or dispatcher. | Status 0, no save. |
 | Input `IOException` | `run()` prints `Error: Cannot read input: MESSAGE`. | Status 1. |
 
-Unexpected programming exceptions propagate. In particular, a null dependency,
-a stale plan or an unfinished range route is not converted to an ordinary
-input error. Extra process arguments are rejected by `Main` before loading,
+Unexpected programming exceptions propagate. In particular, a null dependency
+or a stale plan is not converted to an ordinary input error. (The unfinished
+range routes deliberately throw `ValidationException`, so they are reported as
+ordinary errors.) Extra process arguments are rejected by `Main` before loading,
 with `Error: Usage: java -jar scheduleflow.jar (no arguments)` and status 1.
 `App` returns status codes so tests and embedded callers need not terminate
 their JVM; only `Main` calls `System.exit`.
@@ -966,11 +967,11 @@ it.
 
 **Proposed console integration:** `AddContinuousBlock` and `AddDailyBlocks`
 have parsed transports, service implementations and a batch formatter, but
-their dispatcher routes throw `UnsupportedOperationException`. They are
-not supported console commands and are omitted from help. `App` does not catch
-that exception, so entering either command currently ends the session with a
-stack trace and exit status 1; earlier saved changes are kept. The User Guide
-warns users not to enter them.
+their dispatcher routes are not implemented. They are not supported console
+commands and are omitted from help. Each route throws a `ValidationException`
+naming the single-date `commitment add ... on/` alternative, so `App` prints an
+ordinary error and the session continues with nothing saved and the current plan
+kept. `CommandDispatcherTest` covers this rejection; it is not a feature pass.
 
 The proposal expands a continuous interval (exclusive end), or a daily
 window across inclusive dates, into ordinary one-time commitments. The
