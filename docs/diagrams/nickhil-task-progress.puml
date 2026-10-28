@@ -35,7 +35,7 @@ else valid session input
             tasks --> dispatcher : identical source Snapshot
         else changed remaining value
             create participant "replacement: Task\nNickhil" as replacement
-            tasks -> replacement : new Task(id, name, deadline, remaining - done,\npriority, occurrence)
+            tasks -->> replacement : new Task(id, name, deadline, remaining - done,\npriority, occurrence)
             tasks -> tasks : copy list; replace at original position
             tasks -> source : withTasks(replacements, source.nextTaskId())
             source --> tasks : candidate: Snapshot
