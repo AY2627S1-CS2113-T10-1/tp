@@ -367,6 +367,8 @@ newline and flushes the response before `shouldExit()` is inspected.
 
 The diagram starts after restoration. Its success formatter is shorthand for
 the method selected by the dispatcher (`help`, `taskAdded`, and so on).
+The loop guard summarizes the two normal return paths: EOF or a response with
+`shouldExit = true` ends `runCommands()` with status 0 and no next prompt.
 Service calls, storage operations and publication are omitted; their ordering
 is described in [command transactions](#command-dispatch-and-live-state-transactions).
 
@@ -720,9 +722,9 @@ their stored order and both ID counters. Nonpositive and unknown IDs raise
 `ValidationException`. Deleting the last series does not reset the counter.
 `list` returns an immutable Monday-to-Sunday view sorted by start time and then
 numeric ID, without reordering the snapshot or renumbering records. Valid
-snapshots cannot contain two commitments at the same weekday and start time,
-because their positive durations would overlap; the ID comparator is a final
-ordering safeguard.
+commitments may share a weekday and start time when they have no shared,
+unskipped occurrence, for example in separate semester ranges. The numeric-ID
+tie-breaker gives those entries deterministic ordering.
 
 Defensive checks distinguish invalid user IDs from programmer errors (null
 snapshots). Runtime validation works independently of Java assertions.

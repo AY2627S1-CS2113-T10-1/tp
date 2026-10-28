@@ -23,7 +23,7 @@ note over UI, Renderer
   External parser/dispatcher are shaded grey.
 end note
 
-loop until normal termination
+loop while neither EOF nor an exit response has been received
     App -> UI : prompt()
     App -> UI : readLine()
     UI --> App : line
@@ -32,9 +32,7 @@ loop until normal termination
         App -> Renderer : exit()
         Renderer --> App : goodbye
         App -> UI : write(goodbye)
-        break normal termination
-            note over App : return 0; no parse, dispatch or save
-        end
+        note over App : return 0; no parse, dispatch, save or next prompt
     else blank line
         note over App : Skip parsing; next iteration prompts again.
     else nonblank line
@@ -55,9 +53,7 @@ loop until normal termination
                 Dispatcher --> App : response: CommandResponse
                 App -> UI : write(response.output())
                 opt response.shouldExit()
-                    break normal termination
-                        note over App : return 0; no next prompt
-                    end
+                    note over App : return 0; no next prompt
                 end
             else validation or save rejected
                 Dispatcher --> App : ValidationException or StorageException
