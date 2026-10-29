@@ -1,70 +1,33 @@
 @startuml
-' DG contribution I5: Ernest (ernestgoh-god).
-skinparam backgroundColor white
-skinparam shadowing false
-skinparam defaultFontName SansSerif
-skinparam defaultFontSize 15
-skinparam sequenceMessageAlign center
-skinparam responseMessageBelowArrow true
-skinparam maxMessageSize 150
-skinparam ParticipantPadding 12
-skinparam ArrowColor #475569
-hide footbox
+!include course-style.puml
 
-participant ":CommandDispatcher" as Dispatcher #F1F5F9
-participant ":FileStorage" as Storage #DBEAFE
-participant ":PlanCodec" as Plans #DBEAFE
-participant ":StateCodec" as Snapshots #DBEAFE
-participant "Files\n(static API)" as Files #F1F5F9
+participant "dispatcher:CommandDispatcher" as Dispatcher DOMAIN
+participant "storage:FileStorage" as Storage PERSISTENCE
+participant "codec:StateCodec" as Snapshots PERSISTENCE
+participant "Files" as Files <<class>> PERSISTENCE
 
-note over Dispatcher, Storage
-  Recurrence, allocation and output preparation already succeeded.
-  Live state still refers to the previous snapshot/plan.
-end note
-Dispatcher -> Storage : savePlan(plan)
-note over Storage, Plans : A PlanCodec is created for this call (constructor omitted).
-Storage -> Plans : encode(plan)
-Plans -> Snapshots : encodeForPlan(plan.source())
-Snapshots --> Plans : full source text
-Plans --> Storage : source + frozen-result text
-Storage -> Storage : writeAtomically(text)
-
-alt filesystem operations succeed
-    Storage -> Files : createDirectories(parent)
-    Storage -> Files : createTempFile(parent, ...)
-    Files --> Storage : sibling temporaryFile
-    Storage -> Files : writeString(temporaryFile, text, UTF_8)
-    Storage -> Files : move(temporaryFile, file,\nATOMIC_MOVE, REPLACE_EXISTING)
-    Files --> Storage : target replaced
-    Storage --> Dispatcher : return
-    ref over Dispatcher
-      Publish saved source and plan.
-      See command transactions for AppState calls.
-    end ref
-else preparation, writing or replacement throws
-    ref over Storage, Files
-      One filesystem operation above throws;
-      subsequent operations are not attempted.
-    end ref
-    Files --> Storage : filesystem exception
-    Storage -> Storage : create StorageException(cause)
-    Storage -> Storage : removeTemporaryFile(temporaryFile, failure)
-    opt temporary file was created
-        Storage -> Files : deleteIfExists(temporaryFile)
-        alt cleanup succeeds
-            Files --> Storage : deleted / already absent
-        else cleanup fails
-            Files --> Storage : cleanup exception
-            Storage -> Storage : failure.addSuppressed(cleanupException)
-        end
-    end
-    Storage --> Dispatcher : throw StorageException
-    note over Dispatcher : Keep previous live state; report rejection.
-end
-
-note over Storage, Files
-  Encoding failures occur before filesystem changes.
-  Atomic replacement requires provider support; no non-atomic fallback.
-  This is not a power-loss durability guarantee.
+Dispatcher -> Storage ++ : savePlan(plan)
+create participant "plans:PlanCodec" as Plans PERSISTENCE
+Storage -> Plans ++ : PlanCodec(codec)
+Plans --> Storage -- : plans
+Storage -> Plans ++ : encode(plan)
+Plans -> Snapshots ++ : encodeForPlan(plan.source())
+Snapshots --> Plans -- : complete source text
+Plans --> Storage -- : source and frozen-result text
+Storage -> Storage ++ : writeAtomically(text)
+Storage -> Files ++ : createDirectories(parent)
+Files --> Storage -- : parent
+Storage -> Files ++ : createTempFile(parent, ".scheduleflow-", ".tmp")
+Files --> Storage -- : temporaryFile
+Storage -> Files ++ : writeString(temporaryFile, text, UTF_8)
+Files --> Storage -- : temporaryFile
+Storage -> Files ++ : move(temporaryFile, file,\nATOMIC_MOVE, REPLACE_EXISTING)
+Files --> Storage -- : file
+Storage --> Storage -- : return
+Storage --> Dispatcher -- : return
+note over Dispatcher
+  Successful save only; dispatcher publication follows (not shown).
+  Accessors and local text assembly are omitted.
+  Failure cleanup is described in the accompanying text.
 end note
 @enduml

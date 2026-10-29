@@ -1,89 +1,60 @@
 @startuml
-' DG contribution D1: Ka How (ka-how).
-!pragma layout smetana
-skinparam backgroundColor white
-skinparam shadowing false
-skinparam defaultFontName SansSerif
-skinparam defaultFontSize 15
-skinparam classAttributeIconSize 0
-skinparam packageStyle rectangle
-skinparam ArrowColor #475569
-skinparam classBorderColor #475569
-skinparam packageBorderColor #94A3B8
+!include course-style.puml
+left to right direction
 hide empty members
-top to bottom direction
 
-package "Console and application shell (ka-how)" {
-    class Main {
-        {static} +main(...): void
-    }
-    class App {
-        +run(): int
-        -runCommands(state): int
-    }
-    class ConsoleUi {
-        +prompt(): void
-        +readLine(): String
-        +write(text: String): void
-    }
-    class TextRenderer {
-        +help(): String
-        +parseError(...): String
-        +error(message: String): String
-        +schedule(...): String
-    }
-    class AppState {
-        +commit(saved: Snapshot): void
-        +replacePlan(plan: Plan): void
-    }
-    interface Command
-    class "Command.Help" as Help
-    class "Command.AddTask" as AddTask
-    class CommandResponse {
-        +output(): String
-        +shouldExit(): boolean
-    }
+class Main SHELL {
+    {static} + main(args: String[]) : void
 }
-
-package "External collaborators" #F1F5F9 {
-    class CommandParser {
-        +parse(line: String): Command
-    }
-    class CommandDispatcher {
-        +execute(...): CommandResponse
-    }
-    interface Storage {
-        +load(): Snapshot
-        +loadPlan(source: Snapshot): Optional<Plan>
-    }
-    class Snapshot
-    class Plan
+class App SHELL {
+    + run() : int
+    - runCommands(state: AppState) : int
 }
+class ConsoleUi SHELL {
+    + prompt() : void
+    + readLine() : String
+    + write(text: String) : void
+}
+class TextRenderer SHELL {
+    + help() : String
+    + parseError(exception: ParseException) : String
+    + error(message: String) : String
+}
+class AppState SHELL {
+    + commit(saved: Snapshot) : void
+    + replacePlan(plan: Plan) : void
+}
+interface Command <<interface>> SHELL
+class "Command.Help" as Help <<record>> SHELL
+class "Command.AddTask" as AddTask <<record>> SHELL
+class CommandResponse <<record>> SHELL {
+    - output: String
+    - shouldExit: boolean
+}
+class CommandParser PARSING {
+    + parse(line: String) : Command
+}
+class CommandDispatcher DOMAIN {
+    + execute(command: Command, state: AppState) : CommandResponse
+}
+interface Storage <<interface>> PERSISTENCE
+class Snapshot <<record>> VALUES
+class Plan <<record>> VALUES
 
 Main ..> App : creates
-App --> ConsoleUi : ui
-App --> TextRenderer : renderer
-App --> CommandParser : parser
-App --> CommandDispatcher : dispatcher
-App --> Storage : storage
+App --> "ui\n1" ConsoleUi
+App --> "renderer\n1" TextRenderer
+App --> "parser\n1" CommandParser
+App --> "dispatcher\n1" CommandDispatcher
+App --> "storage\n1" Storage
 App ..> AppState : creates in run()
 Command <|.. Help
 Command <|.. AddTask
-AppState --> "1" Snapshot : snapshot
-AppState --> "0..1" Plan : currentPlan
+AppState --> "snapshot\n1" Snapshot
+AppState --> "currentPlan\n0..1" Plan
 
-' Layout-only edges keep the two groups narrow; they are not UML relationships.
-ConsoleUi -[hidden]down-> TextRenderer
-TextRenderer -[hidden]down-> AppState
-AppState -[hidden]down-> Command
-Command -[hidden]down-> CommandResponse
-CommandParser -[hidden]down-> CommandDispatcher
-CommandDispatcher -[hidden]down-> Storage
-Storage -[hidden]down-> Snapshot
-Snapshot -[hidden]down-> Plan
-
-note bottom of Command
-  Representative records only.
-  Records are shown as classes.
+note as CommandNote
+  Only two representative command records are shown.
 end note
+Command .. CommandNote
 @enduml

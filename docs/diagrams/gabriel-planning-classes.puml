@@ -1,39 +1,52 @@
 @startuml
-!pragma layout smetana
+!include course-style.puml
 left to right direction
+hide empty members
 
-interface Planner {
-  +generate(state: Snapshot, now: LocalDateTime): Plan
+interface Planner <<interface>> DOMAIN {
+    + generate(state: Snapshot, now: LocalDateTime) : Plan
 }
-class EarliestDeadlinePlanner
-class ScheduleService {
-  +forDate(plan: Plan, date: LocalDate): ScheduleView
+class EarliestDeadlinePlanner DOMAIN
+class ScheduleService DOMAIN {
+    + forDate(plan: Plan, date: LocalDate) : ScheduleView
 }
-class TimeRules
-class Plan
-class StudySession
-class UnallocatedWork
-class ScheduleEntry
-class ScheduleView
-class StudyHours
-class StudyWindow
-class StudyPolicy
-class Snapshot <<Ernest>>
-class Task <<Nickhil>>
-class Commitment <<Darren>>
+class TimeRules DOMAIN {
+    {static} + horizonEnd(now: LocalDateTime) : LocalDateTime
+    {static} + eligibleStart(...) : LocalDateTime
+}
+class Plan <<record>> VALUES
+class StudySession <<record>> VALUES
+class UnallocatedWork <<record>> VALUES
+class ScheduleEntry <<record>> VALUES
+class ScheduleView <<record>> VALUES
+class StudyHours <<record>> VALUES
+class StudyWindow <<record>> VALUES
+class StudyPolicy <<record>> VALUES
+class Snapshot <<record>> VALUES
+class Task <<record>> VALUES
+class Commitment <<record>> VALUES
 
 Planner <|.. EarliestDeadlinePlanner
 EarliestDeadlinePlanner ..> TimeRules
 EarliestDeadlinePlanner ..> Snapshot
 EarliestDeadlinePlanner ..> Task
 EarliestDeadlinePlanner ..> Commitment
-EarliestDeadlinePlanner ..> Plan
-Plan --> Snapshot : frozen source
-Plan --> StudySession : sessions
-Plan --> UnallocatedWork : remainders
+EarliestDeadlinePlanner ..> Plan : creates
+Plan --> "source\n1" Snapshot
+Plan --> "sessions\n*" StudySession
+Plan --> "unallocated\n*" UnallocatedWork
+Plan --> "breaks\n*" ScheduleEntry
 ScheduleService ..> Plan
-ScheduleService ..> ScheduleView
-Snapshot --> StudyHours
-Snapshot --> StudyPolicy
-StudyHours --> StudyWindow : resolves
+ScheduleService ..> ScheduleView : creates
+ScheduleService ..> ScheduleEntry : creates
+ScheduleView --> "entries\n*" ScheduleEntry
+Snapshot --> "studyHours\n1" StudyHours
+Snapshot --> "studyPolicy\n0..1" StudyPolicy
+StudyHours --> "windows\n*" StudyWindow
+
+note as StudyHoursNote
+  forDate(date) resolves an override or the default window.
+  Weekday and dated override maps are summarized here.
+end note
+StudyHours .. StudyHoursNote
 @enduml

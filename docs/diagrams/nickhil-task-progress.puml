@@ -1,59 +1,40 @@
 @startuml
-' Nickhil contribution I2: a pure session-progress candidate, not a storage transaction.
-skinparam backgroundColor white
-skinparam shadowing false
-skinparam defaultFontName SansSerif
-skinparam defaultFontSize 15
-skinparam sequenceMessageAlign center
-skinparam ArrowColor #475569
-hide footbox
+!include course-style.puml
 
-participant "dispatcher: CommandDispatcher\nexternal: Darren" as dispatcher #F1F5F9
-participant "tasks: TaskService\nNickhil" as tasks
-participant "source: Snapshot\nexternal: Ernest" as source #F1F5F9
+participant "dispatcher:CommandDispatcher" as Dispatcher DOMAIN
+participant "tasks:TaskService" as Tasks DOMAIN
+participant "source:Snapshot" as Source VALUES
 
-note over dispatcher, tasks
-  Input is already parsed as Command.RecordTaskSession.
-  Example: T1 has 90 remaining; session 61 at 25% credits 15.
-  The source and all existing Task values remain unchanged.
+[-> Dispatcher ++ : execute(RecordTaskSession, state)
+Dispatcher -> Dispatcher ++ : recordTaskSession(command, state)
+Dispatcher -> Tasks ++ : recordSessionProgress(source, taskId,\nsessionMinutes, percentage)
+note right of Tasks
+  Valid active task and positive credited work.
+  done = floor(sessionMinutes * percentage / 100).
+  Example: 61 at 25% credits 15 of 90 remaining.
+  Arithmetic and accessors are local computation.
 end note
-dispatcher -> tasks : recordSessionProgress(source, taskId, minutes, percent)
-activate tasks
-alt invalid session minutes or percentage
-    tasks --> dispatcher : throws ValidationException
-else valid session input
-    tasks -> tasks : done = (int) ((long) minutes * percent / 100)
-    tasks -> tasks : recordWork(source, taskId, done)
-    tasks -> tasks : findTask(source, taskId)
-    tasks -> source : tasks()
-    source --> tasks : immutable list
-    alt unknown / completed task or done outside [0, remaining]
-        tasks --> dispatcher : throws ValidationException
-    else valid active task and credited work
-        tasks -> tasks : replaceRemaining(source, task, remaining - done)
-        alt same remaining value (zero credited work)
-            tasks --> dispatcher : identical source Snapshot
-        else changed remaining value
-            create participant "replacement: Task\nNickhil" as replacement
-            tasks -->> replacement : new Task(id, name, deadline, remaining - done,\npriority, occurrence)
-            tasks -> tasks : copy list; replace at original position
-            tasks -> source : withTasks(replacements, source.nextTaskId())
-            source --> tasks : candidate: Snapshot
-            tasks --> dispatcher : candidate: Snapshot
-        end
-    end
-end
-deactivate tasks
-
-ref over dispatcher
-  Darren's save-before-publication transaction:
-  prepare response; changed candidate -> Storage.save -> AppState.commit.
-  Identity no-op -> no save or plan invalidation.
-  Validation/save failure -> no candidate publication.
-end ref
-note over tasks, source
-  The aggregate returns a new Snapshot for changed work.
-  TaskService never saves, publishes, reads time or replans.
-  Rendering, file mechanics and later planning are external.
+Tasks -> Tasks ++ : recordWork(source, taskId, done)
+Tasks -> Tasks ++ : findTask(source, taskId)
+Tasks -> Source ++ : tasks()
+Source --> Tasks -- : stored tasks
+Tasks --> Tasks -- : task
+note right of Tasks : remaining = task.remainingMinutes() - done
+Tasks -> Tasks ++ : replaceRemaining(source, task, remaining)
+create participant "replacement:Task" as Replacement VALUES
+Tasks -> Replacement ++ : Task(id, name, deadline, remaining,\npriority, occurrence)
+Replacement --> Tasks -- : replacement
+note right of Tasks : Copy task list; replace task at its stored position.
+Tasks -> Source ++ : withTasks(replacements, nextTaskId)
+Source --> Tasks -- : candidate
+Tasks --> Tasks -- : candidate
+Tasks --> Tasks -- : candidate
+Tasks --> Dispatcher -- : candidate
+note over Dispatcher
+  Remaining dispatcher work is omitted:
+  publishTaskProgress prepares confirmation,
+  saves the candidate, then publishes it.
 end note
+Dispatcher --> Dispatcher -- : confirmation
+[<-- Dispatcher -- : response: CommandResponse
 @enduml

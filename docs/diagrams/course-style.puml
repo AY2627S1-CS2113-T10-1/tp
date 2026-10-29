@@ -1,0 +1,50 @@
+' CS2113 P1 profile; flat pastel fills are permitted by the summary.
+!define SHELL #CAB6E8
+!define PARSING #9FEBFF
+!define DOMAIN #DDFDAF
+!define VALUES #FFC696
+!define PERSISTENCE #ABC7FF
+skinparam style strictuml
+skinparam backgroundColor white
+skinparam defaultFontName Calibri
+skinparam defaultFontSize 16
+skinparam defaultFontColor black
+skinparam padding 10
+skinparam roundcorner 0
+skinparam shadowing false
+skinparam ArrowColor black
+skinparam ArrowThickness 1.2
+skinparam classAttributeIconSize 0
+skinparam classFontSize 18
+skinparam classFontStyle plain
+skinparam classBackgroundColor VALUES
+skinparam classBorderColor black
+skinparam classStereotypeFontSize 15
+skinparam classStereotypeFontColor black
+skinparam classStereotypeFontStyle plain
+skinparam packageStyle rectangle
+skinparam packageBackgroundColor white
+skinparam packageBorderColor black
+skinparam noteBackgroundColor white
+skinparam noteBorderColor black
+skinparam sequence {
+    ParticipantFontSize 18
+    ParticipantFontStyle plain
+    ParticipantBorderColor black
+    ParticipantBackgroundColor VALUES
+    LifeLineBorderColor black
+    LifeLineBackgroundColor white
+    GroupBorderColor black
+    GroupBodyBackgroundColor white
+    GroupHeaderFontColor black
+    GroupFontColor black
+    ArrowColor black
+}
+skinparam ParticipantPadding 24
+skinparam maxMessageSize 240
+skinparam responseMessageBelowArrow false
+skinparam sequenceMessageAlign left
+skinparam nodesep 70
+skinparam ranksep 65
+hide circle
+hide footbox

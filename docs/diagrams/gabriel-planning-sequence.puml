@@ -1,34 +1,50 @@
 @startuml
-title Generate and save a study plan
+!pragma teoz true
+!include course-style.puml
 
-participant "CommandDispatcher\n(shared component)" as D
-participant RecurringTaskService as R
-participant EarliestDeadlinePlanner as P
-participant TimeRules as T
-participant "TextRenderer\n(shared component)" as V
-participant "Storage\n(shared component)" as S
-participant "AppState\n(shared component)" as A
+participant "dispatcher:CommandDispatcher" as Dispatcher DOMAIN
+participant "recurringTasks:RecurringTaskService" as Recurrence DOMAIN
+participant "planner:EarliestDeadlinePlanner" as Planner DOMAIN
+participant "TimeRules" as Rules <<class>> DOMAIN
+participant "renderer:TextRenderer" as Renderer SHELL
+participant "storage:FileStorage" as Storage PERSISTENCE
+participant "state:AppState" as State SHELL
 
-D -> D: Capture command time
-D -> R: materialize(snapshot, now)
-R --> D: candidate snapshot
-D -> P: generate(candidate, now)
-P -> T: horizonEnd(now)
-T --> P: exclusive horizon
-
-loop dates and half-hour slots
-    P -> T: eligibleStart(date, now, window)
-    T --> P: rounded cutoff
-    P -> P: Check task eligibility, commitments, breaks
+[-> Dispatcher ++ : execute(GeneratePlan, state)
+note over Dispatcher : Capture now once; time API and state accessors omitted.
+Dispatcher -> Dispatcher ++ : generatePlan(state, now)
+Dispatcher -> Recurrence ++ : materialize(source, now)
+Recurrence --> Dispatcher -- : candidate
+Dispatcher -> Planner ++ : generate(candidate, now)
+Planner -> Rules ++ : horizonEnd(now)
+Rules --> Planner -- : horizonEnd
+note right of Planner : Filter and sort unfinished tasks; create pending work.
+Planner -> Planner ++ : createSlots(candidate, now, horizonEnd, pending)
+loop dates left
+    note over Planner : Resolve that date's study window (accessors omitted).
+    Planner -> Rules ++ : eligibleStart(date, now, window)
+    Rules --> Planner -- : cutoff
+    note over Planner
+      Allocate half-hour slots; account for commitments and breaks.
+      allocateSlot and its helper calls are omitted.
+    end note
 end
-
-P --> D: immutable Plan
-D -> V: plan(plan)
-V --> D: formatted summary
-D -> S: savePlan(plan)
-S --> D: saved
-opt candidate differs from original snapshot
-    D -> A: commit(candidate)
+Planner --> Planner -- : slots
+note right of Planner
+  Collect remaining work, merge sessions and collect breaks.
+  Construct immutable Plan; helper/constructor calls omitted.
+end note
+Planner --> Dispatcher -- : plan
+Dispatcher -> Renderer ++ : plan(plan)
+Renderer --> Dispatcher -- : output
+Dispatcher -> Storage ++ : savePlan(plan)
+Storage --> Dispatcher -- : return (saved)
+opt candidate != source
+    Dispatcher -> State ++ : commit(candidate)
+    State --> Dispatcher -- : return
 end
-D -> A: replacePlan(plan)
+Dispatcher -> State ++ : replacePlan(plan)
+State --> Dispatcher -- : return
+Dispatcher --> Dispatcher -- : output
+[<-- Dispatcher -- : response: CommandResponse
 @enduml

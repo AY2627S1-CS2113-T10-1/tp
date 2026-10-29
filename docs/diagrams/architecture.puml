@@ -1,0 +1,29 @@
+@startuml
+!include course-style.puml
+left to right direction
+skinparam componentStyle rectangle
+
+component "Console application\nApp / CommandDispatcher" as Console SHELL
+component "Tasks\nTaskService / RecurringTaskService" as Tasks DOMAIN
+component "Commitments\nCommitmentService" as Commitments DOMAIN
+component "Planning\nPlanner / ScheduleService" as Planning DOMAIN
+component "Persistence\nStorage / FileStorage / codecs" as Persistence PERSISTENCE
+component "Source model\nSnapshot / Task / Commitment" as Model VALUES
+
+Console ..> Tasks : validates / materializes
+Console ..> Commitments : validates
+Console ..> Planning : generates / projects
+Console ..> Persistence : loads / saves
+Tasks ..> Model
+Commitments ..> Model
+Planning ..> Model
+Persistence ..> Model
+Persistence ..> Planning : encodes frozen results
+
+note as ConsoleNote
+  Main wires the application.
+  Selected module dependencies are shown;
+  common validation and Java APIs are omitted.
+end note
+Console .. ConsoleNote
+@enduml
