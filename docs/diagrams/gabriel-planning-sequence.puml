@@ -11,7 +11,7 @@ participant "storage:FileStorage" as Storage PERSISTENCE
 participant "state:AppState" as State SHELL
 
 [-> Dispatcher ++ : execute(GeneratePlan, state)
-note over Dispatcher : Capture now once; time API and state accessors omitted.
+note right of Dispatcher : Capture now once; time API and state accessors omitted.
 Dispatcher -> Dispatcher ++ : generatePlan(state, now)
 Dispatcher -> Recurrence ++ : materialize(source, now)
 Recurrence --> Dispatcher -- : candidate
@@ -21,12 +21,16 @@ Rules --> Planner -- : horizonEnd
 note right of Planner : Filter and sort unfinished tasks; create pending work.
 Planner -> Planner ++ : createSlots(candidate, now, horizonEnd, pending)
 loop dates left
-    note over Planner : Resolve that date's study window (accessors omitted).
+    note right of Planner
+      Resolve the date's window.
+      Accessors omitted.
+    end note
     Planner -> Rules ++ : eligibleStart(date, now, window)
     Rules --> Planner -- : cutoff
-    note over Planner
-      Allocate half-hour slots; account for commitments and breaks.
-      allocateSlot and its helper calls are omitted.
+    note right of Planner
+      Allocate 30-minute slots.
+      Check busy time/breaks.
+      Slot helpers omitted.
     end note
 end
 Planner --> Planner -- : slots

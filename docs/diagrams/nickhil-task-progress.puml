@@ -22,7 +22,7 @@ Tasks --> Tasks -- : task
 note right of Tasks : remaining = task.remainingMinutes() - done
 Tasks -> Tasks ++ : replaceRemaining(source, task, remaining)
 create participant "replacement:Task" as Replacement VALUES
-Tasks -> Replacement ++ : Task(id, name, deadline, remaining,\npriority, occurrence)
+Tasks -> Replacement ++ : Task(...)
 Replacement --> Tasks -- : replacement
 note right of Tasks : Copy task list; replace task at its stored position.
 Tasks -> Source ++ : withTasks(replacements, nextTaskId)
@@ -30,7 +30,7 @@ Source --> Tasks -- : candidate
 Tasks --> Tasks -- : candidate
 Tasks --> Tasks -- : candidate
 Tasks --> Dispatcher -- : candidate
-note over Dispatcher
+note right of Dispatcher
   Remaining dispatcher work is omitted:
   publishTaskProgress prepares confirmation,
   saves the candidate, then publishes it.

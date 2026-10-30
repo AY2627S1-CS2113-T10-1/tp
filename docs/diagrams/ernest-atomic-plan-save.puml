@@ -7,6 +7,11 @@ participant "codec:StateCodec" as Snapshots PERSISTENCE
 participant "Files" as Files <<class>> PERSISTENCE
 
 Dispatcher -> Storage ++ : savePlan(plan)
+note right of Storage
+  Successful save only; publication follows (not shown).
+  Accessors and local text assembly are omitted.
+  Failure cleanup is described in the accompanying text.
+end note
 create participant "plans:PlanCodec" as Plans PERSISTENCE
 Storage -> Plans ++ : PlanCodec(codec)
 Plans --> Storage -- : plans
@@ -25,9 +30,4 @@ Storage -> Files ++ : move(temporaryFile, file,\nATOMIC_MOVE, REPLACE_EXISTING)
 Files --> Storage -- : file
 Storage --> Storage -- : return
 Storage --> Dispatcher -- : return
-note over Dispatcher
-  Successful save only; dispatcher publication follows (not shown).
-  Accessors and local text assembly are omitted.
-  Failure cleanup is described in the accompanying text.
-end note
 @enduml

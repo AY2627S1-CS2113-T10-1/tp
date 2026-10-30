@@ -83,7 +83,8 @@ Multiplicities and reference roles appear at the target end. Java records are
 marked «record» and their stored fields are private; omitted accessors remain
 available in the code. Sequence calls use filled heads and returns use dashed
 lines. A narrow activation represents one invocation, including time spent
-waiting for nested calls. Folded-corner notes explain deliberately omitted detail.
+waiting for nested calls. Folded-corner notes explain deliberately omitted detail;
+dotted open-headed arrows point from each note to the element it describes.
 Colours identify responsibilities consistently across figures, independently of
 the team's ownership allocation.
 
@@ -541,7 +542,9 @@ non-console callers without pretending a parsed command is already valid.
 
 Figure 9 follows a valid 61-minute session at 25% on an active task with 90
 minutes remaining. The 15-minute credit creates a new `Task`, whose header and
-lifeline begin at construction. Dispatcher persistence and publication calls
+lifeline begin at construction. `Task(...)` omits constructor parameters so the
+creation arrow reaches the object header; the copied fields are explained below.
+Dispatcher persistence and publication calls
 are summarized in a note. Zero-credit no-ops, invalid input and save failures
 are separate paths described below.
 
@@ -643,7 +646,7 @@ omitted; rejection paths are explained after the walkthrough.
 4. `rejectOverlaps` compares the replacement with every other commitment. C1 itself
    is excluded, so keeping or shifting its own time is never a self-conflict.
 5. The service returns a new `Snapshot` with C1 replaced at its original list position.
-   Tasks, study hours and both ID counters are unchanged.
+   Tasks, study hours, policy, recurrence and all three ID counters are unchanged.
 6. The dispatcher calls `saveAndCommit`. `Storage.save(candidate)` runs first;
    only if it returns does `AppState.commit(candidate)` publish the change and clear
    the current plan. `TextRenderer.commitmentEdited` then formats
@@ -1211,40 +1214,54 @@ Editable PlantUML sources and the shared `course-style.puml` are in
 `docs/diagrams`. Each figure has a numbered caption and links to its source and
 PNG; committed SVGs in `docs/images` are embedded in this guide.
 
-The course summary supplied for issue
-[#118](https://github.com/AY2627S1-CS2113-T10-1/tp/issues/118) establishes the
-notation and P1 pastel profile. The existing PlantUML workflow is retained as
-requested in that review; these sources are PlantUML rather than GreenUML
-`.grn` models. Exports were checked with PlantUML **1.2025.4**, Graphviz
-**2.44.1**, Java **25.0.4.1**, and installed **Calibri** (no font fallback).
-The shared style selects strict UML notation, textual visibility and rectangular
-pastel boxes. Flat fills, shadow-free boxes, automatic spacing, curved structural
-routes and PlantUML's compact visibility spacing are intentional deviations from
-the summary's numeric reproduction defaults. SVGs use logical vector dimensions;
-PNGs are exported at 192 dpi (2x), with a white background and preserved aspect
-ratio. These settings adapt the profile without reproducing a particular figure.
+Review notation against the course's [Modeling chapter](https://nus-cs2113-ay2627-s1.github.io/website/se-book-adapted/chapters/modeling.html)
+and [Week 11 DG review guidance](https://nus-cs2113-ay2627-s1.github.io/website/schedule/week11/tutorial.html).
+Check depicted members, retained references and call order against the current
+Java source and its tests. Keep each view focused; identify omitted helper calls
+in attached notes or the surrounding explanation. Although the textbook permits
+unattached notes, this guide connects every note with a dotted arrow to its subject.
 
-With Java 25, Graphviz and a local PlantUML JAR, render all figures from the
-repository root:
+The [DG review (#118)](https://github.com/AY2627S1-CS2113-T10-1/tp/issues/118)
+identifies course notation, missing activations and unclear notes as concerns.
+The figures retain the existing PlantUML workflow and share a flat pastel
+palette for responsibilities. Exports were checked with PlantUML **1.2025.4**, Graphviz
+**2.44.1**, Java **25.0.4.1**, and installed **Calibri** (no font fallback).
+The SVG-to-PNG step uses Playwright **1.62.1** and Chrome **156.0.8078.49**.
+The shared style selects strict UML notation, textual visibility and rectangular
+pastel boxes. Fills, spacing and curved structural routes are presentation choices;
+the arrows, visibility, activations and other UML symbols follow course notation.
+SVGs use logical vector dimensions;
+PNGs are exported at 2x resolution, with a white background and preserved aspect
+ratio.
+
+With Java 25, Graphviz, Node.js 22+, Playwright and a local PlantUML JAR, render
+all figures from the repository root. Install documentation-only Node dependencies
+under ignored `build/uml-tools` if they are not already available:
 
 ```powershell
-$diagrams = @(Get-ChildItem docs/diagrams/*.puml |
-    Where-Object Name -ne 'course-style.puml' |
-    ForEach-Object FullName)
-java -jar "PATH_TO_PLANTUML_JAR" -charset UTF-8 -failfast2 -tsvg -o ../images $diagrams
-java -DPLANTUML_LIMIT_SIZE=10000 -jar "PATH_TO_PLANTUML_JAR" -charset UTF-8 -failfast2 -Sdpi=192 -tpng -o ../images $diagrams
+npm install --prefix build/uml-tools --no-save --package-lock=false playwright
+$env:NODE_PATH = Join-Path (Get-Location) 'build/uml-tools/node_modules'
+node tools/render-uml.mjs --plantuml "PATH_TO_PLANTUML_JAR" --chrome "PATH_TO_CHROME"
 ```
 
-Replace `PATH_TO_PLANTUML_JAR` with its local path. Output paths are relative
-to each source directory. The common include is a style file, not a standalone
-diagram. Captions belong in the guide so that titles cannot change export names.
-The Windows PlantUML distribution used here supplies Graphviz; other
-installations may require it separately.
+Replace the two paths with installed PlantUML and Chrome locations. An existing
+Playwright-managed Chromium can be used by omitting `--chrome`. Use `--output DIR`
+to preview exports outside `docs/images`. The common include is a style file,
+not a standalone diagram. Captions belong in the guide so that titles cannot
+change export names. The Windows PlantUML distribution used here supplies
+Graphviz; other installations may require it separately.
+
+PlantUML draws structural note arrows directly. Its sequence notes have no
+connector, so [`tools/render-uml.mjs`](../tools/render-uml.mjs) adds dotted arrows
+to their named participants' active invocation bars (or lifelines), then derives
+the PNG from the same SVG. Sequence notes must use `note right of PARTICIPANT`;
+the exporter checks their count, text and targets and reserves a visible gap for
+each arrow. Plain PlantUML exports alone omit these sequence note connectors.
 
 Commit each edited source, shared style change and corresponding SVG/PNG exports
 together. Check displayed members and call order against the source and relevant
 JUnit tests. Inspect every rendered figure at full size: visibility and static
-underlines, endpoint roles/multiplicities, realization triangles, dashed note
+underlines, endpoint roles/multiplicities, realization triangles, dotted note
 attachments, solid filled call heads, dashed returns, continuous/nested
 activations, guarded fragments, and constructor-time headers. Deliberate omissions
 are identified beside the figures; failure paths remain documented in prose.

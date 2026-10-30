@@ -46,7 +46,7 @@ StudyHours --> "windows\n*" StudyWindow
 
 note as StudyHoursNote
   forDate(date) resolves an override or the default window.
-  Weekday and dated override maps are summarized here.
+  The windows map holds weekday and dated overrides.
 end note
-StudyHours .. StudyHoursNote
+StudyHoursNote -[dotted]-> StudyHours
 @enduml

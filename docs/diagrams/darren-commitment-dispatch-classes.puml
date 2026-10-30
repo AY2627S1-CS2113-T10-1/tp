@@ -56,5 +56,5 @@ note as CommitmentNote
   Equal startDate and endDate indicate a one-time commitment.
   Both dates null indicate an unbounded weekly series.
 end note
-Commitment .. CommitmentNote
+CommitmentNote -[dotted]-> Commitment
 @enduml

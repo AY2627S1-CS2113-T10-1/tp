@@ -25,5 +25,5 @@ note as ConsoleNote
   Selected module dependencies are shown;
   common validation and Java APIs are omitted.
 end note
-Console .. ConsoleNote
+ConsoleNote -[dotted]-> Console
 @enduml

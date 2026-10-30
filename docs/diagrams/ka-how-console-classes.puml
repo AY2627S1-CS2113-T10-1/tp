@@ -56,5 +56,5 @@ AppState --> "currentPlan\n0..1" Plan
 note as CommandNote
   Only two representative command records are shown.
 end note
-Command .. CommandNote
+CommandNote -[dotted]-> Command
 @enduml

@@ -46,5 +46,5 @@ note as SnapshotNote
   Hours, policy and three ID counters are omitted.
   Lists are copied; counters survive deletion.
 end note
-Snapshot .. SnapshotNote
+SnapshotNote -[dotted]-> Snapshot
 @enduml
