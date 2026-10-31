@@ -67,6 +67,13 @@ node --test test/release.test.mjs
 ```
 
 Use `./gradlew` on Unix. If needed, set `GRADLE_USER_HOME` to a writable cache.
+The three-OS CI workflow now runs the same sequence with Java 25 and Node 22,
+after printing runtime versions. It selects the OS-appropriate wrapper and
+retains JUnit/Checkstyle reports and console/release transcripts on failure.
+The active and separately planned fixture lists retain their readiness status;
+adding these CI steps does not certify unimplemented range commands or hosted
+matrix results. Runtime saved data and diagnostic logs are not CI artifacts.
+
 In a restricted Windows environment, place `TEMP` and `TMP` in an ignored,
 writable workspace folder for the process runner. A local Gradle init script
 may set the test JVM's `java.io.tmpdir` to that folder; these verification

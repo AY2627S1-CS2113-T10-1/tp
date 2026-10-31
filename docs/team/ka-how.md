@@ -43,6 +43,14 @@ command and response records, console I/O and output rendering in `Main`,
 
 ### Testing
 
+Extended the [three-platform CI workflow][ci-workflow] to run the full Java 25
+build and packaging, Node runner self-tests, active console scenarios and the
+assertions-enabled JAR/distribution checks sequentially. Each OS retains its
+JUnit/Checkstyle reports and console/release transcripts even after failure;
+saved data and diagnostic logs are excluded. This makes packaging and console
+regressions visible alongside unit-test failures. Hosted execution is pending;
+a local check does not establish that all three hosted platforms passed.
+
 Wrote JUnit 5 tests for the application entry point, console loop, live state,
 command contracts, console I/O and rendering. [Application tests][app-tests]
 cover startup, restart and recovery from invalid input or failed saves;
@@ -87,6 +95,7 @@ locale settings to remain deterministic and independent.
 [app-tests]: ../../src/test/java/scheduleflow/cli/AppTest.java
 [state-tests]: ../../src/test/java/scheduleflow/cli/AppStateTest.java
 [renderer-tests]: ../../src/test/java/scheduleflow/cli/TextRendererTest.java
+[ci-workflow]: ../../.github/workflows/gradle.yml
 [issue18]: https://github.com/AY2627S1-CS2113-T10-1/tp/issues/18
 [issue65]: https://github.com/AY2627S1-CS2113-T10-1/tp/issues/65
 [issue67]: https://github.com/AY2627S1-CS2113-T10-1/tp/issues/67

@@ -1182,6 +1182,17 @@ cases with `-ea` and extracts/launches the normal distribution ZIP. It checks
 both scripts' assertion defaults but executes only the current OS's script.
 Preserve the printed `build/ui-transcripts/` paths before running `clean`.
 
+The [CI workflow](../.github/workflows/gradle.yml) retains its Ubuntu, macOS and
+Windows matrix and Java 25 setup. It installs Node 22, prints the Java, wrapper
+and Node versions, then runs `build`, runner self-tests, active UI cases and
+the release replay in that order. The wrapper is selected for each runner OS;
+packaging finishes before distribution acceptance, and the two process suites
+never regenerate the build directory concurrently. Any failed check fails its
+job. Independent matrix jobs continue to collect evidence when another OS fails.
+An always-run artifact step retains only JUnit/Checkstyle reports and console/
+release transcripts, excluding saved data and diagnostic logs. Workflow changes
+and local Windows results do not establish hosted or other-platform success.
+
 #### Diagnostics
 
 Default `Main` launches silence `scheduleflow.cli` unless logging was explicitly
