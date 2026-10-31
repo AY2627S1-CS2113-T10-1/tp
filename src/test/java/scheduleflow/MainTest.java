@@ -8,6 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -69,6 +72,31 @@ class MainTest {
         assertEquals("scheduleflow> Goodbye for now!\n", result.output());
         assertEquals("", result.error());
         assertFalse(Files.exists(directory.resolve("data")));
+    }
+
+    @Test
+    void main_failedPrompt_exitsWithFailureAndQuietStderr() throws Exception {
+        ProcessResult result = launch("", List.of(), List.of("-ea"), FailedOutputMain.class);
+
+        assertEquals(1, result.status());
+        assertEquals("", result.output());
+        assertEquals("", result.error());
+        assertFalse(Files.exists(directory.resolve("data")));
+    }
+
+    @Test
+    void main_failedArgumentErrorOutput_exitsBeforeLoadingAndPreservesBytes() throws Exception {
+        Path data = directory.resolve("data/scheduleflow.txt");
+        Files.createDirectories(data.getParent());
+        byte[] original = "SCHEDULEFLOW|99\n".getBytes(StandardCharsets.UTF_8);
+        Files.write(data, original);
+
+        ProcessResult result = launch("", List.of("--help"), List.of("-ea"), FailedOutputMain.class);
+
+        assertEquals(1, result.status());
+        assertEquals("", result.output());
+        assertEquals("", result.error());
+        assertArrayEquals(original, Files.readAllBytes(data));
     }
 
     @Test
@@ -308,6 +336,32 @@ class MainTest {
             };
             configureWarningLogger(logger);
             Main.main(new String[0]);
+        }
+    }
+
+    /**
+     * Injects failed stdout only inside a child JVM, leaving the test runner's shared streams untouched.
+     */
+    public static final class FailedOutputMain {
+        /**
+         * Prevents instantiation of this test launcher.
+         */
+        private FailedOutputMain() {
+        }
+
+        /**
+         * Installs a deterministic failed output stream before invoking the production entry point.
+         *
+         * @param args arguments forwarded unchanged to production Main
+         */
+        public static void main(String[] args) {
+            System.setOut(new PrintStream(new OutputStream() {
+                @Override
+                public void write(int value) throws IOException {
+                    throw new IOException("Output disconnected");
+                }
+            }, true, StandardCharsets.UTF_8));
+            Main.main(args);
         }
     }
 

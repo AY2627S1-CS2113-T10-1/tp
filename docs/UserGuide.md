@@ -1057,6 +1057,12 @@ Goodbye for now!
 
 End of input (EOF) also prints `Goodbye for now!` and exits normally without another save. In a Windows terminal, use Ctrl+Z then Enter; in a macOS/Linux terminal, use Ctrl+D on an empty input line.
 
+If the terminal or redirected output stops accepting text, the application
+stops with failure status 1 and accepts no further commands. A command may have
+saved successfully before its confirmation failed to appear. Restart with
+working output and inspect the saved tasks, commitments or schedule before
+repeating that command.
+
 ## Saving and restoring data
 
 ScheduleFlow loads saved records and any frozen plan **before its first prompt**.

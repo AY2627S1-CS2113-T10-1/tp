@@ -9,11 +9,17 @@ class Main SHELL {
 class App SHELL {
     + run() : int
     - runCommands(state: AppState) : int
+    - writeResponse(text: String) : boolean
 }
 class ConsoleUi SHELL {
     + prompt() : void
     + readLine() : String
     + write(text: String) : void
+    - flushOutput() : void
+}
+class BufferedReader <<java.io>> VALUES
+class PrintWriter <<java.io>> VALUES {
+    + checkError() : boolean
 }
 class TextRenderer SHELL {
     + help() : String
@@ -47,6 +53,8 @@ App --> "renderer\n1" TextRenderer
 App --> "parser\n1" CommandParser
 App --> "dispatcher\n1" CommandDispatcher
 App --> "storage\n1" Storage
+ConsoleUi --> "input\n1" BufferedReader
+ConsoleUi --> "output\n1" PrintWriter
 App ..> AppState : creates in run()
 Command <|.. Help
 Command <|.. AddTask
@@ -57,4 +65,11 @@ note as CommandNote
   Only two representative command records are shown.
 end note
 CommandNote -[dotted]-> Command
+
+note as OutputNote
+  checkError() flushes and checks output.
+  ConsoleUi exposes writer failure as UncheckedIOException.
+  App stops with status 1 without another command read.
+end note
+OutputNote -[dotted]-> ConsoleUi
 @enduml

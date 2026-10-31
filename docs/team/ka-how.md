@@ -28,6 +28,12 @@ command and response records, console I/O and output rendering in `Main`,
   `AppState` publishes saved snapshots, clears outdated plans after changes,
   and rejects plans derived from different data. Injected dependencies let
   tests exercise failure paths without the developer's saved files.
+- **Output-failure hardening:** [Console I/O][console-source] now checks failed
+  writes and flushes. The [application loop][app-source] returns status 1 before
+  another command read and never tries to print another error to failed output.
+  Startup-error and goodbye writes follow the same rule; `Main` also handles
+  failure while reporting invalid process arguments. Already-saved changes
+  remain durable, so students can restart and inspect them before retrying.
 
 ### Consistent task, commitment and schedule output
 
@@ -59,6 +65,15 @@ cover startup, restart and recovery from invalid input or failed saves;
 Unicode names, non-English default locales, midnight, leap days and large
 duration totals. Tests use fixed clocks, temporary storage and restored JVM
 locale settings to remain deterministic and independent.
+
+Added controlled write/flush failures in [console tests][console-tests],
+single-attempt output-failure and real-save/reload cases in the application
+tests, and isolated child-JVM stdout failures in [entry-point tests][main-tests].
+The tests check no command read after failed output, status 1, quiet default
+stderr and propagation of unrelated unchecked storage I/O defects. The updated
+[class view][current-class-diagram] and [sequence view][current-sequence-diagram]
+show the writer check and termination boundary; these controlled
+tests do not claim actual broken-pipe or cross-platform evidence.
 
 ### Documentation
 
@@ -96,6 +111,12 @@ locale settings to remain deterministic and independent.
 [state-tests]: ../../src/test/java/scheduleflow/cli/AppStateTest.java
 [renderer-tests]: ../../src/test/java/scheduleflow/cli/TextRendererTest.java
 [ci-workflow]: ../../.github/workflows/gradle.yml
+[app-source]: ../../src/main/java/scheduleflow/cli/App.java
+[console-source]: ../../src/main/java/scheduleflow/cli/ConsoleUi.java
+[console-tests]: ../../src/test/java/scheduleflow/cli/ConsoleUiTest.java
+[main-tests]: ../../src/test/java/scheduleflow/MainTest.java
+[current-class-diagram]: ../images/ka-how-console-classes.svg
+[current-sequence-diagram]: ../images/ka-how-command-loop.svg
 [issue18]: https://github.com/AY2627S1-CS2113-T10-1/tp/issues/18
 [issue65]: https://github.com/AY2627S1-CS2113-T10-1/tp/issues/65
 [issue67]: https://github.com/AY2627S1-CS2113-T10-1/tp/issues/67

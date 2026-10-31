@@ -319,6 +319,16 @@ These additional startup checks enable assertions and keep logger state inside
 their own processes. The maintained UI cases verify the packaged manifest entry
 point; their active status and expected command output remain unchanged.
 
+Output-failure regressions use deterministic JUnit writers instead of fragile
+process broken pipes. `ConsoleUiTest` fails writes and flushes separately;
+`AppTest` checks failed prompt/no read, failed response/no next command,
+single-attempt startup/input/command-error reporting and failed goodbye. A real
+temporary save followed by output failure retains its task, next ID and plan
+invalidation. `MainTest` injects failed stdout inside child JVMs for prompt and
+argument-error paths, asserting status 1 and quiet stderr. An unrelated unchecked
+storage I/O defect must still propagate. The process fixtures need no output
+changes and do not claim real device-failure or other-platform coverage.
+
 Time-sensitive task/planning checks use fixed clocks through injected APIs;
 there is no production clock flag. `FileStorageTest` covers deterministic
 filesystem and replacement failures. Injected temporary-write failures and
