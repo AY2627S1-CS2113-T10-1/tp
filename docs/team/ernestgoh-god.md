@@ -32,7 +32,9 @@ My main contribution was implementing and extending persistence through `FileSto
 
 Added JUnit 5 storage and codec regression coverage for Unicode and pipe-containing names, legacy/current formats, deleted-ID counters, exact work, corrupt data and frozen-plan round trips. [`FileStorageTest`][storage-tests] uses temporary folders and fresh readers to check byte-preserving loads, blocked-parent failures and cleanup after rejected replacement. [`StateCodecTest`][state-tests] and [`PlanCodecTest`][plan-tests] check conversion independently of filesystem access.
 
-I also extended parser, dispatcher and application tests for task controls, policy settings, no-op preservation and failed-save rollback, and added packaged console scenarios for saved restarts. Tests use isolated data and fixed clocks where time affects behaviour. Unsupported atomic-move and cleanup-failure injection remain untested.
+I also extended parser, dispatcher and application tests for task controls, policy settings, no-op preservation and failed-save rollback, and added packaged console scenarios for saved restarts. Tests use isolated data and fixed clocks where time affects behaviour.
+
+For release hardening, I added a package-private filesystem-operation seam and real-file tests for temporary creation failure, partial writes, unsupported atomic moves, replacement I/O errors and failed cleanup. The tests traverse `FileStorage`'s transaction, preserve the previous frozen plan's bytes and result, verify cleanup when possible, and retain the original cause plus suppressed cleanup errors. Both snapshot and plan saves exercise write and unsupported-move faults. Production operations still call `Files` and require atomic replacement without a fallback. These are controlled failures on Windows, not proof of other providers or power-loss durability. Full impossible-plan validation remains pending Gabriel's `Planner.validate(Plan)` boundary and its storage integration; I have not claimed that release requirement complete. See my [release handoff and verification evidence][release-hardening].
 
 ### Documentation
 
@@ -75,3 +77,4 @@ I also extended parser, dispatcher and application tests for task controls, poli
 [dg-manual]: ../DeveloperGuide.md#saving-restoration-failure-and-recovery
 [class-diagram]: ../images/ernest-storage-classes.svg
 [sequence-diagram]: ../images/ernest-atomic-plan-save.svg
+[release-hardening]: ../release/ernest-storage-handoff.md

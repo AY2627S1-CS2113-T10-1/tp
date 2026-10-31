@@ -5,10 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.DayOfWeek;
@@ -45,6 +48,164 @@ import scheduleflow.task.TaskService;
 class FileStorageTest {
     @TempDir
     private Path directory;
+
+    @Test
+    void save_partialTemporaryWrite_preservesTargetAndCleansSibling() throws Exception {
+        for (boolean savePlan : List.of(false, true)) {
+            FaultyFileOperations operations = new FaultyFileOperations(FailureStage.WRITE);
+            assertFailedSavePreservesTarget(operations, savePlan);
+            assertEquals(List.of("create", "write", "cleanup"), operations.stages);
+        }
+    }
+
+    @Test
+    void save_unsupportedAtomicMove_preservesTargetWithoutFallback() throws Exception {
+        for (boolean savePlan : List.of(false, true)) {
+            FaultyFileOperations operations = new FaultyFileOperations(FailureStage.ATOMIC_MOVE);
+            assertFailedSavePreservesTarget(operations, savePlan);
+            assertEquals(List.of("create", "write", "replace", "cleanup"), operations.stages);
+            assertTrue(operations.originalFailure instanceof AtomicMoveNotSupportedException);
+        }
+    }
+
+    @Test
+    void save_replacementIoFailure_preservesTargetAndCleansSibling() throws Exception {
+        FaultyFileOperations operations = new FaultyFileOperations(FailureStage.REPLACE);
+        assertFailedSavePreservesTarget(operations, false);
+        assertEquals(List.of("create", "write", "replace", "cleanup"), operations.stages);
+    }
+
+    @Test
+    void save_temporaryCreationFailure_preservesTargetWithoutCleanup() throws Exception {
+        FaultyFileOperations operations = new FaultyFileOperations(FailureStage.CREATE);
+        assertFailedSavePreservesTarget(operations, false);
+        assertEquals(List.of("create"), operations.stages);
+        assertNull(operations.temporaryFile);
+    }
+
+    @Test
+    void save_cleanupFailure_retainsOriginalCauseAndSuppressesCleanupError() throws Exception {
+        Path file = directory.resolve("scheduleflow.txt");
+        FileStorage original = new FileStorage(file, new StateCodec());
+        original.save(Snapshot.empty());
+        byte[] bytes = Files.readAllBytes(file);
+        FaultyFileOperations operations = new FaultyFileOperations(FailureStage.REPLACE);
+        operations.cleanupFailure = new IOException("Injected cleanup failure");
+
+        StorageException failure = assertThrows(StorageException.class,
+                () -> new FileStorage(file, new StateCodec(), operations).save(Snapshot.empty()));
+
+        assertSame(operations.originalFailure, failure.getCause());
+        assertEquals(1, failure.getSuppressed().length);
+        assertSame(operations.cleanupFailure, failure.getSuppressed()[0]);
+        assertArrayEquals(bytes, Files.readAllBytes(file));
+        assertEquals(directory, operations.temporaryFile.getParent());
+        assertTrue(Files.exists(operations.temporaryFile));
+        assertEquals(new StateCodec().encode(Snapshot.empty()), Files.readString(operations.temporaryFile));
+        assertEquals(List.of("create", "write", "replace", "cleanup"), operations.stages);
+        // The abandoned sibling is test data, confined to JUnit's temporary directory.
+        Files.delete(operations.temporaryFile);
+        assertOnlyTargetRemains(file);
+    }
+
+    @Test
+    void constructor_nullOperations_rejectsBeforeFilesystemChanges() {
+        Path file = directory.resolve("missing/scheduleflow.txt");
+        assertEquals("operations", assertThrows(NullPointerException.class,
+                () -> new FileStorage(file, new StateCodec(), null)).getMessage());
+        assertFalse(Files.exists(file.getParent()));
+    }
+
+    /** Exercises the real save transaction with a real prior plan and one controlled filesystem fault. */
+    private void assertFailedSavePreservesTarget(FaultyFileOperations operations, boolean savePlan) throws Exception {
+        Path file = directory.resolve("scheduleflow.txt");
+        LocalDateTime now = LocalDateTime.of(2026, 10, 5, 7, 0);
+        Snapshot source = new Snapshot(List.of(new Task(1, "Keep | caf\u00e9", now.plusDays(1), 45)), List.of(), 2, 1);
+        Plan previous = new EarliestDeadlinePlanner().generate(source, now);
+        FileStorage original = new FileStorage(file, new StateCodec());
+        original.savePlan(previous);
+        byte[] bytes = Files.readAllBytes(file);
+        Snapshot candidate = new TaskService().recordWork(source, 1, 15);
+        Plan nextPlan = new EarliestDeadlinePlanner().generate(candidate, now);
+        FileStorage failing = new FileStorage(file, new StateCodec(), operations);
+
+        StorageException failure = assertThrows(StorageException.class, () -> {
+            if (savePlan) {
+                failing.savePlan(nextPlan);
+            } else {
+                failing.save(candidate);
+            }
+        });
+
+        assertEquals("Cannot save data: " + file.toAbsolutePath().normalize(), failure.getMessage());
+        assertSame(operations.originalFailure, failure.getCause());
+        assertEquals(0, failure.getSuppressed().length);
+        assertArrayEquals(bytes, Files.readAllBytes(file));
+        assertEquals(source, original.load());
+        assertEquals(Optional.of(previous), original.loadPlan(source));
+        assertOnlyTargetRemains(file);
+        if (operations.temporaryFile != null) {
+            assertEquals(directory, operations.temporaryFile.getParent());
+            assertFalse(Files.exists(operations.temporaryFile));
+        }
+    }
+
+    /** Identifies the exact save boundary at which a deterministic test fault is injected. */
+    private enum FailureStage {
+        CREATE, WRITE, ATOMIC_MOVE, REPLACE
+    }
+
+    /** Performs real temporary-file I/O until the selected stage fails, recording any cleanup attempt. */
+    private static final class FaultyFileOperations extends FileStorage.FileOperations {
+        private final FailureStage failureStage;
+        private final IOException originalFailure;
+        private final List<String> stages = new ArrayList<>();
+        private Path temporaryFile;
+        private IOException cleanupFailure;
+
+        /** Creates a fault controller without opening files or changing global filesystem state. */
+        private FaultyFileOperations(FailureStage failureStage) {
+            this.failureStage = failureStage;
+            originalFailure = failureStage == FailureStage.ATOMIC_MOVE
+                    ? new AtomicMoveNotSupportedException("temporary", "target", "Injected unsupported atomic move")
+                    : new IOException("Injected " + failureStage + " failure");
+        }
+
+        @Override
+        Path createTemporaryFile(Path parent) throws IOException {
+            stages.add("create");
+            if (failureStage == FailureStage.CREATE) {
+                throw originalFailure;
+            }
+            temporaryFile = super.createTemporaryFile(parent);
+            return temporaryFile;
+        }
+
+        @Override
+        void write(Path file, String text) throws IOException {
+            stages.add("write");
+            if (failureStage == FailureStage.WRITE) {
+                Files.writeString(file, text.substring(0, text.length() / 2), StandardCharsets.UTF_8);
+                throw originalFailure;
+            }
+            super.write(file, text);
+        }
+
+        @Override
+        void replace(Path temporary, Path target) throws IOException {
+            stages.add("replace");
+            throw originalFailure;
+        }
+
+        @Override
+        void deleteIfExists(Path temporary) throws IOException {
+            stages.add("cleanup");
+            if (cleanupFailure != null) {
+                throw cleanupFailure;
+            }
+            super.deleteIfExists(temporary);
+        }
+    }
 
     @Test
     void saveAndLoad_recurrence_preservesBytesAndDoesNotRecreateDeletedTemplates() throws Exception {

@@ -331,6 +331,7 @@ filesystem access, text conversion and aggregate validation:
 | --- | --- |
 | [`Storage`](../src/main/java/scheduleflow/storage/Storage.java) | Defines complete snapshot and frozen-plan loading/saving contracts for the application. |
 | [`FileStorage`](../src/main/java/scheduleflow/storage/FileStorage.java) | Resolves one target path, reads UTF-8 and replaces that file atomically. Construction performs no I/O. |
+| `FileStorage.FileOperations` | Package-private save-operation seam; normal instances delegate to `Files`, while storage tests inject faults without global filesystem changes. |
 | [`StateCodec`](../src/main/java/scheduleflow/storage/StateCodec.java) | Converts versioned source records without opening files. |
 | [`PlanCodec`](../src/main/java/scheduleflow/storage/PlanCodec.java) | Converts a frozen result together with its complete source; it is package-private. |
 | [`Snapshot`](../src/main/java/scheduleflow/model/Snapshot.java) | Copies lists and validates the complete persisted aggregate. |
@@ -357,6 +358,12 @@ A `Snapshot` is source data. A `Plan` additionally freezes generation time,
 sessions, unallocated work and breaks against that source. Ka How's `AppState`
 holds the session's live snapshot and optional plan; storage neither publishes
 that state nor invokes the planner.
+
+Full cross-record frozen-plan validation is a pending release dependency:
+Gabriel's tested `Planner.validate(Plan)` API is absent from this branch's
+baseline. The codecs still perform their existing structural/reference checks;
+they do not yet reject every impossible allocation. No substitute allocation
+validator is implemented in storage.
 
 ## Implementation
 
@@ -1068,6 +1075,16 @@ Both save operations use `FileStorage.writeAtomically`:
    remove the temporary file and throw `StorageException`; attach a cleanup
    failure as suppressed information instead of replacing the original error.
 
+The public constructor installs `FileStorage.FileOperations`, whose creation,
+write, atomic-replacement and deletion methods call the real `Files` API. A
+package-private constructor accepts controlled operations for tests. Directory
+creation and all reads remain direct filesystem calls. The seam does not change
+the public interface, encoding, replacement options or error handling, and
+construction still performs no I/O. If temporary creation fails before a path
+is returned, there is no known temporary file to clean up. After write/move
+failure, cleanup is attempted once; a failed cleanup may leave an abandoned
+`.scheduleflow-*.tmp` sibling while retaining the original target.
+
 ![Saving a frozen plan and its source with an atomic replacement](images/ernest-atomic-plan-save.svg)
 
 **Figure 11. Successful atomic save of a frozen plan.**
@@ -1075,7 +1092,8 @@ Both save operations use `FileStorage.writeAtomically`:
 [PlantUML source](diagrams/ernest-atomic-plan-save.puml) · [PNG](images/ernest-atomic-plan-save.png). The diagram abbreviates
 static filesystem calls and follows a successful atomic replacement. `Files`
 is a class participant, and `PlanCodec` is created during `savePlan`, before
-`encode` is called. Cleanup on failure is described above. See
+`encode` is called. The operations collaborator forwards normal calls to
+`Files`; its note traces failure cleanup through the same collaborator. See
 [command transactions](#command-dispatch-and-live-state-transactions) for live
 publication: the dispatcher prepares recurrence/allocation/output, calls
 `savePlan` once, then publishes the saved source and plan. It does not save the
@@ -1344,15 +1362,27 @@ checks complete frozen results, malformed rows and distinct legacy layouts.
 immutable copies, counters, overlaps and policy-preserving candidates;
 [`FileStorageTest`](../src/test/java/scheduleflow/storage/FileStorageTest.java)
 uses temporary folders for byte-preserving reads, restarts, blocked parents,
-failed replacement and cleanup. Dispatcher/App tests exercise save-before-
+failed replacement and cleanup. Controlled `FileOperations` faults additionally
+exercise temporary creation failure, a partially written temporary file,
+`AtomicMoveNotSupportedException`, another replacement `IOException`, and cleanup
+failure after replacement failure. The write and unsupported-move cases cover
+both snapshot and plan saves through the shared transaction. Tests retain a real
+previous frozen plan, compare its bytes/source/result after failure, check
+cleanup/order and preserve the original cause. A cleanup error is suppressed on
+the `StorageException`; its intentionally retained sibling stays within JUnit's
+temporary folder. No ordinary-move fallback is attempted. Dispatcher/App tests exercise save-before-
 publication and matching-source restoration with fixed clocks and controlled
 storage. Their fake failures do not simulate every filesystem provider.
 
 UI-031/UI-032 in the [console test plan](../test/ui-test-plan.md) cover restored
 plans and invalidation. The [manual recipes](#saving-restoration-failure-and-recovery)
-add backup/transfer and an interactive rejected-save check. Unsupported atomic
-moves, injected cleanup failures, other operating systems and power-loss behavior
-still need separate evidence; the implementation makes no power-loss guarantee.
+add backup/transfer and an interactive rejected-save check. These new faults are
+injected at real transaction boundaries, not evidence of unsupported moves or
+cleanup denial on an actual provider. Other operating systems, real permission
+denial, unsupported providers and power-loss behavior still need separate
+evidence; the implementation makes no power-loss guarantee. Impossible-allocation
+load/save regressions remain pending Gabriel's planning validator; passing the
+existing codec checks does not close that release requirement.
 
 #### Storage defensive checks and diagnostics
 
@@ -1445,7 +1475,7 @@ tested. Verification entry points indicate how each requirement can be assessed.
 | --- | --- | --- |
 | NFR-1 | Build and run with Java 25. A packaged JAR requires no Gradle, Node or network connection for normal use. | Java/Gradle version checks, packaged launch and local-session tests. |
 | NFR-2 | Read/write saved data and console streams as UTF-8; preserve supported Unicode names through restart. Keep Java sources UTF-8. | Codec, file round-trip and `MainTest` encoding cases. |
-| NFR-3 | Save each changed candidate atomically before publishing it or reporting success. Reject a failed save without committing its records, counters or replacement plan. | FileStorage replacement tests and dispatcher/App rollback/retry tests. |
+| NFR-3 | Save each changed candidate atomically before publishing it or reporting success. Reject a failed save without committing its records, counters or replacement plan. | FileStorage real-file replacement tests, controlled write/move/cleanup faults, and dispatcher/App rollback/retry tests. Injected faults do not certify actual providers or power-loss recovery. |
 | NFR-4 | Reject malformed or unreadable saved data before accepting commands; preserve the original file and avoid partial restoration. | Corruption/invalid-UTF-8 tests and Appendix E recovery recipes. |
 | NFR-5 | Validate public inputs with runtime checks; use assertions only for internal invariants. Invalid commands must preserve prior state. | Domain/parser/dispatcher tests with invalid and boundary inputs. |
 | NFR-6 | Keep default console diagnostics quiet and make stage logging opt-in. Storage stage records must omit saved values and exception payloads. | Logger-capture tests and quiet-stderr console checks; review broader application logs before sharing. |
@@ -1804,4 +1834,8 @@ commands; its 18:00 deadline must be within the allowed calendar-year range.
 Close every instance before cleanup. Remove only disposable A/B/C folders and
 their copies/logs after inspection. This recipe tests a blocked parent, not an
 unsupported atomic move or failed temporary-file cleanup; those provider failure
-injections remain outside the manual coverage above.
+paths have deterministic injected JUnit coverage, separate from this manual
+recipe and from actual provider evidence. If cleanup itself fails, an abandoned
+temporary sibling can remain; preserve the main file and inspect the failure
+before discarding disposable test artifacts. Full impossible-plan rejection is
+still pending the planning validator and its storage integration.

@@ -14,6 +14,13 @@ class FileStorage PERSISTENCE {
     - writeAtomically(text: String) : void
     - removeTemporaryFile(temporaryFile: Path, failure: StorageException) : void
 }
+class "~FileStorage.FileOperations" as FileOperations PERSISTENCE {
+    ~ createTemporaryFile(parent: Path) : Path
+    ~ write(temporaryFile: Path, text: String) : void
+    ~ replace(temporaryFile: Path, target: Path) : void
+    ~ deleteIfExists(temporaryFile: Path) : void
+}
+class Files <<external>> PERSISTENCE
 class StateCodec PERSISTENCE {
     + encode(state: Snapshot) : String
     + decode(text: String) : Snapshot
@@ -34,6 +41,8 @@ class Plan <<record>> VALUES
 
 Storage <|.. FileStorage
 FileStorage --> "codec\n1" StateCodec
+FileStorage --> "operations\n1" FileOperations
+FileOperations ..> Files : real save operations
 FileStorage ..> PlanCodec : creates
 PlanCodec --> "snapshots\n1" StateCodec
 StateCodec ..> PlanCodec : decodes plan sources
@@ -47,4 +56,10 @@ note as SnapshotNote
   Lists are copied; counters survive deletion.
 end note
 SnapshotNote -[dotted]-> Snapshot
+note as OperationsNote
+  Nested package-private collaborator.
+  Tests inject faults without changing global providers.
+  Reads and directory creation use Files directly.
+end note
+OperationsNote -[dotted]-> FileOperations
 @enduml
