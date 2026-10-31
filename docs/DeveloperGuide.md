@@ -267,6 +267,12 @@ allocation relationships remain the planner's responsibility. Fixed-date
 planner and projection tests verify deadline order, conservation of minutes,
 cutoff rounding, clipping, midnight commitments and allowed schedule dates.
 
+`Planner.validate(Plan)` is the pure cross-record boundary. It checks the frozen
+source and generation time, not the current clock, without regenerating work.
+`EarliestDeadlinePlanner.generate` calls it before returning every result.
+Storage integration is assigned to Ernest and remains pending until his codecs
+call this boundary; raw `Plan` construction retains its lightweight contract.
+
 `Planner` is implemented by `EarliestDeadlinePlanner`. `TimeRules` defines
 cutoff and horizon calculations. `StudyHours`/`StudyWindow` supply daily
 availability and `StudyPolicy` supplies optional work/break limits. The
@@ -289,6 +295,14 @@ The class view focuses on the planner and daily schedule projection boundaries.
 `Task` and `Commitment` are source records owned by their respective modules;
 `Snapshot` is the aggregate owned by the persistence component. Arrows show
 dependencies or contained results, not ownership of those external types.
+
+The class view follows the UML Reference Sheet's operation/attribute visibility,
+dashed dependency and realization arrows, navigable associations, role names and
+multiplicities. Underlined members are static; `<<record>>` identifies Java record
+classes. The planner's optional policy association represents its constructor
+fallback, while the snapshot's policy is the saved setting. Shared immutable
+records use associations rather than exclusive-lifetime composition. Only selected
+members and the window-aware `eligibleStart` overload are shown.
 
 ![Planning and schedule projection classes](images/gabriel-planning-classes.svg)
 
@@ -316,6 +330,11 @@ The sequence view follows a successful `plan` command from time capture through
 plan publication. The planner obtains the horizon, resolves the daily cutoff
 for each date, and evaluates half-hour slots. `TimeRules` is a class participant
 because its methods are static; its internal horizon checks are omitted.
+The `Planner` interface is also shown as a `<<class>>` participant for its static
+`validate` call, following the reference sheet's class-level message notation.
+Ordinary participants use `name:Class` labels. Solid calls, dashed returns,
+nested self-call activations and bracketed `loop`/`opt` guards show the successful
+path. Exception paths and local helper calls remain omitted.
 The dispatcher renders and saves the plan before publishing the candidate
 snapshot and current plan.
 
@@ -364,8 +383,8 @@ holds the session's live snapshot and optional plan; storage neither publishes
 that state nor invokes the planner.
 
 Full cross-record frozen-plan validation is a pending release dependency:
-Gabriel's tested `Planner.validate(Plan)` API is absent from this branch's
-baseline. The codecs still perform their existing structural/reference checks;
+Gabriel's tested `Planner.validate(Plan)` API is now available after integration,
+but the codecs do not yet invoke it. They retain their existing structural/reference checks;
 they do not yet reject every impossible allocation. No substitute allocation
 validator is implemented in storage.
 
@@ -950,6 +969,26 @@ failed-save retry, ID exhaustion and preservation of unrelated snapshot data.
 
 ### Slot allocation under study hours/policy and recurrence
 
+#### Frozen allocation validation
+
+`Planner.validate` rejects unknown/completed task references, duplicate remainder
+rows, identity/deadline/reason mismatches and missing or excessive work. Long
+sums require scheduled `workMinutes` plus one optional remainder to equal each
+source task's exact remaining work. Padding is permitted, so a 45-minute task
+can occupy 60 minutes. Feasibility does not require greedy or optimal placement.
+
+Task and break intervals must fit effective hours, the frozen cutoff and horizon.
+Task intervals must also fit their current deadline and original occurrence
+release. Half-open intervals allow exact adjacency; task/task, task/break,
+break/break and allocation/occurring-commitment overlaps are rejected.
+Commitment membership uses `occursOn`, including bounds and skipped dates.
+Overdue and beyond-horizon work remains fully unallocated with its source reason;
+undated work can only report insufficient capacity. Validation checks break
+bounds and conflicts without replaying policy placement. Legacy/fallback-policy
+breaks are accepted even without a stored policy row. Null plans throw
+`NullPointerException`; inconsistent allocations throw `ValidationException`.
+No I/O, clock reads, recurrence materialization or source mutation occurs.
+
 #### Exact work and slot capacity
 
 Exact work and slot capacity are distinct: `StudySession.workMinutes` carries
@@ -1389,6 +1428,12 @@ console diagnostics section, selecting this logger namespace.
 
 ### Fixed-time planning and recurrence verification
 
+`PlannerTest` directly verifies alternative feasible frozen allocations, exact
+partial work/padding, legacy breaks, source preservation, accounting errors,
+overlap/adjacency, cutoff, overridden hours, deadlines, horizon, original release
+and commitment skips. Existing generator tests now exercise the same validator
+on every real result, retaining ordering, hours, policy and recurrence coverage.
+
 `EarliestDeadlinePlannerTest`, `ScheduleServiceTest` and
 `RecurringTaskServiceTest` use fixed times to verify conservation of exact
 work, rounded capacity, horizon/cutoff boundaries, hours/policy, frozen
@@ -1541,6 +1586,9 @@ platform/provider behavior; see [storage verification](#storage-diagnostics-and-
 * *Plan* - A frozen result derived from one snapshot, containing scheduled
   sessions, reserved breaks and unallocated work. Successful saved changes
   invalidate it; policy no-ops preserve it.
+* *Feasible allocation* - Sessions and breaks within frozen availability and
+  task timing constraints, with exact work conserved; it need not match the
+  greedy generator's placement or maximize completed tasks.
 * *Frozen plan* - The generation time, source snapshot and allocation retained
   for schedule views until replanning or a successful saved change.
 * *Planning horizon* - The calendar range ending at midnight on the same date
@@ -1779,6 +1827,10 @@ insufficient ID capacity, which are not practical to force through an ordinary
 JAR session.
 
 ### Planning, schedules, hours, policy and recurrence
+
+Direct malformed-plan validation is an API check covered by `PlannerTest`;
+the console has no command for supplying raw allocations. Run those fixed-time
+tests to check rejection independently of live-clock manual scenarios.
 
 Use another empty folder. Choose `D` as tomorrow and `W` as its full lowercase
 weekday (for example `tuesday`); substitute them in the commands.

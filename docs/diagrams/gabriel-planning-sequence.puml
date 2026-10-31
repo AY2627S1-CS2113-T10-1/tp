@@ -5,6 +5,7 @@
 participant "dispatcher:CommandDispatcher" as Dispatcher DOMAIN
 participant "recurringTasks:RecurringTaskService" as Recurrence DOMAIN
 participant "planner:EarliestDeadlinePlanner" as Planner DOMAIN
+participant "Planner" as Validation <<class>> DOMAIN
 participant "TimeRules" as Rules <<class>> DOMAIN
 participant "renderer:TextRenderer" as Renderer SHELL
 participant "storage:FileStorage" as Storage PERSISTENCE
@@ -12,6 +13,10 @@ participant "state:AppState" as State SHELL
 
 [-> Dispatcher ++ : execute(GeneratePlan, state)
 note right of Dispatcher : Capture now once; time API and state accessors omitted.
+note right of Validation
+  Planner is a Java interface.
+  Its static validate operation is called at class level.
+end note
 Dispatcher -> Dispatcher ++ : generatePlan(state, now)
 Dispatcher -> Recurrence ++ : materialize(source, now)
 Recurrence --> Dispatcher -- : candidate
@@ -20,7 +25,7 @@ Planner -> Rules ++ : horizonEnd(now)
 Rules --> Planner -- : horizonEnd
 note right of Planner : Filter and sort unfinished tasks; create pending work.
 Planner -> Planner ++ : createSlots(candidate, now, horizonEnd, pending)
-loop dates left
+loop date < horizonEnd.toLocalDate()
     note right of Planner
       Resolve the date's window.
       Accessors omitted.
@@ -38,6 +43,8 @@ note right of Planner
   Collect remaining work, merge sessions and collect breaks.
   Construct immutable Plan; helper/constructor calls omitted.
 end note
+Planner -> Validation ++ : validate(plan)
+Validation --> Planner -- : return (feasible)
 Planner --> Dispatcher -- : plan
 Dispatcher -> Renderer ++ : plan(plan)
 Renderer --> Dispatcher -- : output
