@@ -6,12 +6,17 @@ hide empty members
 class CommandDispatcher DOMAIN {
     - clock: Clock
     + execute(command: Command, state: AppState) : CommandResponse
+    - addContinuousBlock(command: Command.AddContinuousBlock, state: AppState) : String
+    - addDailyBlocks(command: Command.AddDailyBlocks, state: AppState) : String
+    - publishUnavailableBatch(original: Snapshot, candidate: Snapshot, state: AppState) : String
     - editCommitment(command: Command.EditCommitment, state: AppState) : String
     - saveAndCommit(candidate: Snapshot, state: AppState) : void
     - generatePlan(state: AppState, now: LocalDateTime) : String
 }
 class CommitmentService DOMAIN {
     + add(state: Snapshot, ...) : Snapshot
+    + addContinuousBlock(state: Snapshot, name: String, start: LocalDateTime, end: LocalDateTime) : Snapshot
+    + addDailyBlocks(state: Snapshot, name: String, firstDate: LocalDate, lastDate: LocalDate, start: LocalTime, end: LocalTime) : Snapshot
     + edit(state: Snapshot, commitmentId: int, ...) : Snapshot
     + skip(state: Snapshot, commitmentId: int, date: LocalDate) : Snapshot
     + delete(state: Snapshot, commitmentId: int) : Snapshot

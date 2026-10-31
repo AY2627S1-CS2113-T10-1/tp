@@ -820,35 +820,45 @@ may overlap planned task sessions, but it cannot overlap another commitment
 occurring on that date. Rejected additions preserve the existing plan and data.
 There is no separate `unavailable` command or command to select a session by ID.
 
-### Blocking multiple dates (planned)
+<a id="blocking-multiple-dates-planned"></a>
 
-Two extensions are specified for implementation but are not accepted by the
-console yet:
+### Blocking multiple dates
+
+Use either command to block several dates in one atomic request:
 
 ```text
 unavailable continuous n/Trip from/2026-10-26 1500 until/2026-10-28 1100
 unavailable daily n/Appointment from/2026-10-26 until/2026-10-28 start/1500 end/1700
 ```
 
-Continuous mode will block every moment from the first date/time up to, but
-excluding, the last date/time. Daily mode will block only 15:00-17:00 on each
-included date, leaving other hours available. Each generated period will have
-its own commitment ID for independent editing/deletion. The full request will
-be rejected if any period conflicts with an existing commitment.
-
-The batch confirmation and syntax parsing are implemented and unit-tested, but
-the console dispatch still cannot run these commands.
-
-Entering either command now shows an error and changes nothing:
+Continuous mode blocks every moment from the first date/time up to, but
+excluding, the last date/time. It splits the interval at midnight into one-time
+commitments. An exclusive endpoint at midnight does not create an empty period
+on that final date. For example:
 
 ```text
 scheduleflow> unavailable continuous n/Trip from/2026-11-02 1500 until/2026-11-04 1100
-Error: unavailable continuous is not available yet. Add each date with commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES instead.
+Blocked 3 unavailable periods.
+C1 | 2026-11-02 | 15:00 - 24:00 | Trip
+C2 | 2026-11-03 | 00:00 - 24:00 | Trip
+C3 | 2026-11-04 | 00:00 - 11:00 | Trip
+Saved unavailable periods. Run plan to regenerate.
 ```
 
-For now, use one single-date `commitment add ... on/DATE` command per date.
-The [Developer Guide proposal](DeveloperGuide.md#multi-date-unavailable-periods-implementation-handoff-planned)
-summarizes the integration boundary and links to the proposed acceptance fixtures.
+Daily mode blocks only the stated same-day window on every date from `from/`
+through `until/`, both inclusive. Its start must be earlier than its end; use
+continuous mode for an overnight interval. Both modes require half-hour-aligned
+times and ordinary commitment names.
+
+Each generated period receives its own `C` ID, so it can later be edited or
+deleted independently. ScheduleFlow validates the complete batch first. If any
+period conflicts, the date range is invalid, IDs are insufficient, or saving
+fails, it adds nothing, consumes no IDs and preserves the current plan. A
+successful batch is saved once, clears the previous plan and survives restart;
+run `plan` again before viewing the changed schedule.
+
+The [Developer Guide transaction description](DeveloperGuide.md#multi-date-unavailable-periods)
+explains the all-or-nothing integration and verification boundaries.
 
 ### Session limits and breaks
 

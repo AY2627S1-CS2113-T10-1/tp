@@ -221,7 +221,7 @@ the ownership table, outside the UML model.
 | Type | Responsibility |
 | --- | --- |
 | [`Commitment`](../src/main/java/scheduleflow/model/Commitment.java) | Immutable record of one fixed commitment. Its compact constructor validates the name, half-hour start, positive 30-minute-multiple duration, same-day end, date range and skipped dates. `occursOn(date)` and `overlaps(other)` are the only calendar-membership and conflict rules used elsewhere. |
-| [`CommitmentService`](../src/main/java/scheduleflow/commitment/CommitmentService.java) | Stateless operations (`add`, `edit`, `skip`, `delete`, `list`) that take a `Snapshot` and return a new candidate `Snapshot` or an ordered view. It never saves, publishes or reads the clock. |
+| [`CommitmentService`](../src/main/java/scheduleflow/commitment/CommitmentService.java) | Stateless operations (`add`, `addContinuousBlock`, `addDailyBlocks`, `edit`, `skip`, `delete`, `list`) that take a `Snapshot` and return a complete candidate `Snapshot` or an ordered view. It never saves, publishes or reads the clock. |
 | [`CommandDispatcher`](../src/main/java/scheduleflow/cli/CommandDispatcher.java) | Routes each nested `Command` record to one handler, captures the command time once, and owns the save-before-publication transaction for every mutating command, not only commitments. |
 
 A `Commitment` takes one of three shapes, all stored in the same record:
@@ -924,23 +924,29 @@ never has to choose between two clashing fixed commitments. A task session may
 still be overlapped by a new commitment; the next `plan` simply allocates around
 it.
 
-#### Multi-date unavailable periods: implementation handoff (planned)
+#### Multi-date unavailable periods
 
-**Proposed console integration:** `AddContinuousBlock` and `AddDailyBlocks`
-have parsed transports, service implementations and a batch formatter, but
-their dispatcher routes are not implemented. They are not supported console
-commands and are omitted from help. Each route throws a `ValidationException`
-naming the single-date `commitment add ... on/` alternative, so `App` prints an
-ordinary error and the session continues with nothing saved and the current plan
-kept. `CommandDispatcherTest` covers this rejection; it is not a feature pass.
+`AddContinuousBlock` and `AddDailyBlocks` reuse the same one-time commitment
+representation as a single unavailable date. `CommitmentService` expands the
+request and validates every generated period before returning one candidate.
+Continuous mode treats its end as exclusive and splits at midnight; daily mode
+uses one same-day window on every date in its inclusive range. Generated records
+are appended in date and allocated-ID order.
 
-The proposal expands a continuous interval (exclusive end), or a daily
-window across inclusive dates, into ordinary one-time commitments. The
-integration must save the complete validated batch once before publication;
-a conflict or failed save must consume no IDs and preserve the previous plan.
-Use [the planned fixtures](../test/ui-unavailable-ranges.planned.json) for
-the proposed grammar, confirmations and boundary cases. Keep them planned
-until dispatch and transaction acceptance are implemented.
+`CommandDispatcher` passes the original snapshot to the matching service, takes
+only the appended commitments for `TextRenderer.unavailablePeriodsAdded`, and
+prepares that complete confirmation before persistence. It then calls the normal
+`saveAndCommit` boundary exactly once. A successful save publishes the complete
+batch and clears the old plan once. Validation, rendering or save failure leaves
+the original commitments, counters, plan and disk unchanged, so a retry receives
+the same first C ID. Individual generated commitments remain ordinary one-time
+records and can be edited or deleted by their C ID.
+
+UI-022 through UI-027 in the [active fixture](../test/ui-scenarios.json) cover
+continuous and daily output, restart, independent deletion, invalid syntax and
+values, later-segment rollback, exclusive midnight, adjacency and leap day.
+Focused dispatcher tests use controlled storage to establish one-save ordering,
+failed-save retry, ID exhaustion and preservation of unrelated snapshot data.
 
 ### Slot allocation under study hours/policy and recurrence
 
@@ -1361,7 +1367,7 @@ or temporary storage, so no test reads the real time or the developer's data:
 | --- | --- | --- |
 | [`CommitmentTest`](../src/test/java/scheduleflow/model/CommitmentTest.java) | 13 | Record validation boundaries, `occursOn`/`recursOn`, adjacency versus overlap, shared-occurrence checks for bounded and skipped series. |
 | [`CommitmentServiceTest`](../src/test/java/scheduleflow/commitment/CommitmentServiceTest.java) | 52 | Each operation returns a candidate and leaves its source unchanged; conflict messages and ordering; edits keep position, ID and study hours; skip/one-time rules; counter exhaustion; unavailable-range expansion. |
-| [`CommandDispatcherTest`](../src/test/java/scheduleflow/cli/CommandDispatcherTest.java) | 42 | Every route and a single clock read per command; save-before-publication for each mutation; failed saves preserving state, plan, counters and the retry ID; no-op and read-only commands making no save; the one-`savePlan` planning transaction. |
+| [`CommandDispatcherTest`](../src/test/java/scheduleflow/cli/CommandDispatcherTest.java) | 46 | Every route and a single clock read per command; save-before-publication for each mutation and unavailable batch; failed saves preserving state, plan, counters and retry IDs; no-op and read-only commands making no save; the one-`savePlan` planning transaction. |
 
 The dispatcher tests use an in-memory `FakeStorage` that records attempts and can
 fail on demand. For example, `execute_eachFailedSave_preservesStatePlanCountersAndRetryId`
@@ -1371,7 +1377,8 @@ candidate is saved. `execute_planRejectedAfterMaterialization_preservesSourcePla
 covers a plan rejected after recurrence materialization. Packaged console
 scenarios UI-014 (partial edits, rejection, plan invalidation and restart) and
 UI-017 (occurrence skips and restart) exercise the same rules through the JAR.
-The proposed range routes are deliberately not covered as passing behaviour.
+UI-022 through UI-027 exercise both unavailable batch routes, rollback boundaries,
+restart persistence, independent deletion and calendar boundary cases.
 
 #### Commitment defensive checks and diagnostics
 
@@ -1570,7 +1577,7 @@ retain any evidence you need, then discard the disposable folder.
 These are representative manual paths, not an exhaustive input matrix.
 The [User Guide command summary](UserGuide.md#command-summary) gives the full
 syntax and the [UI fixtures](../test/ui-scenarios.json) supply exact outputs
-for additional reproducible cases. Unfinished range commands are excluded.
+for additional reproducible cases.
 
 Every supported console command has one primary group below. Saving is
 automatic, so persistence is tested by restarting after ordinary commands
@@ -1580,12 +1587,9 @@ rather than through a save command.
 | --- | --- |
 | `help`, `exit`, blank input, end of input, launch arguments | [Launch, help, exit](#launch-help-exit-and-console-behavior) |
 | `task add`, `task list`, `task list completed`, `task edit`, `task remaining`, `task progress`, `task complete`, `task reopen`, `task delete` | [Tasks](#tasks-and-input-validation) |
-| `commitment add` (weekly, bounded and `on/` one-time), `commitment list`, `commitment edit`, `commitment skip`, `commitment delete` | [Commitments](#commitments-and-unavailable-periods) |
+| `commitment add` (weekly, bounded and `on/` one-time), `commitment list`, `commitment edit`, `commitment skip`, `commitment delete`, `unavailable continuous`, `unavailable daily` | [Commitments](#commitments-and-unavailable-periods) |
 | `plan`, `schedule today`, `schedule DATE`, `hours` set/show/reset, `policy` set/show/reset, `task recur add/list/delete` | [Planning](#planning-schedules-hours-policy-and-recurrence) |
 | Restart, saved IDs/estimates/settings/templates/plan, missing or invalid data, failed saves | [Saving and recovery](#saving-restoration-failure-and-recovery) |
-
-The proposed `unavailable continuous` and `unavailable daily` commands are
-excluded until their dispatch is implemented.
 
 ### Launch, help, exit and console behavior
 
@@ -1745,9 +1749,34 @@ Replace `D` with tomorrow's date and `E` with the day after, both as `YYYY-MM-DD
 | `plan`, then `schedule D` | The whole day shows `08:00 - 22:00 \| [BUSY] C1: Unavailable`, with no T1 session. T1 is placed in another free slot (today's remaining hours or E, depending on launch time). |
 | `commitment delete C1`, then `schedule D` | No current plan again until `plan` runs. |
 
-Do not enter the proposed multi-date commands. For a failed-save case, use the
-[storage tests](#saving-restoration-failure-and-recovery); the outcome is the same
-for every mutating command.
+**Part 4: multi-date unavailable batches**
+
+Use a fourth empty folder and enter:
+
+```text
+plan
+unavailable continuous n/Trip from/2026-10-26 1500 until/2026-10-28 1100
+schedule today
+exit
+```
+
+Expect one confirmation containing C1 for 26 October 15:00–24:00, C2 for the
+full 27 October and C3 for 28 October 00:00–11:00. The schedule command must say
+there is no current plan because the successful batch invalidated it. Relaunch
+and use `commitment list`; all three one-time entries must remain.
+
+In another empty folder, run
+`unavailable daily n/Appointment from/2026-10-26 until/2026-10-28 start/1500 end/1700`.
+Expect three dated records with the same 15:00–17:00 window and consecutive IDs.
+Delete C2 and confirm C1 and C3 remain independently available.
+
+For atomic rejection, first add a one-time commitment on 27 October from
+16:00–16:30, then attempt that daily batch. Expect an overlap error, no generated
+periods and an unchanged next ID; a following valid addition must receive C2.
+UI-024 supplies the exact reversed/equal range, overnight daily, alignment and
+syntax rejections. Deterministic dispatcher tests cover a failed save and
+insufficient ID capacity, which are not practical to force through an ordinary
+JAR session.
 
 ### Planning, schedules, hours, policy and recurrence
 
