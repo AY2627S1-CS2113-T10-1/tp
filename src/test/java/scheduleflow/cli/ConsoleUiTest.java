@@ -10,12 +10,38 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.io.UncheckedIOException;
+import java.io.Writer;
 import org.junit.jupiter.api.Test;
 
 /**
  * Verifies exact prompt framing, flushed output and line/EOF/error handling without system streams.
  */
 class ConsoleUiTest {
+    @Test
+    void prompt_failedWriteOrFlush_throwsUncheckedIOException() {
+        for (boolean failOnFlush : new boolean[] {false, true}) {
+            ConsoleUi ui = new ConsoleUi(new BufferedReader(new StringReader("")),
+                    new PrintWriter(new FailingWriter(failOnFlush)));
+
+            UncheckedIOException failure = assertThrows(UncheckedIOException.class, ui::prompt);
+
+            assertEquals("Cannot write console output.", failure.getCause().getMessage());
+        }
+    }
+
+    @Test
+    void write_failedWriteOrFlush_throwsUncheckedIOException() {
+        for (boolean failOnFlush : new boolean[] {false, true}) {
+            ConsoleUi ui = new ConsoleUi(new BufferedReader(new StringReader("")),
+                    new PrintWriter(new FailingWriter(failOnFlush)));
+
+            UncheckedIOException failure = assertThrows(UncheckedIOException.class, () -> ui.write("Response"));
+
+            assertEquals("Cannot write console output.", failure.getCause().getMessage());
+        }
+    }
+
     @Test
     void write_nullText_rejectsWithoutWritingOrFlushing() {
         FlushWriter output = new FlushWriter();
@@ -68,6 +94,40 @@ class ConsoleUiTest {
         @Override
         public void flush() {
             flushes++;
+        }
+    }
+
+    /**
+     * Rejects either text writes or flushing without depending on a real terminal or pipe.
+     */
+    private static final class FailingWriter extends Writer {
+        private final boolean failOnFlush;
+
+        /**
+         * Selects the output operation that fails.
+         *
+         * @param failOnFlush whether writes succeed until the flush
+         */
+        private FailingWriter(boolean failOnFlush) {
+            this.failOnFlush = failOnFlush;
+        }
+
+        @Override
+        public void write(char[] text, int offset, int length) throws IOException {
+            if (!failOnFlush) {
+                throw new IOException("Write disconnected");
+            }
+        }
+
+        @Override
+        public void flush() throws IOException {
+            if (failOnFlush) {
+                throw new IOException("Flush disconnected");
+            }
+        }
+
+        @Override
+        public void close() {
         }
     }
 }

@@ -5,6 +5,7 @@ on: [push, pull_request]
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         platform: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
@@ -23,6 +24,50 @@ jobs:
           java-version: '25'
           java-package: jdk+fx
 
-      - name: Build and check with Gradle
-        run: ./gradlew check
+      - name: Set up Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Verify Java, Gradle and Node runtimes
+        shell: bash
+        run: |
+          java -version
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            ./gradlew.bat --version
+          else
+            ./gradlew --version
+          fi
+          node --version
+
+      - name: Build, test, check style and package with Gradle
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            ./gradlew.bat build
+          else
+            ./gradlew build
+          fi
+
+      - name: Test the console runner
+        run: node --test test/ui-runner.test.mjs
+
+      - name: Verify active console scenarios
+        run: node .agents/skills/test-ui/scripts/run-ui-tests.mjs
+
+      - name: Verify assertions-enabled JAR and normal distribution
+        run: node --test test/release.test.mjs
+
+      - name: Retain verification reports and transcripts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: verification-${{ matrix.platform }}
+          path: |
+            build/reports/tests/test/**
+            build/test-results/test/*.xml
+            build/reports/checkstyle/**
+            build/ui-transcripts/*.txt
+          if-no-files-found: warn
 

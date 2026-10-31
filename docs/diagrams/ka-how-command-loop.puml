@@ -1,6 +1,7 @@
 @startuml
 !include course-style.puml
 
+participant "output:PrintWriter" as Output VALUES
 participant "ui:ConsoleUi" as UI SHELL
 participant "app:App" as App SHELL
 participant "parser:CommandParser" as Parser PARSING
@@ -9,6 +10,10 @@ participant "renderer:TextRenderer" as Renderer SHELL
 
 [-> App ++ : runCommands(state)
 App -> UI ++ : prompt()
+UI -> Output ++ : print("scheduleflow> ")
+Output --> UI -- : return
+UI -> Output ++ : checkError()
+Output --> UI -- : false
 UI --> App -- : return
 App -> UI ++ : readLine()
 UI --> App -- : "help"
@@ -18,20 +23,32 @@ App -> Dispatcher ++ : execute(command, state)
 Dispatcher -> Renderer ++ : help()
 Renderer --> Dispatcher -- : helpText
 Dispatcher --> App -- : response: CommandResponse
+App -> App ++ : writeResponse(helpText)
 App -> UI ++ : write(helpText)
+UI -> Output ++ : println(helpText)
+Output --> UI -- : return
+UI -> Output ++ : checkError()
+Output --> UI -- : false
 UI --> App -- : return
+App --> App -- : true
 note right of App
   response.shouldExit() is false.
   Time capture, value construction and accessors are omitted.
 end note
 
 App -> UI ++ : prompt()
-UI --> App -- : return
-App -> UI ++ : readLine()
-UI --> App -- : null (EOF)
-App -> Renderer ++ : exit()
-Renderer --> App -- : goodbye
-App -> UI ++ : write(goodbye)
-UI --> App -- : return
-[<-- App -- : 0
+UI -> Output ++ : print("scheduleflow> ")
+Output --> UI -- : return (writer records failure)
+UI -> Output ++ : checkError()
+Output --> UI -- : true
+UI --> App -- : throws UncheckedIOException
+note right of UI
+  flushOutput() calls are abbreviated as checkError().
+  checkError() also flushes the writer.
+end note
+note right of App
+  No next readLine() or error response.
+  Successfully saved commands remain saved.
+end note
+[<-- App -- : 1
 @enduml

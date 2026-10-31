@@ -2,6 +2,7 @@
 package scheduleflow.cli;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Clock;
 import java.util.Objects;
 import java.util.logging.Level;
@@ -65,9 +66,9 @@ public final class App {
     }
 
     /**
-     * Loads once and runs commands, returning zero for normal exit or one for startup/input failure.
+     * Loads once and runs commands, returning zero for normal exit or one for startup/console failure.
      *
-     * @return 0 for exit or EOF, or 1 for a storage-load or input failure
+     * @return 0 for exit or EOF, or 1 for a storage-load, input or output failure
      */
     public int run() {
         LOGGER.log(Level.INFO, "Starting application session");
@@ -80,14 +81,14 @@ public final class App {
             LOGGER.log(Level.FINE, "Saved snapshot loaded");
         } catch (StorageException exception) {
             LOGGER.log(Level.SEVERE, "Startup load failed", exception);
-            ui.write(renderer.error(exception.getMessage()));
+            writeResponse(renderer.error(exception.getMessage()));
             return 1;
         }
         try {
             return runCommands(state);
         } catch (IOException exception) {
             LOGGER.log(Level.SEVERE, "Command input failed", exception);
-            ui.write(renderer.error("Cannot read input: " + exception.getMessage()));
+            writeResponse(renderer.error("Cannot read input: " + exception.getMessage()));
             return 1;
         }
     }
@@ -97,18 +98,22 @@ public final class App {
      * Unexpected programming exceptions propagate so defects are not disguised as user errors.
      *
      * @param state loaded live state for this session
-     * @return 0 after an exit command or EOF
+     * @return 0 after an exit command or EOF, or 1 if console output fails
      * @throws IOException if the next input line cannot be read
      */
     private int runCommands(AppState state) throws IOException {
         LOGGER.log(Level.FINE, "Starting command loop");
         while (true) {
-            ui.prompt();
+            try {
+                ui.prompt();
+            } catch (UncheckedIOException exception) {
+                LOGGER.log(Level.SEVERE, "Console output failed", exception);
+                return 1;
+            }
             String line = ui.readLine();
             if (line == null) {
                 LOGGER.log(Level.INFO, "Ending session after EOF");
-                ui.write(renderer.exit());
-                return 0;
+                return writeResponse(renderer.exit()) ? 0 : 1;
             }
             if (line.isBlank()) {
                 LOGGER.log(Level.FINE, "Ignoring blank input");
@@ -117,7 +122,9 @@ public final class App {
             try {
                 LOGGER.log(Level.FINE, "Processing command input");
                 CommandResponse response = dispatcher.execute(parser.parse(line), state);
-                ui.write(response.output());
+                if (!writeResponse(response.output())) {
+                    return 1;
+                }
                 LOGGER.log(Level.FINE, "Command response delivered");
                 if (response.shouldExit()) {
                     LOGGER.log(Level.INFO, "Ending session after exit command");
@@ -125,11 +132,33 @@ public final class App {
                 }
             } catch (ParseException exception) {
                 LOGGER.log(Level.WARNING, "Command syntax rejected", exception);
-                ui.write(renderer.parseError(exception));
+                if (!writeResponse(renderer.parseError(exception))) {
+                    return 1;
+                }
             } catch (ValidationException | StorageException exception) {
                 LOGGER.log(Level.WARNING, "Command validation or save rejected", exception);
-                ui.write(renderer.error(exception.getMessage()));
+                if (!writeResponse(renderer.error(exception.getMessage()))) {
+                    return 1;
+                }
             }
+        }
+    }
+
+    /**
+     * Attempts a response once without trying to report an output failure to the failed writer.
+     * Only the console call is caught; unchecked I/O failures from other components still propagate.
+     * A response failure cannot undo a command that has already been saved.
+     *
+     * @param text fully rendered response
+     * @return whether the console accepted and flushed the response
+     */
+    private boolean writeResponse(String text) {
+        try {
+            ui.write(text);
+            return true;
+        } catch (UncheckedIOException exception) {
+            LOGGER.log(Level.SEVERE, "Console output failed", exception);
+            return false;
         }
     }
 }

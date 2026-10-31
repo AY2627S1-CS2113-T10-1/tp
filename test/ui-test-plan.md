@@ -67,6 +67,13 @@ node --test test/release.test.mjs
 ```
 
 Use `./gradlew` on Unix. If needed, set `GRADLE_USER_HOME` to a writable cache.
+The three-OS CI workflow now runs the same sequence with Java 25 and Node 22,
+after printing runtime versions. It selects the OS-appropriate wrapper and
+retains JUnit/Checkstyle reports and console/release transcripts on failure.
+The active and separately planned fixture lists retain their readiness status;
+adding these CI steps does not certify unimplemented range commands or hosted
+matrix results. Runtime saved data and diagnostic logs are not CI artifacts.
+
 In a restricted Windows environment, place `TEMP` and `TMP` in an ignored,
 writable workspace folder for the process runner. A local Gradle init script
 may set the test JVM's `java.io.tmpdir` to that folder; these verification
@@ -311,6 +318,16 @@ application logger levels, preserving command output and warning filtering.
 These additional startup checks enable assertions and keep logger state inside
 their own processes. The maintained UI cases verify the packaged manifest entry
 point; their active status and expected command output remain unchanged.
+
+Output-failure regressions use deterministic JUnit writers instead of fragile
+process broken pipes. `ConsoleUiTest` fails writes and flushes separately;
+`AppTest` checks failed prompt/no read, failed response/no next command,
+single-attempt startup/input/command-error reporting and failed goodbye. A real
+temporary save followed by output failure retains its task, next ID and plan
+invalidation. `MainTest` injects failed stdout inside child JVMs for prompt and
+argument-error paths, asserting status 1 and quiet stderr. An unrelated unchecked
+storage I/O defect must still propagate. The process fixtures need no output
+changes and do not claim real device-failure or other-platform coverage.
 
 Time-sensitive task/planning checks use fixed clocks through injected APIs;
 there is no production clock flag. `FileStorageTest` covers deterministic

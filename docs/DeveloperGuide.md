@@ -143,7 +143,11 @@ loading begins in `run()`. `AppState` is local to that run, rather than an `App`
 field, so command execution receives the session's live state explicitly.
 
 [`ConsoleUi`](../src/main/java/scheduleflow/cli/ConsoleUi.java) owns line reads,
-prompt/response writes and flushing.
+prompt/response writes and flushing. Its retained reader/writer are shown in
+Figure 2. `flushOutput()` uses `PrintWriter.checkError()` to flush and detect
+suppressed write failures, exposing them as `UncheckedIOException`. `App` catches
+that exception only around console writes and returns status 1; unrelated
+component failures still propagate. No public signatures change.
 [`TextRenderer`](../src/main/java/scheduleflow/cli/TextRenderer.java) returns
 formatted text; it does not read the clock, perform console I/O or mutate state.
 [`AppState`](../src/main/java/scheduleflow/cli/AppState.java) retains a `Snapshot`
@@ -401,17 +405,21 @@ For a nonblank line, the parser returns a `Command`; the dispatcher executes it
 against the same `AppState`. `ConsoleUi.write(response.output())` adds the final
 newline and flushes the response before `shouldExit()` is inspected.
 
-![Help command followed by EOF](images/ka-how-command-loop.svg)
+![Help command followed by a failed prompt and termination](images/ka-how-command-loop.svg)
 
-**Figure 8. Help command followed by EOF.**
+**Figure 8. Help command followed by a failed prompt.**
 
 [PlantUML source](diagrams/ka-how-command-loop.puml) · [PNG](images/ka-how-command-loop.png)
 
-Figure 8 follows one successful `help` command and then EOF after restoration.
+Figure 8 follows one successful `help` command and then a failed prompt after restoration.
 The `runCommands` activation remains open while nested calls execute, and ends
-at its return of status 0. EOF bypasses parsing and dispatch. Blank input,
-syntax errors, validation/save failures and explicit `exit` are separate paths
-described below. Value construction and accessors are omitted. Mutation and
+at its return of status 1. The failed prompt prevents the next input read.
+`writeResponse` catches output failure while writing a response; the prompt has
+its own narrow catch. The diagram abbreviates `ConsoleUi.flushOutput()` as its
+`checkError()` call, which flushes and checks the writer's error flag.
+EOF bypasses parsing and dispatch. Blank input, syntax errors, validation/save
+failures and explicit `exit` are separate paths described below.
+Value construction and accessors are omitted. Mutation and
 publication order is shown in [command transactions](#command-dispatch-and-live-state-transactions).
 
 For example, after adding `commitment add n/Lecture day/MON start/1000 d/60`
@@ -433,6 +441,7 @@ while the service and dispatcher establish candidate validation and rollback.
 | `exit` | The dispatcher returns goodbye with `shouldExit = true`; `App` prints it once. | Status 0, no extra save or prompt. |
 | EOF (`readLine()` returns `null`) | `App` writes `TextRenderer.exit()` without invoking parser or dispatcher. | Status 0, no save. |
 | Input `IOException` | `run()` prints `Error: Cannot read input: MESSAGE`. | Status 1. |
+| Output failure during a prompt, response, goodbye or error report | `ConsoleUi` detects the writer's error flag. `App` stops without reading another command or reporting the error to the failed writer. | Status 1; any already-saved command stays saved. |
 
 Unexpected programming exceptions propagate. In particular, a null dependency
 or a stale plan is not converted to an ordinary input error. (The unfinished
@@ -441,6 +450,9 @@ ordinary errors.) Extra process arguments are rejected by `Main` before loading,
 with `Error: Usage: java -jar scheduleflow.jar (no arguments)` and status 1.
 `App` returns status codes so tests and embedded callers need not terminate
 their JVM; only `Main` calls `System.exit`.
+If argument-error output itself fails, `Main` still exits with status 1 without
+loading data or attempting another write. Output-failure diagnostics follow the
+existing opt-in logging configuration; default launches keep stderr quiet.
 
 #### Deterministic presentation
 
@@ -479,8 +491,13 @@ formatter and return `CommandResponse` consistently.
 Catching the three expected command exceptions keeps correction local to one
 iteration. Catching every runtime exception would also keep the loop running,
 but could conceal a broken internal invariant. Propagating unexpected failures
-keeps them visible to developers. This boundary does not promise recovery from
-an output-device failure: `PrintWriter` errors are not explicitly checked.
+keeps them visible to developers. `PrintWriter` suppresses checked write errors,
+so `ConsoleUi` explicitly checks its flag after each prompt or response. Because
+that flag retains no original cause, the resulting `UncheckedIOException`
+contains a descriptive `IOException`, rather than a fabricated device cause.
+Output failure ends the session; attempting to print another error could fail
+again. It does not roll back a successful save: restart and inspect saved
+records before repeating a command whose confirmation could not be delivered.
 
 `AppTest` covers startup, syntax/domain/save recovery and failed-save retries;
 `AppStateTest` covers source-plan consistency. `ConsoleUiTest` checks flushes and
@@ -489,6 +506,14 @@ framing, `MainTest` checks process status/UTF-8/quiet defaults, and
 Fixed clocks, temporary files and isolated logger/locale changes keep these
 checks independent of the developer's saved data. See [console verification](#build-packaging-and-console-verification)
 and [manual console tests](#launch-help-exit-and-console-behavior).
+
+Deterministic failing writers cover both write and flush failures. Application
+tests reject any input read after a failed prompt/response, check single-attempt
+startup/input/command-error reporting and goodbye failure, and reload a real
+saved mutation after its response fails. Child-JVM tests exercise the actual
+`Main` wiring with failed stdout, including argument rejection and quiet stderr.
+An unchecked I/O defect from storage still propagates instead of becoming a
+console status. These are controlled faults, not real broken-pipe or OS proof.
 
 `MainTest` also checks corrupt saved-plan metadata and a directory at the saved-file
 path: both must exit with status 1 before prompting and preserve existing bytes.
@@ -1182,6 +1207,17 @@ cases with `-ea` and extracts/launches the normal distribution ZIP. It checks
 both scripts' assertion defaults but executes only the current OS's script.
 Preserve the printed `build/ui-transcripts/` paths before running `clean`.
 
+The [CI workflow](../.github/workflows/gradle.yml) retains its Ubuntu, macOS and
+Windows matrix and Java 25 setup. It installs Node 22, prints the Java, wrapper
+and Node versions, then runs `build`, runner self-tests, active UI cases and
+the release replay in that order. The wrapper is selected for each runner OS;
+packaging finishes before distribution acceptance, and the two process suites
+never regenerate the build directory concurrently. Any failed check fails its
+job. Independent matrix jobs continue to collect evidence when another OS fails.
+An always-run artifact step retains only JUnit/Checkstyle reports and console/
+release transcripts, excluding saved data and diagnostic logs. Workflow changes
+and local Windows results do not establish hosted or other-platform success.
+
 #### Diagnostics
 
 Default `Main` launches silence `scheduleflow.cli` unless logging was explicitly
@@ -1204,7 +1240,7 @@ java.util.logging.FileHandler.formatter=java.util.logging.SimpleFormatter
 ```
 
 `FINE` records stages, `INFO` session start/normal termination, `WARNING`
-recoverable rejections and `SEVERE` startup/input failures. To retain warnings
+recoverable rejections and `SEVERE` startup/input/output failures. To retain warnings
 and failures only, set both `scheduleflow.level` and the handler level to
 `WARNING`. Constructors perform no I/O or logging configuration.
 
@@ -1561,6 +1597,17 @@ Detailed syntax/domain cases are in [task testing](#tasks-and-input-validation)
 and [commitment testing](#commitments-and-unavailable-periods); fatal startup
 and rejected saves are covered in [storage testing](#saving-restoration-failure-and-recovery).
 Exit before discarding the disposable folders; keep your real data untouched.
+
+Output-device failures are checked deterministically through injected writers,
+not by relying on platform-specific broken pipes. Run the focused
+`ConsoleUiTest`, `AppTest` and `MainTest` command under
+[console verification](#build-packaging-and-console-verification). Expect status
+1 after a failed prompt without an input read, and after a failed response
+without another prompt, read or error-output retry. Startup/input/command-error
+and goodbye writes have the same failure boundary. The saved-mutation test
+reloads real temporary storage to confirm the task/counter and plan invalidation
+survive an undeliverable confirmation. These tests do not establish real
+terminal/provider behavior on another OS.
 
 ### Tasks and input validation
 
