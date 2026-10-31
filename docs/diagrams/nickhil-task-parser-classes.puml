@@ -1,82 +1,66 @@
 @startuml
-' Nickhil contribution D2: current whole-file Task and parser allocation.
-!pragma layout smetana
-skinparam backgroundColor white
-skinparam shadowing false
-skinparam defaultFontName SansSerif
-skinparam defaultFontSize 15
-skinparam classAttributeIconSize 0
-skinparam packageStyle rectangle
-skinparam ArrowColor #475569
-skinparam classBorderColor #475569
-skinparam packageBorderColor #94A3B8
+!include course-style.puml
+left to right direction
 hide empty members
-top to bottom direction
 
 package "scheduleflow.cli" {
-    class CommandParser {
-        +parse(line: String): Command
-        -parseTaskProgress(input: String): Command
+    class CommandParser PARSING {
+        + parse(line: String) : Command
+        - parseTaskProgress(input: String) : Command
     }
-    class ParseException {
-        +usage(): String
+    class ParseException PARSING {
+        + usage() : String
     }
-    interface "Command\nexternal: Ka How" as Command #F1F5F9
+    interface Command <<interface>> SHELL
 }
-
 package "scheduleflow.task" {
-    class TaskService {
-        +recordWork(...): Snapshot
-        +recordSessionProgress(...): Snapshot
-        +complete(...): Snapshot
-        +reopen(...): Snapshot
-        -replaceRemaining(...): Snapshot
+    class TaskService DOMAIN {
+        + recordWork(state: Snapshot, taskId: int, done: int) : Snapshot
+        + recordSessionProgress(state: Snapshot, taskId: int, ...) : Snapshot
+        + complete(state: Snapshot, taskId: int) : Snapshot
+        + reopen(state: Snapshot, taskId: int, positiveRemaining: int) : Snapshot
+        - replaceRemaining(state: Snapshot, task: Task, remaining: int) : Snapshot
     }
-    class TaskEdit <<record>> {
-        name: Optional<String>
-        deadline: Optional<LocalDateTime>
-        clearDeadline: boolean
+    class TaskEdit <<record>> VALUES {
+        - name: Optional<String>
+        - deadline: Optional<LocalDateTime>
+        - clearDeadline: boolean
     }
 }
-
 package "scheduleflow.model" {
-    class Task <<record>> {
-        id: int
-        name: String
-        deadline: Optional<LocalDateTime>
-        remainingMinutes: int
-        +displayId(): String
+    class Task <<record>> VALUES {
+        - id: int
+        - name: String
+        - deadline: Optional<LocalDateTime>
+        - remainingMinutes: int
+        + displayId() : String
     }
-    enum TaskPriority {
+    enum TaskPriority <<enumeration>> VALUES {
         HIGH
         NORMAL
         LOW
     }
-    class "TaskOccurrence\nexternal: Gabriel" as TaskOccurrence #F1F5F9
-    class "Snapshot\nexternal: Ernest" as Snapshot #F1F5F9 {
-        +withTasks(replacements, nextId): Snapshot
+    class TaskOccurrence <<record>> VALUES
+    class Snapshot <<record>> VALUES {
+        + withTasks(replacements: List<Task>, nextId: int) : Snapshot
     }
 }
-
 package "scheduleflow.common" {
-    class InputRules {
-        {static} +normalizeName(value): String
-        {static} +requireTaskMinutes(minutes): void
+    class InputRules DOMAIN {
+        {static} + normalizeName(value: String) : String
+        {static} + requireTaskMinutes(minutes: int) : void
     }
-    class ValidationException
+    class ValidationException PARSING
 }
 
 CommandParser ..> Command : creates / returns
 CommandParser ..> ParseException : throws
-CommandParser ..> TaskEdit : creates for edits
+CommandParser ..> TaskEdit : creates
 TaskService ..> TaskEdit : reads
 TaskService ..> Task : creates replacements
 TaskService ..> Snapshot : reads / returns candidate
-Task --> "1" TaskPriority : priority
-Task --> "0..1" TaskOccurrence : occurrence
-Task ..> InputRules : validates structure
-InputRules ..> ValidationException : rejects invalid values
-
-' Layout-only edge; this is not a parser-to-service call or UML relationship.
-CommandParser -[hidden]down-> TaskService
+Task --> "priority\n1" TaskPriority
+Task --> "occurrence\n0..1" TaskOccurrence
+Task ..> InputRules : validates
+InputRules ..> ValidationException : throws
 @enduml

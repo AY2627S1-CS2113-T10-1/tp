@@ -1,57 +1,43 @@
 @startuml
-' DG contribution I3: Darren (Darren50).
-skinparam backgroundColor white
-skinparam shadowing false
-skinparam defaultFontName SansSerif
-skinparam defaultFontSize 15
-skinparam sequenceMessageAlign center
-skinparam responseMessageBelowArrow true
-skinparam maxMessageSize 150
-skinparam ParticipantPadding 12
-skinparam ArrowColor #475569
-hide footbox
+!include course-style.puml
 
-participant ":App" as App #F1F5F9
-participant ":CommandDispatcher" as Dispatcher #DCFCE7
-participant ":CommitmentService" as Service #DCFCE7
-participant ":Storage" as Storage #F1F5F9
-participant ":AppState" as State #F1F5F9
-participant ":TextRenderer" as Renderer #F1F5F9
+participant "app:App" as App SHELL
+participant "dispatcher:CommandDispatcher" as Dispatcher DOMAIN
+participant "commitments:CommitmentService" as Service DOMAIN
+participant "storage:FileStorage" as Storage PERSISTENCE
+participant "state:AppState" as State SHELL
+participant "renderer:TextRenderer" as Renderer SHELL
 
-App -> Dispatcher : execute(EditCommitment, state)
-Dispatcher -> Dispatcher : now = LocalDateTime.now(clock)
-Dispatcher -> State : snapshot()
-State --> Dispatcher : source
-Dispatcher -> Service : edit(source, id, name, day,\nstart, minutes, from, until)
-Service -> Service : find original by ID;\nresolve omitted fields
-Service -> Service : new Commitment(...)\nvalidates the replacement
-Service -> Service : rejectOverlaps(edited,\nall other commitments)
-
-alt replacement is valid
-    Service --> Dispatcher : candidate snapshot\n(same position, same ID)
-    Dispatcher -> Dispatcher : saveAndCommit(candidate, state)
-    Dispatcher -> Storage : save(candidate)
-    ref over Storage
-      Atomic replacement:
-      see persistence implementation.
-    end ref
-    alt save succeeds
-        Storage --> Dispatcher : return
-        Dispatcher -> State : commit(candidate)
-        note right of State : Publishes the candidate\nand clears the current plan.
-        Dispatcher -> Renderer : commitmentEdited(edited)
-        Renderer --> Dispatcher : confirmation text
-        Dispatcher --> App : CommandResponse(text, false)
-    else save fails
-        Storage --> Dispatcher : throw StorageException
-        Dispatcher --> App : throw StorageException
-        note over App, State : Live snapshot, plan, saved file and IDs are unchanged.
-    end
-else unknown ID, empty edit, invalid value or overlap
-    Service --> Dispatcher : throw ValidationException
-    Dispatcher --> App : throw ValidationException
-    note over App, Service : Nothing was saved or published.
-end
-
-note over App : App prints the response or error,\nthen prompts again.
+App -> Dispatcher ++ : execute(command: EditCommitment, state)
+note right of Dispatcher : Capture now once; time API and accessors omitted.
+Dispatcher -> Dispatcher ++ : editCommitment(command, state)
+Dispatcher -> State ++ : snapshot()
+State --> Dispatcher -- : source
+Dispatcher -> Service ++ : edit(source, id, name, day, start,\nminutes, startDate, endDate)
+Service -> Service ++ : createEdit(source, id, name, day, start,\nminutes, startDate, endDate)
+note right of Service
+  Find original; resolve omitted fields.
+  Construct and validate the replacement Commitment.
+  Record creation and source accessors are omitted.
+end note
+Service -> Service ++ : rejectOverlaps(edited, otherCommitments)
+Service --> Service -- : return
+note right of Service
+  Replace C1 at the same list position.
+  withCommitments creates the candidate (call omitted).
+end note
+Service --> Service -- : candidate
+Service --> Dispatcher -- : candidate
+Dispatcher -> Dispatcher ++ : saveAndCommit(candidate, state)
+note right of Dispatcher : Original snapshot/plan accessors and assertions omitted.
+Dispatcher -> Storage ++ : save(candidate)
+Storage --> Dispatcher -- : return (atomic replacement succeeded)
+Dispatcher -> State ++ : commit(candidate)
+note right of State : Publish saved candidate and clear currentPlan.
+State --> Dispatcher -- : return
+Dispatcher --> Dispatcher -- : return
+Dispatcher -> Renderer ++ : commitmentEdited(edited)
+Renderer --> Dispatcher -- : confirmation
+Dispatcher --> Dispatcher -- : confirmation
+Dispatcher --> App -- : response: CommandResponse
 @enduml

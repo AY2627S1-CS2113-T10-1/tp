@@ -76,7 +76,31 @@ for isolated JAR launches.
 The following views separate responsibilities in the existing packages; the
 Implementation section traces the workflows that connect them.
 
+The figures use the course's class and sequence notation. Solid open-headed
+arrows show retained references; dashed open-headed arrows show use or creation.
+A hollow triangle on a dashed line points to an implemented interface.
+Multiplicities and reference roles appear at the target end. Java records are
+marked «record» and their stored fields are private; omitted accessors remain
+available in the code. Sequence calls use filled heads and returns use dashed
+lines. A narrow activation represents one invocation, including time spent
+waiting for nested calls. Folded-corner notes explain deliberately omitted detail;
+dotted open-headed arrows point from each note to the element it describes.
+Colours identify responsibilities consistently across figures, independently of
+the team's ownership allocation.
+
 ### System overview and collaboration boundaries
+
+![ScheduleFlow component architecture](images/architecture.svg)
+
+**Figure 1. Component architecture and selected source dependencies.**
+
+[PlantUML source](diagrams/architecture.puml) · [PNG](images/architecture.png)
+
+The console application coordinates the domain services and persistence.
+Services produce immutable candidates; the dispatcher saves and then publishes
+successful changes. Storage also depends on planning values to encode a frozen
+result. This overview omits shared validation and Java library dependencies.
+The class views below expand these components.
 
 | Area | Main entry points | Code owner |
 | --- | --- | --- |
@@ -98,7 +122,7 @@ split ownership. Tags record the allocation, not historical authorship. See
 ### Console application and presentation
 
 The shell connects text interaction to the domain without putting console I/O
-inside services. The class view shows Ka How's seven production types and the
+inside services. The class view shows the shell's production types and the
 external collaborators needed to understand the command path. Associations
 denote retained references; dashed dependencies denote creation or use.
 `...` marks omitted parameters. Service, codec, clock and transport-use
@@ -106,7 +130,9 @@ dependencies are omitted to keep this view focused.
 
 ![Console shell classes, command transports and external collaborators](images/ka-how-console-classes.svg)
 
-[PlantUML source](diagrams/ka-how-console-classes.puml)
+**Figure 2. Console shell, command values and collaborators.**
+
+[PlantUML source](diagrams/ka-how-console-classes.puml) · [PNG](images/ka-how-console-classes.png)
 
 [`Main`](../src/main/java/scheduleflow/Main.java) supplies UTF-8 streams,
 `Clock.systemDefaultZone()` and `FileStorage` for `data/scheduleflow.txt` relative
@@ -144,7 +170,9 @@ who originally wrote every parser or integration method.
 
 ![Task lifecycle and parser classes, with external aggregate and transport types](images/nickhil-task-parser-classes.svg)
 
-[PlantUML source](diagrams/nickhil-task-parser-classes.puml)
+**Figure 3. Task model, lifecycle service and parser dependencies.**
+
+[PlantUML source](diagrams/nickhil-task-parser-classes.puml) · [PNG](images/nickhil-task-parser-classes.png)
 
 The two groups have different responsibilities. The stateless
 [`CommandParser`](../src/main/java/scheduleflow/cli/CommandParser.java) matches
@@ -175,13 +203,16 @@ repetitive accessors, parser patterns and constructor overloads.
 
 This component has two jobs. It models the student's fixed commitments, and it
 executes every parsed command as one transaction: validate, save, then publish.
-The class view shows Darren's three production types and the collaborators the
+The class view shows commitment and dispatch types and the collaborators the
 dispatcher holds. Solid arrows are retained references; dashed arrows are use or
-creation. Other members' types are shaded and labelled with their owners.
+creation. Colours are shared with the other views; contributor names remain in
+the ownership table, outside the UML model.
 
 ![Commitment and dispatch classes with their external collaborators](images/darren-commitment-dispatch-classes.svg)
 
-[PlantUML source](diagrams/darren-commitment-dispatch-classes.puml)
+**Figure 4. Commitment service and dispatcher collaborators.**
+
+[PlantUML source](diagrams/darren-commitment-dispatch-classes.puml) · [PNG](images/darren-commitment-dispatch-classes.png)
 
 | Type | Responsibility |
 | --- | --- |
@@ -257,7 +288,9 @@ dependencies or contained results, not ownership of those external types.
 
 ![Planning and schedule projection classes](images/gabriel-planning-classes.svg)
 
-[PlantUML source](diagrams/gabriel-planning-classes.puml)
+**Figure 5. Planning and schedule projection structure.**
+
+[PlantUML source](diagrams/gabriel-planning-classes.puml) · [PNG](images/gabriel-planning-classes.png)
 
 Generation first classifies unfinished work: overdue and beyond-horizon tasks
 retain their full remainder; other work competes for chronological slots.
@@ -276,13 +309,17 @@ deadlines first access to scarce time; it does not optimize for fewest sessions
 or most fully completed tasks.
 
 The sequence view follows a successful `plan` command from time capture through
-plan publication. The planner computes the horizon once and the daily cutoff
-for each date; it then evaluates half-hour slots. The dispatcher renders and
-saves the plan before publishing the candidate snapshot and current plan.
+plan publication. The planner obtains the horizon, resolves the daily cutoff
+for each date, and evaluates half-hour slots. `TimeRules` is a class participant
+because its methods are static; its internal horizon checks are omitted.
+The dispatcher renders and saves the plan before publishing the candidate
+snapshot and current plan.
 
-![Plan generation and persistence sequence](images/gabriel-planning-sequence-Generate_and_save_a_study_plan.svg)
+![Plan generation and persistence sequence](images/gabriel-planning-sequence.svg)
 
-[PlantUML source](diagrams/gabriel-planning-sequence.puml)
+**Figure 6. Successful plan generation, saving and publication.**
+
+[PlantUML source](diagrams/gabriel-planning-sequence.puml) · [PNG](images/gabriel-planning-sequence.png)
 
 ### Persistence and the Snapshot aggregate
 
@@ -301,9 +338,12 @@ filesystem access, text conversion and aggregate validation:
 
 ![Persistence classes and their external model dependencies](images/ernest-storage-classes.svg)
 
-[PlantUML source](diagrams/ernest-storage-classes.puml). Dashed arrows denote use;
-solid arrows denote retained references. The external `Plan` is shaded; other
-model dependencies appear as field types, without transferring their ownership.
+**Figure 7. Persistence and the source aggregate.**
+
+[PlantUML source](diagrams/ernest-storage-classes.puml) · [PNG](images/ernest-storage-classes.png). Dashed arrows denote use;
+solid arrows denote retained references. Other model dependencies appear as
+field types. `~PlanCodec` has package visibility; its members shown with `~` are
+also package-private.
 
 `Snapshot` retains tasks, commitments, study hours, recurring templates, optional
 policy and three independent next-ID counters. Its validation rejects duplicate
@@ -361,16 +401,18 @@ For a nonblank line, the parser returns a `Command`; the dispatcher executes it
 against the same `AppState`. `ConsoleUi.write(response.output())` adds the final
 newline and flushes the response before `shouldExit()` is inspected.
 
-![Command loop with success, recoverable errors, blank input and termination](images/ka-how-command-loop.svg)
+![Help command followed by EOF](images/ka-how-command-loop.svg)
 
-[PlantUML source](diagrams/ka-how-command-loop.puml)
+**Figure 8. Help command followed by EOF.**
 
-The diagram starts after restoration. Its success formatter is shorthand for
-the method selected by the dispatcher (`help`, `taskAdded`, and so on).
-The loop guard summarizes the two normal return paths: EOF or a response with
-`shouldExit = true` ends `runCommands()` with status 0 and no next prompt.
-Service calls, storage operations and publication are omitted; their ordering
-is described in [command transactions](#command-dispatch-and-live-state-transactions).
+[PlantUML source](diagrams/ka-how-command-loop.puml) · [PNG](images/ka-how-command-loop.png)
+
+Figure 8 follows one successful `help` command and then EOF after restoration.
+The `runCommands` activation remains open while nested calls execute, and ends
+at its return of status 0. EOF bypasses parsing and dispatch. Blank input,
+syntax errors, validation/save failures and explicit `exit` are separate paths
+described below. Value construction and accessors are omitted. Mutation and
+publication order is shown in [command transactions](#command-dispatch-and-live-state-transactions).
 
 For example, after adding `commitment add n/Lecture day/MON start/1000 d/60`
 to an empty store, parsing supplies `Command.AddCommitment`. The dispatcher
@@ -492,9 +534,19 @@ non-console callers without pretending a parsed command is already valid.
 
 #### Exact progress and immutable candidates
 
-![Session progress returns an unchanged source or a validated candidate before external publication](images/nickhil-task-progress.svg)
+![Positive session progress creates a validated candidate before external publication](images/nickhil-task-progress.svg)
 
-[PlantUML source](diagrams/nickhil-task-progress.puml)
+**Figure 9. Positive session progress and task replacement.**
+
+[PlantUML source](diagrams/nickhil-task-progress.puml) · [PNG](images/nickhil-task-progress.png)
+
+Figure 9 follows a valid 61-minute session at 25% on an active task with 90
+minutes remaining. The 15-minute credit creates a new `Task`, whose header and
+lifeline begin at construction. `Task(...)` omits constructor parameters so the
+creation arrow reaches the object header; the copied fields are explained below.
+Dispatcher persistence and publication calls
+are summarized in a note. Zero-credit no-ops, invalid input and save failures
+are separate paths described below.
 
 `recordSessionProgress` first validates positive session minutes and an integer
 percentage in 0..100. It computes `(int) ((long) sessionMinutes * percentage / 100)`.
@@ -575,7 +627,14 @@ student enters `commitment edit C1 start/1030`.
 
 ![Editing a commitment: validate, save, then publish](images/darren-commitment-edit.svg)
 
-[PlantUML source](diagrams/darren-commitment-edit.puml)
+**Figure 10. Successful commitment edit, saved before publication.**
+
+[PlantUML source](diagrams/darren-commitment-edit.puml) · [PNG](images/darren-commitment-edit.png)
+
+Figure 10 shows a successful edit. Nested activations distinguish `execute`,
+`editCommitment` and `saveAndCommit`, and the service's `createEdit` and
+`rejectOverlaps`. Time capture, record construction and most value accessors are
+omitted; rejection paths are explained after the walkthrough.
 
 1. Nickhil's parser produces `Command.EditCommitment(1, null, null, 10:30, null, null, null)`.
    `null` means "keep the stored value".
@@ -587,7 +646,7 @@ student enters `commitment edit C1 start/1030`.
 4. `rejectOverlaps` compares the replacement with every other commitment. C1 itself
    is excluded, so keeping or shifting its own time is never a self-conflict.
 5. The service returns a new `Snapshot` with C1 replaced at its original list position.
-   Tasks, study hours and both ID counters are unchanged.
+   Tasks, study hours, policy, recurrence and all three ID counters are unchanged.
 6. The dispatcher calls `saveAndCommit`. `Storage.save(candidate)` runs first;
    only if it returns does `AppState.commit(candidate)` publish the change and clear
    the current plan. `TextRenderer.commitmentEdited` then formats
@@ -1011,8 +1070,12 @@ Both save operations use `FileStorage.writeAtomically`:
 
 ![Saving a frozen plan and its source with an atomic replacement](images/ernest-atomic-plan-save.svg)
 
-[PlantUML source](diagrams/ernest-atomic-plan-save.puml). The diagram abbreviates
-static filesystem calls and shows one write/move failure alternative. See
+**Figure 11. Successful atomic save of a frozen plan.**
+
+[PlantUML source](diagrams/ernest-atomic-plan-save.puml) · [PNG](images/ernest-atomic-plan-save.png). The diagram abbreviates
+static filesystem calls and follows a successful atomic replacement. `Files`
+is a class participant, and `PlanCodec` is created during `savePlan`, before
+`encode` is called. Cleanup on failure is described above. See
 [command transactions](#command-dispatch-and-live-state-transactions) for live
 publication: the dispatcher prepares recurrence/allocation/output, calls
 `savePlan` once, then publishes the saved source and plan. It does not save the
@@ -1147,19 +1210,62 @@ and failures only, set both `scheduleflow.level` and the handler level to
 
 #### Diagram and guide maintenance
 
-PlantUML sources are in `docs/diagrams`; committed SVGs in `docs/images` let
-Markdown display the figures without a PlantUML extension. With Java 25 and a
-local PlantUML JAR (verified with 1.2025.4), render from the repository root:
+Editable PlantUML sources and the shared `course-style.puml` are in
+`docs/diagrams`. Each figure has a numbered caption and links to its source and
+PNG; committed SVGs in `docs/images` are embedded in this guide.
+
+Review notation against the course's [Modeling chapter](https://nus-cs2113-ay2627-s1.github.io/website/se-book-adapted/chapters/modeling.html)
+and [Week 11 DG review guidance](https://nus-cs2113-ay2627-s1.github.io/website/schedule/week11/tutorial.html).
+Check depicted members, retained references and call order against the current
+Java source and its tests. Keep each view focused; identify omitted helper calls
+in attached notes or the surrounding explanation. Although the textbook permits
+unattached notes, this guide connects every note with a dotted arrow to its subject.
+
+The [DG review (#118)](https://github.com/AY2627S1-CS2113-T10-1/tp/issues/118)
+identifies course notation, missing activations and unclear notes as concerns.
+The figures retain the existing PlantUML workflow and share a flat pastel
+palette for responsibilities. Exports were checked with PlantUML **1.2025.4**, Graphviz
+**2.44.1**, Java **25.0.4.1**, and installed **Calibri** (no font fallback).
+The SVG-to-PNG step uses Playwright **1.62.1** and Chrome **156.0.8078.49**.
+The shared style selects strict UML notation, textual visibility and rectangular
+pastel boxes. Fills, spacing and curved structural routes are presentation choices;
+the arrows, visibility, activations and other UML symbols follow course notation.
+SVGs use logical vector dimensions;
+PNGs are exported at 2x resolution, with a white background and preserved aspect
+ratio.
+
+With Java 25, Graphviz, Node.js 22+, Playwright and a local PlantUML JAR, render
+all figures from the repository root. Install documentation-only Node dependencies
+under ignored `build/uml-tools` if they are not already available:
 
 ```powershell
-java -jar "PATH_TO_PLANTUML_JAR" -charset UTF-8 -tsvg -o ../images docs/diagrams/ka-how-console-classes.puml docs/diagrams/ka-how-command-loop.puml
+npm install --prefix build/uml-tools --no-save --package-lock=false playwright
+$env:NODE_PATH = Join-Path (Get-Location) 'build/uml-tools/node_modules'
+node tools/render-uml.mjs --plantuml "PATH_TO_PLANTUML_JAR" --chrome "PATH_TO_CHROME"
 ```
 
-Replace `PATH_TO_PLANTUML_JAR` with its local path. The output directory is
-relative to each source directory. The class source selects the bundled
-Smetana layout engine, so no external Graphviz installation is required.
-Commit each changed source and its rendered SVG together, check the diagram
-against the code, and inspect text size and links in the rendered guide.
+Replace the two paths with installed PlantUML and Chrome locations. An existing
+Playwright-managed Chromium can be used by omitting `--chrome`. Use `--output DIR`
+to preview exports outside `docs/images`. The common include is a style file,
+not a standalone diagram. Captions belong in the guide so that titles cannot
+change export names. The Windows PlantUML distribution used here supplies
+Graphviz; other installations may require it separately.
+
+PlantUML draws structural note arrows directly. Its sequence notes have no
+connector, so [`tools/render-uml.mjs`](../tools/render-uml.mjs) adds dotted arrows
+to their named participants' active invocation bars (or lifelines), then derives
+the PNG from the same SVG. Sequence notes must use `note right of PARTICIPANT`;
+the exporter checks their count, text and targets and reserves a visible gap for
+each arrow. Plain PlantUML exports alone omit these sequence note connectors.
+
+Commit each edited source, shared style change and corresponding SVG/PNG exports
+together. Check displayed members and call order against the source and relevant
+JUnit tests. Inspect every rendered figure at full size: visibility and static
+underlines, endpoint roles/multiplicities, realization triangles, dotted note
+attachments, solid filled call heads, dashed returns, continuous/nested
+activations, guarded fragments, and constructor-time headers. Deliberate omissions
+are identified beside the figures; failure paths remain documented in prose.
+
 Review both guides after implementation; mark unfinished operations explicitly.
 Before publication, the release maintainer must reconcile this guide with the
 verified release tag and artifact. Cross-platform runtime checks and filesystem
