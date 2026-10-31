@@ -1,0 +1,66 @@
+@startuml
+!include course-style.puml
+left to right direction
+hide empty members
+
+package "scheduleflow.cli" {
+    class CommandParser PARSING {
+        + parse(line: String) : Command
+        - parseTaskProgress(input: String) : Command
+    }
+    class ParseException PARSING {
+        + usage() : String
+    }
+    interface Command <<interface>> SHELL
+}
+package "scheduleflow.task" {
+    class TaskService DOMAIN {
+        + recordWork(state: Snapshot, taskId: int, done: int) : Snapshot
+        + recordSessionProgress(state: Snapshot, taskId: int, ...) : Snapshot
+        + complete(state: Snapshot, taskId: int) : Snapshot
+        + reopen(state: Snapshot, taskId: int, positiveRemaining: int) : Snapshot
+        - replaceRemaining(state: Snapshot, task: Task, remaining: int) : Snapshot
+    }
+    class TaskEdit <<record>> VALUES {
+        - name: Optional<String>
+        - deadline: Optional<LocalDateTime>
+        - clearDeadline: boolean
+    }
+}
+package "scheduleflow.model" {
+    class Task <<record>> VALUES {
+        - id: int
+        - name: String
+        - deadline: Optional<LocalDateTime>
+        - remainingMinutes: int
+        + displayId() : String
+    }
+    enum TaskPriority <<enumeration>> VALUES {
+        HIGH
+        NORMAL
+        LOW
+    }
+    class TaskOccurrence <<record>> VALUES
+    class Snapshot <<record>> VALUES {
+        + withTasks(replacements: List<Task>, nextId: int) : Snapshot
+    }
+}
+package "scheduleflow.common" {
+    class InputRules DOMAIN {
+        {static} + normalizeName(value: String) : String
+        {static} + requireTaskMinutes(minutes: int) : void
+    }
+    class ValidationException PARSING
+}
+
+CommandParser ..> Command : creates / returns
+CommandParser ..> ParseException : throws
+CommandParser ..> TaskEdit : creates
+TaskService ..> TaskEdit : reads
+TaskService ..> Task : creates replacements
+TaskService ..> Snapshot : reads / returns candidate
+Task --> "priority\n1" TaskPriority
+Task --> "occurrence\n0..1" TaskOccurrence
+Task ..> InputRules : validates
+InputRules ..> ValidationException : throws
+@enduml

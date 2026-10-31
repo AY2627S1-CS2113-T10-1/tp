@@ -13,6 +13,8 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.io.UncheckedIOException;
+import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -481,6 +483,157 @@ class AppTest {
     }
 
     @Test
+    void run_failedPrompt_stopsWithoutReadingOrSaving() {
+        FakeStorage storage = new FakeStorage(Snapshot.empty());
+        LimitedReader input = new LimitedReader(ADD_TASK + "\n", 0);
+        FailingFlushWriter output = new FailingFlushWriter(0);
+
+        assertEquals(1, new App(storage, CLOCK, new ConsoleUi(input, new PrintWriter(output))).run());
+
+        assertEquals(0, input.reads);
+        assertEquals(0, storage.saveCalls);
+        assertEquals("scheduleflow> ", output.text.toString());
+        assertEquals(1, output.flushes);
+    }
+
+    @Test
+    void run_failedResponse_stopsBeforeNextCommandOrErrorRetry() {
+        FakeStorage storage = new FakeStorage(Snapshot.empty());
+        LimitedReader input = new LimitedReader("task list\n" + ADD_TASK + "\n", 1);
+        FailingFlushWriter output = new FailingFlushWriter(1);
+
+        List<LogRecord> records = captureLogs(() -> assertEquals(1,
+                new App(storage, CLOCK, new ConsoleUi(input, new PrintWriter(output))).run()));
+
+        assertEquals(1, input.reads);
+        assertEquals(0, storage.saveCalls);
+        assertEquals("scheduleflow> No tasks found." + System.lineSeparator(), output.text.toString());
+        assertEquals(2, output.flushes);
+        assertLogged(records, Level.SEVERE, "Console output failed");
+        assertFalse(records.stream().anyMatch(record -> record.getMessage().equals("Command response delivered")));
+    }
+
+    @Test
+    void run_savedMutationThenFailedResponse_keepsDurableTaskAndInvalidation() throws Exception {
+        FileStorage storage = new FileStorage(directory.resolve("scheduleflow.txt"), new StateCodec());
+        storage.savePlan(new EarliestDeadlinePlanner().generate(Snapshot.empty(), NOW));
+        LimitedReader input = new LimitedReader(ADD_TASK + "\ntask delete T1\n", 1);
+        FailingFlushWriter output = new FailingFlushWriter(1);
+
+        assertEquals(1, new App(storage, CLOCK, new ConsoleUi(input, new PrintWriter(output))).run());
+
+        Snapshot saved = storage.load();
+        assertEquals(List.of(new Task(1, "Draft", NOW.plusDays(1).withHour(18), 30)), saved.tasks());
+        assertEquals(2, saved.nextTaskId());
+        assertTrue(storage.loadPlan(saved).isEmpty());
+        assertEquals(1, input.reads);
+        assertEquals(2, output.flushes);
+        assertEquals("scheduleflow> Added T1: Draft\nDue: 2026-09-22 18:00 | Duration: 30 min"
+                + System.lineSeparator(), output.text.toString());
+    }
+
+    @Test
+    void run_startupErrorOutputFailure_stopsWithoutReadingOrRetrying() {
+        FakeStorage storage = new FakeStorage(Snapshot.empty());
+        storage.failLoad = true;
+        LimitedReader input = new LimitedReader(ADD_TASK + "\n", 0);
+        FailingFlushWriter output = new FailingFlushWriter(0);
+
+        assertEquals(1, new App(storage, CLOCK, new ConsoleUi(input, new PrintWriter(output))).run());
+
+        assertEquals(0, input.reads);
+        assertEquals(0, storage.saveCalls);
+        assertEquals("Error: Load rejected" + System.lineSeparator(), output.text.toString());
+        assertEquals(1, output.flushes);
+    }
+
+    @Test
+    void run_inputErrorOutputFailure_stopsWithoutRetrying() {
+        BufferedReader input = new BufferedReader(new StringReader("")) {
+            @Override
+            public String readLine() throws IOException {
+                throw new IOException("Input disconnected");
+            }
+        };
+        FakeStorage storage = new FakeStorage(Snapshot.empty());
+        FailingFlushWriter output = new FailingFlushWriter(1);
+
+        assertEquals(1, new App(storage, CLOCK, new ConsoleUi(input, new PrintWriter(output))).run());
+
+        assertEquals(0, storage.saveCalls);
+        assertEquals("scheduleflow> Error: Cannot read input: Input disconnected"
+                + System.lineSeparator(), output.text.toString());
+        assertEquals(2, output.flushes);
+    }
+
+    @Test
+    void run_recoverableErrorOutputFailure_stopsWithoutReadingOrRetrying() {
+        for (String command : List.of("help extra", "task delete T9", ADD_TASK)) {
+            FakeStorage storage = new FakeStorage(Snapshot.empty());
+            storage.failOnSave = 1;
+            LimitedReader input = new LimitedReader(command + "\n" + ADD_TASK + "\n", 1);
+            FailingFlushWriter output = new FailingFlushWriter(1);
+
+            assertEquals(1, new App(storage, CLOCK, new ConsoleUi(input, new PrintWriter(output))).run());
+
+            assertEquals(1, input.reads);
+            assertEquals(Snapshot.empty(), storage.saved);
+            assertEquals(command.equals(ADD_TASK) ? 1 : 0, storage.saveCalls);
+            assertTrue(output.text.toString().startsWith("scheduleflow> Error: "));
+            assertEquals(2, output.flushes);
+        }
+    }
+
+    @Test
+    void run_goodbyeOutputFailure_returnsFailureForExitAndEof() {
+        for (String command : List.of("exit\n", "")) {
+            FakeStorage storage = new FakeStorage(Snapshot.empty());
+            LimitedReader input = new LimitedReader(command, 1);
+            FailingFlushWriter output = new FailingFlushWriter(1);
+
+            assertEquals(1, new App(storage, CLOCK, new ConsoleUi(input, new PrintWriter(output))).run());
+
+            assertEquals(1, input.reads);
+            assertEquals(0, storage.saveCalls);
+            assertEquals("scheduleflow> Goodbye for now!" + System.lineSeparator(), output.text.toString());
+            assertEquals(2, output.flushes);
+        }
+    }
+
+    @Test
+    void run_uncheckedStorageIoFailure_propagatesInsteadOfReturningConsoleFailure() {
+        UncheckedIOException failure = new UncheckedIOException(new IOException("Storage defect"));
+        for (boolean failOnLoad : new boolean[] {true, false}) {
+            Storage broken = new Storage() {
+                @Override
+                public Snapshot load() {
+                    if (failOnLoad) {
+                        throw failure;
+                    }
+                    return Snapshot.empty();
+                }
+
+                @Override
+                public Optional<Plan> loadPlan(Snapshot source) {
+                    return Optional.empty();
+                }
+
+                @Override
+                public void save(Snapshot state) {
+                    throw failure;
+                }
+
+                @Override
+                public void savePlan(Plan plan) {
+                    throw new AssertionError("Must not save a plan in this session");
+                }
+            };
+
+            assertSame(failure, assertThrows(UncheckedIOException.class, () -> run(ADD_TASK + "\n", broken)));
+        }
+    }
+
+    @Test
     void run_programmingException_propagatesInsteadOfPretendingUserError() {
         Storage broken = new Storage() {
             @Override
@@ -599,6 +752,67 @@ class AppTest {
      * Holds observable status and complete console output from one session.
      */
     private record Result(int status, String output) {
+    }
+
+    /**
+     * Fails immediately if a stopped session attempts to read another command.
+     */
+    private static final class LimitedReader extends BufferedReader {
+        private final int allowedReads;
+        private int reads;
+
+        /**
+         * Supplies commands and the maximum number of permitted reads, including EOF reads.
+         *
+         * @param input isolated session input
+         * @param allowedReads maximum calls permitted before the application must stop
+         */
+        private LimitedReader(String input, int allowedReads) {
+            super(new StringReader(input));
+            this.allowedReads = allowedReads;
+        }
+
+        @Override
+        public String readLine() throws IOException {
+            assertTrue(reads < allowedReads, "Output failure must prevent further command reads");
+            reads++;
+            return super.readLine();
+        }
+    }
+
+    /**
+     * Records attempted text and fails on a selected flush to expose any subsequent output retry.
+     */
+    private static final class FailingFlushWriter extends Writer {
+        private final StringBuilder text = new StringBuilder();
+        private final int successfulFlushes;
+        private int flushes;
+
+        /**
+         * Selects whether the prompt or a later response is the first failed flush.
+         *
+         * @param successfulFlushes number of flushes permitted before output fails
+         */
+        private FailingFlushWriter(int successfulFlushes) {
+            this.successfulFlushes = successfulFlushes;
+        }
+
+        @Override
+        public void write(char[] characters, int offset, int length) {
+            text.append(characters, offset, length);
+        }
+
+        @Override
+        public void flush() throws IOException {
+            flushes++;
+            if (flushes > successfulFlushes) {
+                throw new IOException("Output disconnected");
+            }
+        }
+
+        @Override
+        public void close() {
+        }
     }
 
     /**

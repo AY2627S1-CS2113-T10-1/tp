@@ -4,6 +4,7 @@ package scheduleflow.cli;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.io.UncheckedIOException;
 import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -40,11 +41,13 @@ public final class ConsoleUi {
 
     /**
      * Writes and flushes the prompt without a newline.
+     *
+     * @throws UncheckedIOException if the console writer reports an output failure
      */
     public void prompt() {
         LOGGER.log(Level.FINE, "Writing command prompt");
         output.print("scheduleflow> ");
-        output.flush();
+        flushOutput();
         LOGGER.log(Level.FINE, "Command prompt flushed");
     }
 
@@ -66,13 +69,26 @@ public final class ConsoleUi {
      *
      * @param text response without a final newline
      * @throws NullPointerException if the text is null
+     * @throws UncheckedIOException if the console writer reports an output failure
      */
     public void write(String text) {
         Objects.requireNonNull(text, "text");
         LOGGER.log(Level.FINE, "Writing command response");
         output.println(text);
-        output.flush();
+        flushOutput();
         LOGGER.log(Level.FINE, "Command response flushed");
+    }
+
+    /**
+     * Flushes and exposes failures that {@link PrintWriter} otherwise suppresses.
+     * The writer's error flag does not retain the original checked exception.
+     *
+     * @throws UncheckedIOException if writing or flushing has failed
+     */
+    private void flushOutput() {
+        if (output.checkError()) {
+            throw new UncheckedIOException(new IOException("Cannot write console output."));
+        }
     }
 }
 // @@author

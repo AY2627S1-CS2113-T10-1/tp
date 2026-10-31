@@ -1,0 +1,40 @@
+@startuml
+!include course-style.puml
+
+participant "dispatcher:CommandDispatcher" as Dispatcher DOMAIN
+participant "tasks:TaskService" as Tasks DOMAIN
+participant "source:Snapshot" as Source VALUES
+
+[-> Dispatcher ++ : execute(RecordTaskSession, state)
+Dispatcher -> Dispatcher ++ : recordTaskSession(command, state)
+Dispatcher -> Tasks ++ : recordSessionProgress(source, taskId,\nsessionMinutes, percentage)
+note right of Tasks
+  Valid active task and positive credited work.
+  done = floor(sessionMinutes * percentage / 100).
+  Example: 61 at 25% credits 15 of 90 remaining.
+  Arithmetic and accessors are local computation.
+end note
+Tasks -> Tasks ++ : recordWork(source, taskId, done)
+Tasks -> Tasks ++ : findTask(source, taskId)
+Tasks -> Source ++ : tasks()
+Source --> Tasks -- : stored tasks
+Tasks --> Tasks -- : task
+note right of Tasks : remaining = task.remainingMinutes() - done
+Tasks -> Tasks ++ : replaceRemaining(source, task, remaining)
+create participant "replacement:Task" as Replacement VALUES
+Tasks -> Replacement ++ : Task(...)
+Replacement --> Tasks -- : replacement
+note right of Tasks : Copy task list; replace task at its stored position.
+Tasks -> Source ++ : withTasks(replacements, nextTaskId)
+Source --> Tasks -- : candidate
+Tasks --> Tasks -- : candidate
+Tasks --> Tasks -- : candidate
+Tasks --> Dispatcher -- : candidate
+note right of Dispatcher
+  Remaining dispatcher work is omitted:
+  publishTaskProgress prepares confirmation,
+  saves the candidate, then publishes it.
+end note
+Dispatcher --> Dispatcher -- : confirmation
+[<-- Dispatcher -- : response: CommandResponse
+@enduml

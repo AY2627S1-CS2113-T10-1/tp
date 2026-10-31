@@ -4,6 +4,7 @@ package scheduleflow;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -53,7 +54,11 @@ public final class Main {
                 new PrintWriter(System.out, true, StandardCharsets.UTF_8));
         if (args.length != 0) {
             LOGGER.log(Level.FINE, "Rejected unexpected command line arguments");
-            ui.write(new TextRenderer().error("Usage: java -jar scheduleflow.jar (no arguments)"));
+            try {
+                ui.write(new TextRenderer().error("Usage: java -jar scheduleflow.jar (no arguments)"));
+            } catch (UncheckedIOException exception) {
+                LOGGER.log(Level.FINE, "Argument-error output failed", exception);
+            }
             System.exit(1);
             return;
         }

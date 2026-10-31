@@ -1,96 +1,65 @@
 @startuml
-' DG contribution D3: Darren (Darren50).
-!pragma layout smetana
-skinparam backgroundColor white
-skinparam shadowing false
-skinparam defaultFontName SansSerif
-skinparam defaultFontSize 15
-skinparam classAttributeIconSize 0
-skinparam packageStyle rectangle
-skinparam ArrowColor #475569
-skinparam classBorderColor #475569
-skinparam packageBorderColor #94A3B8
+!include course-style.puml
+left to right direction
 hide empty members
-top to bottom direction
 
-package "Commitments and command execution (Darren50)" {
-    class CommandDispatcher {
-        -clock: Clock
-        +execute(command: Command, state: AppState): CommandResponse
-        -editCommitment(...): String
-        -saveAndCommit(candidate: Snapshot, state: AppState): void
-        -generatePlan(state: AppState, now: LocalDateTime): String
-    }
-    class CommitmentService {
-        +add(state: Snapshot, ...): Snapshot
-        +edit(state: Snapshot, id: int, ...): Snapshot
-        +skip(state: Snapshot, id: int, date: LocalDate): Snapshot
-        +delete(state: Snapshot, id: int): Snapshot
-        +list(state: Snapshot): List<Commitment>
-        -rejectOverlaps(added: Commitment, existing: List<Commitment>): void
-    }
-    class Commitment <<record>> {
-        id: int
-        day: DayOfWeek
-        start: LocalTime
-        durationMinutes: int
-        startDate: LocalDate
-        endDate: LocalDate
-        skippedDates: Set<LocalDate>
-        +isOneTime(): boolean
-        +occursOn(date: LocalDate): boolean
-        +overlaps(other: Commitment): boolean
-    }
+class CommandDispatcher DOMAIN {
+    - clock: Clock
+    + execute(command: Command, state: AppState) : CommandResponse
+    - addContinuousBlock(command: Command.AddContinuousBlock, state: AppState) : String
+    - addDailyBlocks(command: Command.AddDailyBlocks, state: AppState) : String
+    - publishUnavailableBatch(original: Snapshot, candidate: Snapshot, state: AppState) : String
+    - editCommitment(command: Command.EditCommitment, state: AppState) : String
+    - saveAndCommit(candidate: Snapshot, state: AppState) : void
+    - generatePlan(state: AppState, now: LocalDateTime) : String
 }
-
-package "External collaborators" #F1F5F9 {
-    class "AppState\n(ka-how)" as AppState {
-        +commit(saved: Snapshot): void
-        +replacePlan(plan: Plan): void
-    }
-    class "TextRenderer\n(ka-how)" as TextRenderer
-    interface "Storage\n(ernestgoh-god)" as Storage {
-        +save(source: Snapshot): void
-        +savePlan(plan: Plan): void
-    }
-    class "Snapshot\n(ernestgoh-god)" as Snapshot <<record>>
-    class "TaskService\n(nickpatt)" as TaskService
-    interface "Planner\n(GabrielYuSP)" as Planner
-    class "RecurringTaskService\n(GabrielYuSP)" as RecurringTaskService
-    class "ScheduleService\n(GabrielYuSP)" as ScheduleService
+class CommitmentService DOMAIN {
+    + add(state: Snapshot, ...) : Snapshot
+    + addContinuousBlock(state: Snapshot, name: String, start: LocalDateTime, end: LocalDateTime) : Snapshot
+    + addDailyBlocks(state: Snapshot, name: String, firstDate: LocalDate, lastDate: LocalDate, start: LocalTime, end: LocalTime) : Snapshot
+    + edit(state: Snapshot, commitmentId: int, ...) : Snapshot
+    + skip(state: Snapshot, commitmentId: int, date: LocalDate) : Snapshot
+    + delete(state: Snapshot, commitmentId: int) : Snapshot
+    + list(state: Snapshot) : List<Commitment>
+    - rejectOverlaps(added: Commitment, existing: List<Commitment>) : void
 }
+class Commitment <<record>> VALUES {
+    - id: int
+    - name: String
+    - day: DayOfWeek
+    - start: LocalTime
+    - durationMinutes: int
+    - startDate: LocalDate
+    - endDate: LocalDate
+    - skippedDates: Set<LocalDate>
+    + isOneTime() : boolean
+    + occursOn(date: LocalDate) : boolean
+    + overlaps(other: Commitment) : boolean
+}
+class AppState SHELL
+class TextRenderer SHELL
+interface Storage <<interface>> PERSISTENCE
+class Snapshot <<record>> VALUES
+class TaskService DOMAIN
+interface Planner <<interface>> DOMAIN
+class RecurringTaskService DOMAIN
+class ScheduleService DOMAIN
 
-CommandDispatcher --> CommitmentService : commitments
-CommandDispatcher --> TaskService : tasks
-CommandDispatcher --> Storage : storage
-CommandDispatcher --> Planner : planner
-CommandDispatcher --> ScheduleService : schedules
-CommandDispatcher --> TextRenderer : renderer
-CommandDispatcher --> RecurringTaskService : recurringTasks
-CommandDispatcher ..> AppState : reads, commits
+CommandDispatcher --> "commitments\n1" CommitmentService
+CommandDispatcher --> "tasks\n1" TaskService
+CommandDispatcher --> "storage\n1" Storage
+CommandDispatcher --> "planner\n1" Planner
+CommandDispatcher --> "schedules\n1" ScheduleService
+CommandDispatcher --> "renderer\n1" TextRenderer
+CommandDispatcher --> "recurringTasks\n1" RecurringTaskService
+CommandDispatcher ..> AppState : reads / commits
 CommitmentService ..> Snapshot : returns candidate
 CommitmentService ..> Commitment : creates
-Snapshot --> "*" Commitment : commitments
+Snapshot --> "commitments\n*" Commitment
 
-' Layout-only edges keep the two groups narrow; they are not UML relationships.
-CommitmentService -[hidden]down-> Commitment
-AppState -[hidden]down-> TextRenderer
-TextRenderer -[hidden]down-> Storage
-Storage -[hidden]down-> Snapshot
-Snapshot -[hidden]down-> TaskService
-TaskService -[hidden]down-> Planner
-Planner -[hidden]down-> RecurringTaskService
-RecurringTaskService -[hidden]down-> ScheduleService
-
-note bottom of Commitment
-  Equal startDate and endDate make a one-time commitment.
-  Both dates null make an unbounded weekly series.
-  The name component is omitted from this view.
+note as CommitmentNote
+  Equal startDate and endDate indicate a one-time commitment.
+  Both dates null indicate an unbounded weekly series.
 end note
-
-legend bottom
-  Parameter lists and most dispatcher helpers are omitted.
-  Services return candidates; only the dispatcher saves and publishes.
-  Constructors perform no I/O.
-endlegend
+CommitmentNote -[dotted]-> Commitment
 @enduml

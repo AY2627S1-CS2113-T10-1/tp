@@ -76,7 +76,31 @@ for isolated JAR launches.
 The following views separate responsibilities in the existing packages; the
 Implementation section traces the workflows that connect them.
 
+The figures use the course's class and sequence notation. Solid open-headed
+arrows show retained references; dashed open-headed arrows show use or creation.
+A hollow triangle on a dashed line points to an implemented interface.
+Multiplicities and reference roles appear at the target end. Java records are
+marked «record» and their stored fields are private; omitted accessors remain
+available in the code. Sequence calls use filled heads and returns use dashed
+lines. A narrow activation represents one invocation, including time spent
+waiting for nested calls. Folded-corner notes explain deliberately omitted detail;
+dotted open-headed arrows point from each note to the element it describes.
+Colours identify responsibilities consistently across figures, independently of
+the team's ownership allocation.
+
 ### System overview and collaboration boundaries
+
+![ScheduleFlow component architecture](images/architecture.svg)
+
+**Figure 1. Component architecture and selected source dependencies.**
+
+[PlantUML source](diagrams/architecture.puml) · [PNG](images/architecture.png)
+
+The console application coordinates the domain services and persistence.
+Services produce immutable candidates; the dispatcher saves and then publishes
+successful changes. Storage also depends on planning values to encode a frozen
+result. This overview omits shared validation and Java library dependencies.
+The class views below expand these components.
 
 | Area | Main entry points | Code owner |
 | --- | --- | --- |
@@ -98,7 +122,7 @@ split ownership. Tags record the allocation, not historical authorship. See
 ### Console application and presentation
 
 The shell connects text interaction to the domain without putting console I/O
-inside services. The class view shows Ka How's seven production types and the
+inside services. The class view shows the shell's production types and the
 external collaborators needed to understand the command path. Associations
 denote retained references; dashed dependencies denote creation or use.
 `...` marks omitted parameters. Service, codec, clock and transport-use
@@ -106,7 +130,9 @@ dependencies are omitted to keep this view focused.
 
 ![Console shell classes, command transports and external collaborators](images/ka-how-console-classes.svg)
 
-[PlantUML source](diagrams/ka-how-console-classes.puml)
+**Figure 2. Console shell, command values and collaborators.**
+
+[PlantUML source](diagrams/ka-how-console-classes.puml) · [PNG](images/ka-how-console-classes.png)
 
 [`Main`](../src/main/java/scheduleflow/Main.java) supplies UTF-8 streams,
 `Clock.systemDefaultZone()` and `FileStorage` for `data/scheduleflow.txt` relative
@@ -117,7 +143,11 @@ loading begins in `run()`. `AppState` is local to that run, rather than an `App`
 field, so command execution receives the session's live state explicitly.
 
 [`ConsoleUi`](../src/main/java/scheduleflow/cli/ConsoleUi.java) owns line reads,
-prompt/response writes and flushing.
+prompt/response writes and flushing. Its retained reader/writer are shown in
+Figure 2. `flushOutput()` uses `PrintWriter.checkError()` to flush and detect
+suppressed write failures, exposing them as `UncheckedIOException`. `App` catches
+that exception only around console writes and returns status 1; unrelated
+component failures still propagate. No public signatures change.
 [`TextRenderer`](../src/main/java/scheduleflow/cli/TextRenderer.java) returns
 formatted text; it does not read the clock, perform console I/O or mutate state.
 [`AppState`](../src/main/java/scheduleflow/cli/AppState.java) retains a `Snapshot`
@@ -135,27 +165,63 @@ range transports exist but their console routes remain unfinished.
 
 ### Task model and command parsing
 
-`TaskService` returns immutable mutation candidates. `Task`, `TaskPriority`,
-`TaskEdit` and `InputRules` express task structure and validation.
-`CommandParser` converts input to the nested `Command` records without
-reading time, state or storage; `ParseException` carries the usage hint.
+**Candidate scope:** the Task sections describe source revision `f7d21f4`,
+checked for the upcoming release, not the published v1.0 JAR. Reconcile these
+claims with the actual release artifact before publication. The implementation
+explanation concerns the Task lifecycle enhancement; the later whole-file
+allocation also assigns the complete parser to Nickhil, but does not establish
+who originally wrote every parser or integration method.
+
+![Task lifecycle and parser classes, with external aggregate and transport types](images/nickhil-task-parser-classes.svg)
+
+**Figure 3. Task model, lifecycle service and parser dependencies.**
+
+[PlantUML source](diagrams/nickhil-task-parser-classes.puml) · [PNG](images/nickhil-task-parser-classes.png)
+
+The two groups have different responsibilities. The stateless
+[`CommandParser`](../src/main/java/scheduleflow/cli/CommandParser.java) matches
+the entire input and constructs Ka How's nested `Command` records. It does not
+look up IDs, read a clock, save data or invoke a service. `ParseException`
+preserves a message and the recognized command's usage hint. This applies to
+all command families, not just tasks; a syntactically recognized unavailable
+range command is not evidence that its deferred dispatch is implemented.
+
+[`TaskService`](../src/main/java/scheduleflow/task/TaskService.java) reads
+Ernest's immutable `Snapshot` and returns a validated candidate or the identical
+source for a no-op. It never owns live application state.
+[`Task`](../src/main/java/scheduleflow/model/Task.java) is a record containing a
+stable ID, normalized name, optional deadline, exact remaining minutes,
+`TaskPriority`, and optional external `TaskOccurrence` provenance. Zero remaining
+means retained completion. `TaskEdit` distinguishes omitted replacements from
+an explicit API-level deadline clear. `InputRules` centralizes name and duration
+validation; `ValidationException` reports rejected domain values.
+
+Dashed arrows denote creation/use dependencies, not lifetime ownership.
+`Task` retains value references to its priority and optional provenance.
+Gabriel owns template generation and the provenance type; Nickhil's service
+preserves that provenance when changing an already-generated task. Snapshot
+validation and storage remain external. The diagram intentionally omits
+repetitive accessors, parser patterns and constructor overloads.
 
 ### Commitments and command execution
 
 This component has two jobs. It models the student's fixed commitments, and it
 executes every parsed command as one transaction: validate, save, then publish.
-The class view shows Darren's three production types and the collaborators the
+The class view shows commitment and dispatch types and the collaborators the
 dispatcher holds. Solid arrows are retained references; dashed arrows are use or
-creation. Other members' types are shaded and labelled with their owners.
+creation. Colours are shared with the other views; contributor names remain in
+the ownership table, outside the UML model.
 
 ![Commitment and dispatch classes with their external collaborators](images/darren-commitment-dispatch-classes.svg)
 
-[PlantUML source](diagrams/darren-commitment-dispatch-classes.puml)
+**Figure 4. Commitment service and dispatcher collaborators.**
+
+[PlantUML source](diagrams/darren-commitment-dispatch-classes.puml) · [PNG](images/darren-commitment-dispatch-classes.png)
 
 | Type | Responsibility |
 | --- | --- |
 | [`Commitment`](../src/main/java/scheduleflow/model/Commitment.java) | Immutable record of one fixed commitment. Its compact constructor validates the name, half-hour start, positive 30-minute-multiple duration, same-day end, date range and skipped dates. `occursOn(date)` and `overlaps(other)` are the only calendar-membership and conflict rules used elsewhere. |
-| [`CommitmentService`](../src/main/java/scheduleflow/commitment/CommitmentService.java) | Stateless operations (`add`, `edit`, `skip`, `delete`, `list`) that take a `Snapshot` and return a new candidate `Snapshot` or an ordered view. It never saves, publishes or reads the clock. |
+| [`CommitmentService`](../src/main/java/scheduleflow/commitment/CommitmentService.java) | Stateless operations (`add`, `addContinuousBlock`, `addDailyBlocks`, `edit`, `skip`, `delete`, `list`) that take a `Snapshot` and return a complete candidate `Snapshot` or an ordered view. It never saves, publishes or reads the clock. |
 | [`CommandDispatcher`](../src/main/java/scheduleflow/cli/CommandDispatcher.java) | Routes each nested `Command` record to one handler, captures the command time once, and owns the save-before-publication transaction for every mutating command, not only commitments. |
 
 A `Commitment` takes one of three shapes, all stored in the same record:
@@ -232,7 +298,9 @@ dependencies or contained results, not ownership of those external types.
 
 ![Planning and schedule projection classes](images/gabriel-planning-classes.svg)
 
-[PlantUML source](diagrams/gabriel-planning-classes.puml)
+**Figure 5. Planning and schedule projection structure.**
+
+[PlantUML source](diagrams/gabriel-planning-classes.puml) · [PNG](images/gabriel-planning-classes.png)
 
 Generation first classifies unfinished work: overdue and beyond-horizon tasks
 retain their full remainder; other work competes for chronological slots.
@@ -251,13 +319,17 @@ deadlines first access to scarce time; it does not optimize for fewest sessions
 or most fully completed tasks.
 
 The sequence view follows a successful `plan` command from time capture through
-plan publication. The planner computes the horizon once and the daily cutoff
-for each date; it then evaluates half-hour slots. The dispatcher renders and
-saves the plan before publishing the candidate snapshot and current plan.
+plan publication. The planner obtains the horizon, resolves the daily cutoff
+for each date, and evaluates half-hour slots. `TimeRules` is a class participant
+because its methods are static; its internal horizon checks are omitted.
+The dispatcher renders and saves the plan before publishing the candidate
+snapshot and current plan.
 
-![Plan generation and persistence sequence](images/gabriel-planning-sequence-Generate_and_save_a_study_plan.svg)
+![Plan generation and persistence sequence](images/gabriel-planning-sequence.svg)
 
-[PlantUML source](diagrams/gabriel-planning-sequence.puml)
+**Figure 6. Successful plan generation, saving and publication.**
+
+[PlantUML source](diagrams/gabriel-planning-sequence.puml) · [PNG](images/gabriel-planning-sequence.png)
 
 ### Persistence and the Snapshot aggregate
 
@@ -269,6 +341,7 @@ filesystem access, text conversion and aggregate validation:
 | --- | --- |
 | [`Storage`](../src/main/java/scheduleflow/storage/Storage.java) | Defines complete snapshot and frozen-plan loading/saving contracts for the application. |
 | [`FileStorage`](../src/main/java/scheduleflow/storage/FileStorage.java) | Resolves one target path, reads UTF-8 and replaces that file atomically. Construction performs no I/O. |
+| `FileStorage.FileOperations` | Package-private save-operation seam; normal instances delegate to `Files`, while storage tests inject faults without global filesystem changes. |
 | [`StateCodec`](../src/main/java/scheduleflow/storage/StateCodec.java) | Converts versioned source records without opening files. |
 | [`PlanCodec`](../src/main/java/scheduleflow/storage/PlanCodec.java) | Converts a frozen result together with its complete source; it is package-private. |
 | [`Snapshot`](../src/main/java/scheduleflow/model/Snapshot.java) | Copies lists and validates the complete persisted aggregate. |
@@ -276,9 +349,12 @@ filesystem access, text conversion and aggregate validation:
 
 ![Persistence classes and their external model dependencies](images/ernest-storage-classes.svg)
 
-[PlantUML source](diagrams/ernest-storage-classes.puml). Dashed arrows denote use;
-solid arrows denote retained references. The external `Plan` is shaded; other
-model dependencies appear as field types, without transferring their ownership.
+**Figure 7. Persistence and the source aggregate.**
+
+[PlantUML source](diagrams/ernest-storage-classes.puml) · [PNG](images/ernest-storage-classes.png). Dashed arrows denote use;
+solid arrows denote retained references. Other model dependencies appear as
+field types. `~PlanCodec` has package visibility; its members shown with `~` are
+also package-private.
 
 `Snapshot` retains tasks, commitments, study hours, recurring templates, optional
 policy and three independent next-ID counters. Its validation rejects duplicate
@@ -292,6 +368,12 @@ A `Snapshot` is source data. A `Plan` additionally freezes generation time,
 sessions, unallocated work and breaks against that source. Ka How's `AppState`
 holds the session's live snapshot and optional plan; storage neither publishes
 that state nor invokes the planner.
+
+Full cross-record frozen-plan validation is a pending release dependency:
+Gabriel's tested `Planner.validate(Plan)` API is now available after integration,
+but the codecs do not yet invoke it. They retain their existing structural/reference checks;
+they do not yet reject every impossible allocation. No substitute allocation
+validator is implemented in storage.
 
 ## Implementation
 
@@ -336,14 +418,22 @@ For a nonblank line, the parser returns a `Command`; the dispatcher executes it
 against the same `AppState`. `ConsoleUi.write(response.output())` adds the final
 newline and flushes the response before `shouldExit()` is inspected.
 
-![Command loop with success, recoverable errors, blank input and termination](images/ka-how-command-loop.svg)
+![Help command followed by a failed prompt and termination](images/ka-how-command-loop.svg)
 
-[PlantUML source](diagrams/ka-how-command-loop.puml)
+**Figure 8. Help command followed by a failed prompt.**
 
-The diagram starts after restoration. Its success formatter is shorthand for
-the method selected by the dispatcher (`help`, `taskAdded`, and so on).
-Service calls, storage operations and publication are omitted; their ordering
-is described in [command transactions](#command-dispatch-and-live-state-transactions).
+[PlantUML source](diagrams/ka-how-command-loop.puml) · [PNG](images/ka-how-command-loop.png)
+
+Figure 8 follows one successful `help` command and then a failed prompt after restoration.
+The `runCommands` activation remains open while nested calls execute, and ends
+at its return of status 1. The failed prompt prevents the next input read.
+`writeResponse` catches output failure while writing a response; the prompt has
+its own narrow catch. The diagram abbreviates `ConsoleUi.flushOutput()` as its
+`checkError()` call, which flushes and checks the writer's error flag.
+EOF bypasses parsing and dispatch. Blank input, syntax errors, validation/save
+failures and explicit `exit` are separate paths described below.
+Value construction and accessors are omitted. Mutation and
+publication order is shown in [command transactions](#command-dispatch-and-live-state-transactions).
 
 For example, after adding `commitment add n/Lecture day/MON start/1000 d/60`
 to an empty store, parsing supplies `Command.AddCommitment`. The dispatcher
@@ -364,6 +454,7 @@ while the service and dispatcher establish candidate validation and rollback.
 | `exit` | The dispatcher returns goodbye with `shouldExit = true`; `App` prints it once. | Status 0, no extra save or prompt. |
 | EOF (`readLine()` returns `null`) | `App` writes `TextRenderer.exit()` without invoking parser or dispatcher. | Status 0, no save. |
 | Input `IOException` | `run()` prints `Error: Cannot read input: MESSAGE`. | Status 1. |
+| Output failure during a prompt, response, goodbye or error report | `ConsoleUi` detects the writer's error flag. `App` stops without reading another command or reporting the error to the failed writer. | Status 1; any already-saved command stays saved. |
 
 Unexpected programming exceptions propagate. In particular, a null dependency
 or a stale plan is not converted to an ordinary input error. (The unfinished
@@ -372,6 +463,9 @@ ordinary errors.) Extra process arguments are rejected by `Main` before loading,
 with `Error: Usage: java -jar scheduleflow.jar (no arguments)` and status 1.
 `App` returns status codes so tests and embedded callers need not terminate
 their JVM; only `Main` calls `System.exit`.
+If argument-error output itself fails, `Main` still exits with status 1 without
+loading data or attempting another write. Output-failure diagnostics follow the
+existing opt-in logging configuration; default launches keep stderr quiet.
 
 #### Deterministic presentation
 
@@ -410,8 +504,13 @@ formatter and return `CommandResponse` consistently.
 Catching the three expected command exceptions keeps correction local to one
 iteration. Catching every runtime exception would also keep the loop running,
 but could conceal a broken internal invariant. Propagating unexpected failures
-keeps them visible to developers. This boundary does not promise recovery from
-an output-device failure: `PrintWriter` errors are not explicitly checked.
+keeps them visible to developers. `PrintWriter` suppresses checked write errors,
+so `ConsoleUi` explicitly checks its flag after each prompt or response. Because
+that flag retains no original cause, the resulting `UncheckedIOException`
+contains a descriptive `IOException`, rather than a fabricated device cause.
+Output failure ends the session; attempting to print another error could fail
+again. It does not roll back a successful save: restart and inspect saved
+records before repeating a command whose confirmation could not be delivered.
 
 `AppTest` covers startup, syntax/domain/save recovery and failed-save retries;
 `AppStateTest` covers source-plan consistency. `ConsoleUiTest` checks flushes and
@@ -420,6 +519,14 @@ framing, `MainTest` checks process status/UTF-8/quiet defaults, and
 Fixed clocks, temporary files and isolated logger/locale changes keep these
 checks independent of the developer's saved data. See [console verification](#build-packaging-and-console-verification)
 and [manual console tests](#launch-help-exit-and-console-behavior).
+
+Deterministic failing writers cover both write and flush failures. Application
+tests reject any input read after a failed prompt/response, check single-attempt
+startup/input/command-error reporting and goodbye failure, and reload a real
+saved mutation after its response fails. Child-JVM tests exercise the actual
+`Main` wiring with failed stdout, including argument rejection and quiet stderr.
+An unchecked I/O defect from storage still propagates instead of becoming a
+console status. These are controlled faults, not real broken-pipe or OS proof.
 
 `MainTest` also checks corrupt saved-plan metadata and a directory at the saved-file
 path: both must exit with status 1 before prompting and preserve existing bytes.
@@ -435,209 +542,113 @@ diagnostic severity text and keeps logger configuration inside that process.
 
 ### Exact task work and retained task lifecycle
 
-#### Task operations and defensive checks
+The enhancement lets a student record actual work without losing task identity
+or confusing remaining work with scheduled capacity. Suppose T1 has 90 minutes
+remaining. A reported 61-minute session at 25% credits **15**, leaving **75**.
+The percentage describes that session, not the original task estimate. Planning
+may reserve 90 minutes for the resulting 75-minute estimate, but does not alter
+it. See [allocation](#slot-allocation-under-study-hourspolicy-and-recurrence) for
+capacity accounting and [the candidate scope](#task-model-and-command-parsing)
+for release status and contribution boundaries.
 
-`Task` owns structural validation: positive IDs, normalized nonblank names,
-optional minute-precision deadlines in years 0001-9999 and nonnegative whole-minute
-remaining work (zero is retained completion). It uses `InputRules` and permits
-overdue or out-of-horizon saved deadlines. `ValidationException` carries the
-user-facing explanation and rejects a null message as programmer misuse.
+#### Parsing and domain validation
 
-`TaskService.add` requires positive work and checks the captured command time, accepting
-`now < deadline <= TimeRules.horizonEnd(now)`. The horizon moves with each
-command date, including the February 29 adjustment. Additions append to the
-stored task order and advance only the task counter. The last allocatable ID
-is `2147483646`; the next counter can be `2147483647`, at which point additions
-are rejected before incrementing. Duplicate names are valid. Deletion removes
-one known ID without resetting counters; listing returns an immutable copy in
-numeric ID order and includes overdue work without reducing estimates.
+`task progress T1 session/61 percent/25` becomes
+`Command.RecordTaskSession(1, 61, 25)`. Its direct-work counterpart becomes
+`Command.RecordTaskWork`. Full-line matching rejects missing, reordered, repeated
+or extra prefixes. Positive decimal tokens reject signs, leading zeroes,
+non-ASCII digits and `int` overflow; progress explicitly permits zero credit
+and percentages 0..100. The parser rejects percentages above 100, while the
+service repeats its domain bounds for direct API callers. `ParseException`
+contains the relevant usage; a well-formed but unknown T ID instead produces
+`ValidationException` during execution.
 
-Services reject null snapshots or command times with named
-`NullPointerException` preconditions. Invalid domain values and unknown IDs use
-`ValidationException`; runtime checks also work with assertions disabled.
-Assertions check normalization and candidate postconditions: preserved records,
-the exact add/delete count change and unchanged unrelated counters/commitments.
-They diagnose implementation defects rather than replace user-input validation.
-Neither services nor models save candidates, read the clock or invalidate plans;
-the dispatcher saves before publishing and reporting success.
+Dates use strict `uuuu-MM-dd HHmm`, minute precision and years 0001..9999.
+`Locale.ROOT` avoids machine-locale grammar changes. Syntax validation never
+decides whether a deadline is future: the dispatcher supplies one captured
+`now` to operations needing time. Likewise `schedule today` remains unresolved
+until dispatch. This boundary makes the same Task service usable by tests and
+non-console callers without pretending a parsed command is already valid.
 
-#### Task detail editing
+#### Exact progress and immutable candidates
 
-`TaskService.edit(state, id, TaskEdit, now)` implements immutable partial name and
-deadline edits. `TaskEdit` uses nonnull `Optional` containers; omitted fields retain
-their values. Empty edits, unknown IDs and simultaneous `clearDeadline` plus a
-replacement deadline raise `ValidationException`. Clearing alone explicitly
-removes the deadline, including on completed or overdue tasks.
-The full replacement is validated by `Task`. Only an actually changed deadline
-must satisfy `now < deadline <= TimeRules.horizonEnd(now)`. Renaming overdue or
-out-of-horizon work, or explicitly retaining its existing deadline, is valid.
+![Positive session progress creates a validated candidate before external publication](images/nickhil-task-progress.svg)
 
-Edits preserve completion, priority, occurrence provenance, exact stored position,
-ID, remaining estimate, other records, recurrence definitions/cursors, all counters
-(including exhausted counters) and configured study hours. A valid
-edit with no effective change after normalization returns the original snapshot
-instance. The API does not save, publish or invalidate plans. FINE diagnostics
-omit private values; assertions check candidate preservation.
+**Figure 9. Positive session progress and task replacement.**
 
-`Command.EditTask` transports a partial edit and `CommandParser` accepts
-`task edit TNUMBER [n/NAME] [due/YYYY-MM-DD HHmm]`. At least one field is required,
-in name/deadline order. `TextRenderer.taskEdited` is implemented and reports the
-stored ID, name, deadline and estimate without mutating or saving anything.
-The dispatcher prepares the response before saving, then publishes changed
-candidates only after save succeeds. A normalized no-op returns a confirmation
-without saving or invalidating the current plan. Failed syntax, validation or
-saving retains the old snapshot, counters, file and plan.
+[PlantUML source](diagrams/nickhil-task-progress.puml) · [PNG](images/nickhil-task-progress.png)
 
-#### Task progress and lifecycle
+Figure 9 follows a valid 61-minute session at 25% on an active task with 90
+minutes remaining. The 15-minute credit creates a new `Task`, whose header and
+lifeline begin at construction. `Task(...)` omits constructor parameters so the
+creation arrow reaches the object header; the copied fields are explained below.
+Dispatcher persistence and publication calls
+are summarized in a note. Zero-credit no-ops, invalid input and save failures
+are separate paths described below.
 
-The canonical model is `Task(id, name, Optional<LocalDateTime>, remainingMinutes,
-TaskPriority, Optional<TaskOccurrence>)`. The five-argument optional-deadline
-constructor creates an ordinary task without provenance. The original
-four-argument concrete-date constructor defaults
-priority to NORMAL and still rejects null deadlines; there is no ambiguous
-four-argument Optional overload. Use `Task.withoutDeadline(id, name, minutes)`
-or the canonical constructor for explicit absence, never a sentinel date.
-HIGH/NORMAL/LOW are stored and used only for planner ties here; priority operations
-are not wired at the console. Weekly templates are described in
-[recurrence](#weekly-recurring-tasks); queries remain deferred.
+`recordSessionProgress` first validates positive session minutes and an integer
+percentage in 0..100. It computes `(int) ((long) sessionMinutes * percentage / 100)`.
+Integer division floors the nonnegative result; promotion before multiplication
+avoids overflow even for `Integer.MAX_VALUE` session minutes. The credit then
+passes through `recordWork`, the common authority for direct and session input.
+It resolves the existing task, rejects a completed record, and requires credit
+between zero and that task's remaining estimate. Overreported work is rejected,
+not clamped to zero remaining.
 
-`TaskService` exposes these pure candidate APIs:
+`replaceRemaining` returns the **identical Snapshot instance** when no minutes
+change. Otherwise it copies the task list, replaces the selected record at its
+original position, and calls `Snapshot.withTasks` with the unchanged next T ID.
+The new Task copies name, optional deadline, priority and occurrence provenance;
+the aggregate helper preserves other records, all counters, templates/cursors,
+hours and policy. The original remains valid and unchanged. TaskService neither
+saves nor publishes this candidate and does not invalidate or regenerate a plan.
 
-- `addWithoutDeadline(state, name, minutes)` requires positive whole minutes,
-  appends the next ID and does not need a clock.
-- `recordWork(state, id, done)` requires an active task and
-  `0 <= done <= remaining`; it subtracts reported work, not elapsed time.
-- `recordSessionProgress(state, id, sessionMinutes, percentage)` requires positive
-  int minutes and integer 0..100, then credits floor of their long product / 100.
-  Overreported credit rejects atomically. Percent means a fraction of that
-  session, not a whole-task completion percentage.
-- `reviseRemaining(state, id, remaining)` requires active work and a positive
-  estimate; increases are allowed and are not credited as work done.
-- `complete(state, id)` retains the record and ID with zero remaining.
-- `reopen(state, id, positiveRemaining)` requires a completed task and preserves
-  all metadata, including an overdue or absent deadline.
+The external dispatcher derives actual credited minutes from the before/after
+estimates and prepares Ka How's confirmation. For a changed candidate it invokes
+[Darren's transaction](#dated-commitments-and-save-before-publication-dispatch);
+zero-credit identity no-ops skip saving and preserve the current plan. A save
+failure publishes nothing, so retrying applies the work once. Two *successful*
+submissions record work twice: there is no duplicate-command detection. Durable
+restart behavior belongs to [Ernest's persistence](#atomic-persistence-and-restoring-frozen-plans).
 
-Zero credited work and equal revisions return the identical source snapshot;
-completion is idempotent with the same identity guarantee. Completed tasks reject
-progress even with zero credit, and require explicit reopening before revision.
-Every candidate preserves stored position, priority, optional deadline, occurrence
-provenance, unrelated records, recurrence definitions/cursors, all counters and
-custom study hours. No API saves, publishes, invalidates plans, reads a clock or replans.
-Callers honor no-op identity to avoid unnecessary saves/invalidation.
-New lifecycle methods add no diagnostics;
-existing structural/edit diagnostics retain privacy protections.
+#### Completion, reopening and corrections
 
-`taskProgressUpdated(Task,int)` reports the stable ID/name, actual credited
-minutes and resulting remaining estimate. It does not recompute percentages or
-claim an unchanged value was saved. Both progress forms use the existing
-candidate transaction: changed candidates save before publication; zero-credit
-no-ops preserve the snapshot and plan. Negative renderer credit is programmer
-misuse and raises `IllegalArgumentException`; task validation stays in TaskService.
-`taskCompleted(Task)` prints `Completed TNUMBER: NAME` and `taskReopened(Task)`
-prints `Reopened TNUMBER: NAME | Remaining: N min` for validated lifecycle
-results. The completion and reopening formatters are connected to `task complete`
-and `task reopen` respectively.
-`taskEdited(Task)` is wired for issue #39's concrete-deadline/name edits.
-`taskRemainingUpdated(Task)` formats issue #41's active remaining-time command.
-Weekly recurrence commands, completion and reopening are implemented at the console.
-Existing renderer compatibility changes only display `No deadline` in add/list
-output and undated remainder rows, use an undated capacity-shortfall reason, and
-sum exact session work in plan summaries. Existing schedule interval durations
-still show reserved wall-clock capacity, not exact credited work; slot-aligned
-output remains unchanged. `task list completed` provides the completed-only view.
+| Operation | Domain result and boundary |
+| --- | --- |
+| `complete` | Retains the same task with zero remaining. Repeated completion is an identity no-op. |
+| `reopen` | Requires a completed task and an explicit positive estimate; no earlier estimate is silently restored. Overdue/undated records may reopen. |
+| `reviseRemaining` | Replaces an active estimate, allowing increases; it does not credit completed work. An equal estimate is a no-op. |
+| `edit` | Requires a supplied name/deadline change or explicit API clear. It preserves work/status; a normalized equal result is a no-op. |
+| `delete` | Permanently removes a record, without resetting or reusing IDs. It is not completion. |
 
-#### Completion and completed-task view
+The model permits zero work, but creation, revision and reopening require positive
+whole minutes. Completed tasks reject progress even for `done/0`. Their records
+remain in `task list`; the dispatcher implements the completed-only view using
+the service's numeric-ID list. A generated task has the same lifecycle, but its
+original release and template provenance survive every replacement. These
+mutations neither generate occurrences nor modify Gabriel's templates.
 
-`Command.CompleteTask` and `ListCompletedTasks` add exact, case-sensitive grammar
-for `task complete TNUMBER` and `task list completed`. Parsing validates the ID
-shape and overflow; `TaskService.complete` retains domain validation and returns
-an immutable zero-work candidate. The dispatcher formats the existing
-`TextRenderer.taskCompleted` confirmation, saves a changed candidate, then
-publishes it. Repeated completion returns the same source and does not save or
-invalidate a plan. Failed saves preserve the snapshot and its saved plan.
+Only a changed, present deadline is checked against
+`now < deadline <= TimeRules.horizonEnd(now)`. Renaming an overdue task or retaining
+its old deadline therefore works. Empty edits and simultaneous clear/replacement
+requests fail atomically. Optional deadlines and priority mutation exist at the
+API/storage layer; console addition still requires `due/`, and the edit grammar
+does not accept `due/NONE` or priority changes. Do not advertise those APIs as
+commands. Unknown IDs and rejected fields leave candidates, counters and plans
+unchanged; assertions supplement rather than replace runtime validation.
 
-The completed view filters the service's numeric-ID list and shares row formatting
-with the original full list. No data or plan changes occur during listing.
+#### Design considerations
 
-#### Reopening completed tasks
-
-`Command.ReopenTask(id, remainingMinutes)` transports
-`task reopen TNUMBER remaining/MINUTES`. The parser requires positive decimal
-32-bit integer tokens with no signs or leading zeroes, matches the full input
-and reports that command's usage for malformed fields or overflow. It does not
-inspect task state. `TaskService.reopen` already implements the domain behavior:
-only completed tasks accept an explicit positive estimate, because completion
-retains zero work rather than a previous estimate to restore.
-
-The dispatcher uses that existing service and `TextRenderer.taskReopened` without
-changing their signatures or the storage format. It prepares the confirmation,
-saves the candidate once, then publishes it and invalidates the current plan.
-Validation or save failure preserves the original snapshot, counters and saved
-and live plans. Reopening preserves the task's stored position, name, priority,
-optional deadline and occurrence provenance, as well as unrelated records,
-templates, cursors, settings and all counters, including exhausted counters.
-Overdue and undated completed records can be reopened without inventing a deadline.
-The next `plan` includes the restored work under the existing allocation rules;
-overdue work remains unallocated. The completed-only view excludes reopened tasks.
-
-#### Commands and parsing
-
-Issue #40 parser preparation recognizes `task progress TNUMBER done/MINUTES`
-and `task progress TNUMBER session/MINUTES percent/PERCENT`. It returns
-`RecordTaskWork` or `RecordTaskSession` transport values without reading state.
-The dispatcher uses the Task service to validate and calculate a candidate,
-then derives actual credited minutes from the old and new remaining estimates.
-It requests a Printing confirmation before saving or publishing the candidate.
-`TextRenderer.taskProgressUpdated` now supplies the confirmation, so changed
-candidates save before publication; zero-credit candidates avoid an unnecessary
-save or plan invalidation. Fixed-clock dispatcher tests cover actual credit,
-successful publication, no-ops, failed-save preservation and retry. UI-030 covers
-the existing parsed forms through the packaged application and saved restarts.
-
-Issue #41 parses `task remaining TNUMBER remaining/MINUTES` into
-`ReviseTaskRemaining` without reading state. The parser requires positive decimal
-tokens; `TaskService.reviseRemaining` checks the ID and requires a positive
-whole-minute estimate on an active task. It preserves the task's priority and
-optional deadline, replaces only the estimate at its stored position, preserves
-both counters, commitments and study hours, and
-returns the original snapshot for an unchanged estimate. The dispatcher prepares
-the candidate and its confirmation before saving. Changed candidates save
-before live publication and plan invalidation; unchanged candidates report the
-stored value without saving or clearing the plan. `TextRenderer.taskRemainingUpdated`
-formats the stable ID, name and new minutes without claiming that an unchanged
-value was saved again. A failed save preserves the live snapshot and plan.
-Parser, service, renderer and dispatcher JUnit tests cover syntax, values,
-successful publication, no-op behavior and rollback. The Task regression saves
-a revised candidate to an isolated file, reloads it and verifies higher planning
-demand. UI-019 checks exact console responses, plan invalidation, replanning and
-two restarts against a fixed overdue task.
-
-`CommandParser.parse` implements all command formats in the User Guide and
-returns the existing nested `Command` records. The parser has no clock, storage
-or application-state dependency. `schedule today` produces `Command.ScheduleToday`;
-the dispatcher resolves its date from the time captured for command execution.
-
-After stripping outer whitespace, the parser recognizes the command words and
-matches the entire input. Field patterns allow ordinary spaces and multiword
-Unicode names, while excluding slash from names so duplicate, reordered and
-unknown prefixes cannot be swallowed as name text. Embedded control characters
-are rejected. Quotes remain literal characters. Names are stripped at their ends
-without changing internal spaces.
-
-Dates and times use strict `uuuu-MM-dd`, `HHmm` and `uuuu-MM-dd HHmm` formatters
-with `Locale.ROOT`. Fixed-width ASCII tokens and an explicit year-zero rejection
-limit dates to years 0001–9999. Positive decimal integer tokens reject signs,
-leading zeroes and non-ASCII digits; overflow is translated to `ParseException`.
-Each parse failure includes the recognized command's exact usage, or
-`Type help to see available commands` for an unknown command. A direct blank
-parser input is rejected; the App loop ignores blank lines before parsing.
-
-Parsing does not create domain records or validate nonblank names, duration
-multiples, commitment alignment/end times, future deadlines, overlaps or ID
-existence. Those remain the responsibility of the existing domain constructors
-and services. No other member's implementation or shared public API is changed.
-The existing command records and `ParseException` satisfy the parsing contract.
-Application integration uses these existing parser and service boundaries.
+This is a present-day comparison of observable tradeoffs, not a claim about
+unrecorded historical deliberations. Mutating live tasks in place would allocate
+less, but require explicit rollback after saving failed. Immutable candidates
+make the save/publication boundary testable at the cost of list copies. Using a
+stored completion flag could represent another state independently of work, but
+would require reconciling inconsistent flag/estimate combinations. Here zero is
+the single completion authority. Rejecting excess credit exposes an inaccurate
+report instead of silently losing its meaning. The design intentionally stores
+neither an original-work baseline nor a timer/history, so it cannot report a
+whole-task completion percentage or reconstruct earlier estimates.
 
 ### Dated commitments and save-before-publication dispatch
 
@@ -654,7 +665,14 @@ student enters `commitment edit C1 start/1030`.
 
 ![Editing a commitment: validate, save, then publish](images/darren-commitment-edit.svg)
 
-[PlantUML source](diagrams/darren-commitment-edit.puml)
+**Figure 10. Successful commitment edit, saved before publication.**
+
+[PlantUML source](diagrams/darren-commitment-edit.puml) · [PNG](images/darren-commitment-edit.png)
+
+Figure 10 shows a successful edit. Nested activations distinguish `execute`,
+`editCommitment` and `saveAndCommit`, and the service's `createEdit` and
+`rejectOverlaps`. Time capture, record construction and most value accessors are
+omitted; rejection paths are explained after the walkthrough.
 
 1. Nickhil's parser produces `Command.EditCommitment(1, null, null, 10:30, null, null, null)`.
    `null` means "keep the stored value".
@@ -666,7 +684,7 @@ student enters `commitment edit C1 start/1030`.
 4. `rejectOverlaps` compares the replacement with every other commitment. C1 itself
    is excluded, so keeping or shifting its own time is never a self-conflict.
 5. The service returns a new `Snapshot` with C1 replaced at its original list position.
-   Tasks, study hours and both ID counters are unchanged.
+   Tasks, study hours, policy, recurrence and all three ID counters are unchanged.
 6. The dispatcher calls `saveAndCommit`. `Storage.save(candidate)` runs first;
    only if it returns does `AppState.commit(candidate)` publish the change and clear
    the current plan. `TextRenderer.commitmentEdited` then formats
@@ -801,9 +819,9 @@ their stored order and both ID counters. Nonpositive and unknown IDs raise
 `ValidationException`. Deleting the last series does not reset the counter.
 `list` returns an immutable Monday-to-Sunday view sorted by start time and then
 numeric ID, without reordering the snapshot or renumbering records. Valid
-snapshots cannot contain two commitments at the same weekday and start time,
-because their positive durations would overlap; the ID comparator is a final
-ordering safeguard.
+commitments may share a weekday and start time when they have no shared,
+unskipped occurrence, for example in separate semester ranges. The numeric-ID
+tie-breaker gives those entries deterministic ordering.
 
 Defensive checks distinguish invalid user IDs from programmer errors (null
 snapshots). Runtime validation works independently of Java assertions.
@@ -912,23 +930,29 @@ never has to choose between two clashing fixed commitments. A task session may
 still be overlapped by a new commitment; the next `plan` simply allocates around
 it.
 
-#### Multi-date unavailable periods: implementation handoff (planned)
+#### Multi-date unavailable periods
 
-**Proposed console integration:** `AddContinuousBlock` and `AddDailyBlocks`
-have parsed transports, service implementations and a batch formatter, but
-their dispatcher routes are not implemented. They are not supported console
-commands and are omitted from help. Each route throws a `ValidationException`
-naming the single-date `commitment add ... on/` alternative, so `App` prints an
-ordinary error and the session continues with nothing saved and the current plan
-kept. `CommandDispatcherTest` covers this rejection; it is not a feature pass.
+`AddContinuousBlock` and `AddDailyBlocks` reuse the same one-time commitment
+representation as a single unavailable date. `CommitmentService` expands the
+request and validates every generated period before returning one candidate.
+Continuous mode treats its end as exclusive and splits at midnight; daily mode
+uses one same-day window on every date in its inclusive range. Generated records
+are appended in date and allocated-ID order.
 
-The proposal expands a continuous interval (exclusive end), or a daily
-window across inclusive dates, into ordinary one-time commitments. The
-integration must save the complete validated batch once before publication;
-a conflict or failed save must consume no IDs and preserve the previous plan.
-Use [the planned fixtures](../test/ui-unavailable-ranges.planned.json) for
-the proposed grammar, confirmations and boundary cases. Keep them planned
-until dispatch and transaction acceptance are implemented.
+`CommandDispatcher` passes the original snapshot to the matching service, takes
+only the appended commitments for `TextRenderer.unavailablePeriodsAdded`, and
+prepares that complete confirmation before persistence. It then calls the normal
+`saveAndCommit` boundary exactly once. A successful save publishes the complete
+batch and clears the old plan once. Validation, rendering or save failure leaves
+the original commitments, counters, plan and disk unchanged, so a retry receives
+the same first C ID. Individual generated commitments remain ordinary one-time
+records and can be edited or deleted by their C ID.
+
+UI-022 through UI-027 in the [active fixture](../test/ui-scenarios.json) cover
+continuous and daily output, restart, independent deletion, invalid syntax and
+values, later-segment rollback, exclusive midnight, adjacency and leap day.
+Focused dispatcher tests use controlled storage to establish one-save ordering,
+failed-save retry, ID exhaustion and preservation of unrelated snapshot data.
 
 ### Slot allocation under study hours/policy and recurrence
 
@@ -1108,10 +1132,25 @@ Both save operations use `FileStorage.writeAtomically`:
    remove the temporary file and throw `StorageException`; attach a cleanup
    failure as suppressed information instead of replacing the original error.
 
+The public constructor installs `FileStorage.FileOperations`, whose creation,
+write, atomic-replacement and deletion methods call the real `Files` API. A
+package-private constructor accepts controlled operations for tests. Directory
+creation and all reads remain direct filesystem calls. The seam does not change
+the public interface, encoding, replacement options or error handling, and
+construction still performs no I/O. If temporary creation fails before a path
+is returned, there is no known temporary file to clean up. After write/move
+failure, cleanup is attempted once; a failed cleanup may leave an abandoned
+`.scheduleflow-*.tmp` sibling while retaining the original target.
+
 ![Saving a frozen plan and its source with an atomic replacement](images/ernest-atomic-plan-save.svg)
 
-[PlantUML source](diagrams/ernest-atomic-plan-save.puml). The diagram abbreviates
-static filesystem calls and shows one write/move failure alternative. See
+**Figure 11. Successful atomic save of a frozen plan.**
+
+[PlantUML source](diagrams/ernest-atomic-plan-save.puml) · [PNG](images/ernest-atomic-plan-save.png). The diagram abbreviates
+static filesystem calls and follows a successful atomic replacement. `Files`
+is a class participant, and `PlanCodec` is created during `savePlan`, before
+`encode` is called. The operations collaborator forwards normal calls to
+`Files`; its note traces failure cleanup through the same collaborator. See
 [command transactions](#command-dispatch-and-live-state-transactions) for live
 publication: the dispatcher prepares recurrence/allocation/output, calls
 `savePlan` once, then publishes the saved source and plan. It does not save the
@@ -1218,6 +1257,17 @@ cases with `-ea` and extracts/launches the normal distribution ZIP. It checks
 both scripts' assertion defaults but executes only the current OS's script.
 Preserve the printed `build/ui-transcripts/` paths before running `clean`.
 
+The [CI workflow](../.github/workflows/gradle.yml) retains its Ubuntu, macOS and
+Windows matrix and Java 25 setup. It installs Node 22, prints the Java, wrapper
+and Node versions, then runs `build`, runner self-tests, active UI cases and
+the release replay in that order. The wrapper is selected for each runner OS;
+packaging finishes before distribution acceptance, and the two process suites
+never regenerate the build directory concurrently. Any failed check fails its
+job. Independent matrix jobs continue to collect evidence when another OS fails.
+An always-run artifact step retains only JUnit/Checkstyle reports and console/
+release transcripts, excluding saved data and diagnostic logs. Workflow changes
+and local Windows results do not establish hosted or other-platform success.
+
 #### Diagnostics
 
 Default `Main` launches silence `scheduleflow.cli` unless logging was explicitly
@@ -1240,25 +1290,68 @@ java.util.logging.FileHandler.formatter=java.util.logging.SimpleFormatter
 ```
 
 `FINE` records stages, `INFO` session start/normal termination, `WARNING`
-recoverable rejections and `SEVERE` startup/input failures. To retain warnings
+recoverable rejections and `SEVERE` startup/input/output failures. To retain warnings
 and failures only, set both `scheduleflow.level` and the handler level to
 `WARNING`. Constructors perform no I/O or logging configuration.
 
 #### Diagram and guide maintenance
 
-PlantUML sources are in `docs/diagrams`; committed SVGs in `docs/images` let
-Markdown display the figures without a PlantUML extension. With Java 25 and a
-local PlantUML JAR (verified with 1.2025.4), render from the repository root:
+Editable PlantUML sources and the shared `course-style.puml` are in
+`docs/diagrams`. Each figure has a numbered caption and links to its source and
+PNG; committed SVGs in `docs/images` are embedded in this guide.
+
+Review notation against the course's [Modeling chapter](https://nus-cs2113-ay2627-s1.github.io/website/se-book-adapted/chapters/modeling.html)
+and [Week 11 DG review guidance](https://nus-cs2113-ay2627-s1.github.io/website/schedule/week11/tutorial.html).
+Check depicted members, retained references and call order against the current
+Java source and its tests. Keep each view focused; identify omitted helper calls
+in attached notes or the surrounding explanation. Although the textbook permits
+unattached notes, this guide connects every note with a dotted arrow to its subject.
+
+The [DG review (#118)](https://github.com/AY2627S1-CS2113-T10-1/tp/issues/118)
+identifies course notation, missing activations and unclear notes as concerns.
+The figures retain the existing PlantUML workflow and share a flat pastel
+palette for responsibilities. Exports were checked with PlantUML **1.2025.4**, Graphviz
+**2.44.1**, Java **25.0.4.1**, and installed **Calibri** (no font fallback).
+The SVG-to-PNG step uses Playwright **1.62.1** and Chrome **156.0.8078.49**.
+The shared style selects strict UML notation, textual visibility and rectangular
+pastel boxes. Fills, spacing and curved structural routes are presentation choices;
+the arrows, visibility, activations and other UML symbols follow course notation.
+SVGs use logical vector dimensions;
+PNGs are exported at 2x resolution, with a white background and preserved aspect
+ratio.
+
+With Java 25, Graphviz, Node.js 22+, Playwright and a local PlantUML JAR, render
+all figures from the repository root. Install documentation-only Node dependencies
+under ignored `build/uml-tools` if they are not already available:
 
 ```powershell
-java -jar "PATH_TO_PLANTUML_JAR" -charset UTF-8 -tsvg -o ../images docs/diagrams/ka-how-console-classes.puml docs/diagrams/ka-how-command-loop.puml
+npm install --prefix build/uml-tools --no-save --package-lock=false playwright
+$env:NODE_PATH = Join-Path (Get-Location) 'build/uml-tools/node_modules'
+node tools/render-uml.mjs --plantuml "PATH_TO_PLANTUML_JAR" --chrome "PATH_TO_CHROME"
 ```
 
-Replace `PATH_TO_PLANTUML_JAR` with its local path. The output directory is
-relative to each source directory. The class source selects the bundled
-Smetana layout engine, so no external Graphviz installation is required.
-Commit each changed source and its rendered SVG together, check the diagram
-against the code, and inspect text size and links in the rendered guide.
+Replace the two paths with installed PlantUML and Chrome locations. An existing
+Playwright-managed Chromium can be used by omitting `--chrome`. Use `--output DIR`
+to preview exports outside `docs/images`. The common include is a style file,
+not a standalone diagram. Captions belong in the guide so that titles cannot
+change export names. The Windows PlantUML distribution used here supplies
+Graphviz; other installations may require it separately.
+
+PlantUML draws structural note arrows directly. Its sequence notes have no
+connector, so [`tools/render-uml.mjs`](../tools/render-uml.mjs) adds dotted arrows
+to their named participants' active invocation bars (or lifelines), then derives
+the PNG from the same SVG. Sequence notes must use `note right of PARTICIPANT`;
+the exporter checks their count, text and targets and reserves a visible gap for
+each arrow. Plain PlantUML exports alone omit these sequence note connectors.
+
+Commit each edited source, shared style change and corresponding SVG/PNG exports
+together. Check displayed members and call order against the source and relevant
+JUnit tests. Inspect every rendered figure at full size: visibility and static
+underlines, endpoint roles/multiplicities, realization triangles, dotted note
+attachments, solid filled call heads, dashed returns, continuous/nested
+activations, guarded fragments, and constructor-time headers. Deliberate omissions
+are identified beside the figures; failure paths remain documented in prose.
+
 Review both guides after implementation; mark unfinished operations explicitly.
 Before publication, the release maintainer must reconcile this guide with the
 verified release tag and artifact. Cross-platform runtime checks and filesystem
@@ -1267,17 +1360,29 @@ establish those results.
 
 ### Task/parser validation and JUnit/documentation conventions
 
-Tests mirror production packages under `src/test/java` and use JUnit 5.
-See [test conventions](../src/test/AGENTS.md) for isolation and naming,
-and [the Java standard](../.agents/skills/seedu-java-coding-standard/SKILL.md)
-for Javadoc and quality requirements. `TaskServiceTest`, `TaskEditTest`,
-`TaskRecurrenceTest`, `InputRulesTest` and `CommandParserTest` cover exact
-progress, no-ops, deadlines, recurrence preservation and strict syntax.
+Run the owned tests with Java 25 from the repository root:
 
-Task diagnostics use `FINE` on `scheduleflow.task`, `scheduleflow.model.Task`
-and `scheduleflow.common.InputRules`, omitting names, dates and durations.
-Use the file-handler configuration in the console diagnostics section and
-select those logger namespaces. Services install no handlers.
+```shell
+./gradlew test --tests 'scheduleflow.task.TaskServiceTest' --tests 'scheduleflow.task.TaskEditTest' --tests 'scheduleflow.task.TaskRecurrenceTest' --tests 'scheduleflow.model.TaskTest' --tests 'scheduleflow.common.*' --tests 'scheduleflow.cli.CommandParserTest'
+```
+
+[`TaskServiceTest`](../src/test/java/scheduleflow/task/TaskServiceTest.java)
+checks 0/50/100% credit, floor rounding, large products, no-op identity,
+completion/reopening, and captured-time deadline boundaries. TaskRecurrenceTest
+checks generated-task metadata preservation; it does not replace Gabriel's
+generation tests. TaskEditTest and InputRulesTest cover transport/null rules and
+normalization. CommandParserTest covers all families' grammar and usage hints,
+not whether deferred commands execute. Tests use explicit times, temporary data,
+and restored logger/locale settings; see [test conventions](../src/test/AGENTS.md).
+Link documentation claims to those tests rather than adding tests for prose.
+
+Opt-in `FINE` diagnostics on `scheduleflow.task`, `scheduleflow.model.Task`,
+`scheduleflow.common.InputRules` and `scheduleflow.cli.CommandParser` omit raw
+names/command values. Use the existing [file-handler configuration](#build-packaging-and-console-verification);
+these classes install no handlers. Public validation works without `-ea`;
+assertions check internal invariants. Lifecycle methods do not all emit stage
+logs. [JUnit/documentation standards](../AGENTS.md) remain the authority for
+Javadoc, isolation and verification; builds alone are not manual acceptance.
 
 ### Commitment/dispatch transaction verification
 
@@ -1288,7 +1393,7 @@ or temporary storage, so no test reads the real time or the developer's data:
 | --- | --- | --- |
 | [`CommitmentTest`](../src/test/java/scheduleflow/model/CommitmentTest.java) | 13 | Record validation boundaries, `occursOn`/`recursOn`, adjacency versus overlap, shared-occurrence checks for bounded and skipped series. |
 | [`CommitmentServiceTest`](../src/test/java/scheduleflow/commitment/CommitmentServiceTest.java) | 52 | Each operation returns a candidate and leaves its source unchanged; conflict messages and ordering; edits keep position, ID and study hours; skip/one-time rules; counter exhaustion; unavailable-range expansion. |
-| [`CommandDispatcherTest`](../src/test/java/scheduleflow/cli/CommandDispatcherTest.java) | 42 | Every route and a single clock read per command; save-before-publication for each mutation; failed saves preserving state, plan, counters and the retry ID; no-op and read-only commands making no save; the one-`savePlan` planning transaction. |
+| [`CommandDispatcherTest`](../src/test/java/scheduleflow/cli/CommandDispatcherTest.java) | 46 | Every route and a single clock read per command; save-before-publication for each mutation and unavailable batch; failed saves preserving state, plan, counters and retry IDs; no-op and read-only commands making no save; the one-`savePlan` planning transaction. |
 
 The dispatcher tests use an in-memory `FakeStorage` that records attempts and can
 fail on demand. For example, `execute_eachFailedSave_preservesStatePlanCountersAndRetryId`
@@ -1298,7 +1403,8 @@ candidate is saved. `execute_planRejectedAfterMaterialization_preservesSourcePla
 covers a plan rejected after recurrence materialization. Packaged console
 scenarios UI-014 (partial edits, rejection, plan invalidation and restart) and
 UI-017 (occurrence skips and restart) exercise the same rules through the JAR.
-The proposed range routes are deliberately not covered as passing behaviour.
+UI-022 through UI-027 exercise both unavailable batch routes, rollback boundaries,
+restart persistence, independent deletion and calendar boundary cases.
 
 #### Commitment defensive checks and diagnostics
 
@@ -1331,15 +1437,27 @@ checks complete frozen results, malformed rows and distinct legacy layouts.
 immutable copies, counters, overlaps and policy-preserving candidates;
 [`FileStorageTest`](../src/test/java/scheduleflow/storage/FileStorageTest.java)
 uses temporary folders for byte-preserving reads, restarts, blocked parents,
-failed replacement and cleanup. Dispatcher/App tests exercise save-before-
+failed replacement and cleanup. Controlled `FileOperations` faults additionally
+exercise temporary creation failure, a partially written temporary file,
+`AtomicMoveNotSupportedException`, another replacement `IOException`, and cleanup
+failure after replacement failure. The write and unsupported-move cases cover
+both snapshot and plan saves through the shared transaction. Tests retain a real
+previous frozen plan, compare its bytes/source/result after failure, check
+cleanup/order and preserve the original cause. A cleanup error is suppressed on
+the `StorageException`; its intentionally retained sibling stays within JUnit's
+temporary folder. No ordinary-move fallback is attempted. Dispatcher/App tests exercise save-before-
 publication and matching-source restoration with fixed clocks and controlled
 storage. Their fake failures do not simulate every filesystem provider.
 
 UI-031/UI-032 in the [console test plan](../test/ui-test-plan.md) cover restored
 plans and invalidation. The [manual recipes](#saving-restoration-failure-and-recovery)
-add backup/transfer and an interactive rejected-save check. Unsupported atomic
-moves, injected cleanup failures, other operating systems and power-loss behavior
-still need separate evidence; the implementation makes no power-loss guarantee.
+add backup/transfer and an interactive rejected-save check. These new faults are
+injected at real transaction boundaries, not evidence of unsupported moves or
+cleanup denial on an actual provider. Other operating systems, real permission
+denial, unsupported providers and power-loss behavior still need separate
+evidence; the implementation makes no power-loss guarantee. Impossible-allocation
+load/save regressions remain pending Gabriel's planning validator; passing the
+existing codec checks does not close that release requirement.
 
 #### Storage defensive checks and diagnostics
 
@@ -1396,15 +1514,31 @@ the supported command surface.
 
 ## Appendix B: User Stories
 
-|Version| As a ... | I want to ... | So that I can ...|
-|--------|----------|---------------|------------------|
-|Current|new user|see command help|refer to the supported syntax when I need it|
-|Current|student|add and list tasks with deadlines and estimates|keep track of unfinished coursework|
-|Current|student|add and remove recurring commitments|reserve my weekly busy periods|
-|Current|student with project meetings and other fixed events|add one-time commitments|keep those periods unavailable for studying|
-|Current|student|generate a plan and view a date's schedule|find available time before my deadlines|
-|Current|student|see unallocated work|recognize when my available time is insufficient|
-|Current|returning user|restore saved tasks and commitments|continue without reentering my data|
+These are product stories, not a redistribution of implementation credit.
+**Candidate** means supported by the inspected source, newer than published
+v1.0; **Planned** means not a working console feature. Feature owners should
+review their rows against the final release tag before publication.
+
+| Status | As a... | I want to... | So that I can... |
+| --- | --- | --- | --- |
+| Candidate | new user | launch locally and request help | learn the accepted commands without leaving the terminal. |
+| Candidate | student | add and list coursework with deadlines and exact estimates | keep an identifiable record of unfinished work. |
+| Candidate | student with changed requirements | edit task details | correct my plan inputs without replacing task IDs. |
+| Candidate | student working across sessions | report completed minutes or a session percentage | keep the remaining estimate accurate. |
+| Candidate | student revising an estimate | replace remaining work without recording progress | account for newly discovered work. |
+| Candidate | student finishing an assignment | retain a completed task and view completed work | distinguish completion from permanent removal. |
+| Candidate | student correcting mistaken completion | reopen a task with an explicit estimate | return its remaining work to planning. |
+| Candidate | student | permanently delete unwanted tasks | remove work I no longer need to schedule. |
+| Candidate | student with weekly coursework | create a weekly task template | avoid re-entering each occurrence. |
+| Candidate | student with fixed classes or meetings | manage weekly, bounded and one-time commitments | prevent study sessions from overlapping busy time. |
+| Candidate | student whose class is cancelled | skip one commitment occurrence | release that date without deleting the series. |
+| Candidate | unexpectedly busy student | block one date through a one-time commitment | move study work into other available periods. |
+| Candidate | student with a regular routine | configure weekday hours and date overrides | plan within realistic study windows. |
+| Candidate | student needing rest | configure work limits and breaks | avoid excessive continuous study. |
+| Candidate | student balancing deadlines | generate a plan and view daily schedules | see when to work and which work does not fit. |
+| Candidate | returning student | restore records, settings and the exact saved plan | continue without re-entry or a changed schedule. |
+| Candidate | student encountering invalid input or a rejected save | receive an error without partial changes | correct and safely retry the request. |
+| Planned | student unavailable across multiple dates | submit a continuous or daily unavailable range | avoid entering each date separately once dispatch is implemented. |
 
 ## Appendix C: Non-Functional Requirements
 
@@ -1416,7 +1550,7 @@ tested. Verification entry points indicate how each requirement can be assessed.
 | --- | --- | --- |
 | NFR-1 | Build and run with Java 25. A packaged JAR requires no Gradle, Node or network connection for normal use. | Java/Gradle version checks, packaged launch and local-session tests. |
 | NFR-2 | Read/write saved data and console streams as UTF-8; preserve supported Unicode names through restart. Keep Java sources UTF-8. | Codec, file round-trip and `MainTest` encoding cases. |
-| NFR-3 | Save each changed candidate atomically before publishing it or reporting success. Reject a failed save without committing its records, counters or replacement plan. | FileStorage replacement tests and dispatcher/App rollback/retry tests. |
+| NFR-3 | Save each changed candidate atomically before publishing it or reporting success. Reject a failed save without committing its records, counters or replacement plan. | FileStorage real-file replacement tests, controlled write/move/cleanup faults, and dispatcher/App rollback/retry tests. Injected faults do not certify actual providers or power-loss recovery. |
 | NFR-4 | Reject malformed or unreadable saved data before accepting commands; preserve the original file and avoid partial restoration. | Corruption/invalid-UTF-8 tests and Appendix E recovery recipes. |
 | NFR-5 | Validate public inputs with runtime checks; use assertions only for internal invariants. Invalid commands must preserve prior state. | Domain/parser/dispatcher tests with invalid and boundary inputs. |
 | NFR-6 | Keep default console diagnostics quiet and make stage logging opt-in. Storage stage records must omit saved values and exception payloads. | Logger-capture tests and quiet-stderr console checks; review broader application logs before sharing. |
@@ -1478,7 +1612,7 @@ retain any evidence you need, then discard the disposable folder.
 These are representative manual paths, not an exhaustive input matrix.
 The [User Guide command summary](UserGuide.md#command-summary) gives the full
 syntax and the [UI fixtures](../test/ui-scenarios.json) supply exact outputs
-for additional reproducible cases. Unfinished range commands are excluded.
+for additional reproducible cases.
 
 Every supported console command has one primary group below. Saving is
 automatic, so persistence is tested by restarting after ordinary commands
@@ -1488,12 +1622,9 @@ rather than through a save command.
 | --- | --- |
 | `help`, `exit`, blank input, end of input, launch arguments | [Launch, help, exit](#launch-help-exit-and-console-behavior) |
 | `task add`, `task list`, `task list completed`, `task edit`, `task remaining`, `task progress`, `task complete`, `task reopen`, `task delete` | [Tasks](#tasks-and-input-validation) |
-| `commitment add` (weekly, bounded and `on/` one-time), `commitment list`, `commitment edit`, `commitment skip`, `commitment delete` | [Commitments](#commitments-and-unavailable-periods) |
+| `commitment add` (weekly, bounded and `on/` one-time), `commitment list`, `commitment edit`, `commitment skip`, `commitment delete`, `unavailable continuous`, `unavailable daily` | [Commitments](#commitments-and-unavailable-periods) |
 | `plan`, `schedule today`, `schedule DATE`, `hours` set/show/reset, `policy` set/show/reset, `task recur add/list/delete` | [Planning](#planning-schedules-hours-policy-and-recurrence) |
 | Restart, saved IDs/estimates/settings/templates/plan, missing or invalid data, failed saves | [Saving and recovery](#saving-restoration-failure-and-recovery) |
-
-The proposed `unavailable continuous` and `unavailable daily` commands are
-excluded until their dispatch is implemented.
 
 ### Launch, help, exit and console behavior
 
@@ -1536,27 +1667,73 @@ and [commitment testing](#commitments-and-unavailable-periods); fatal startup
 and rejected saves are covered in [storage testing](#saving-restoration-failure-and-recovery).
 Exit before discarding the disposable folders; keep your real data untouched.
 
+Output-device failures are checked deterministically through injected writers,
+not by relying on platform-specific broken pipes. Run the focused
+`ConsoleUiTest`, `AppTest` and `MainTest` command under
+[console verification](#build-packaging-and-console-verification). Expect status
+1 after a failed prompt without an input read, and after a failed response
+without another prompt, read or error-output retry. Startup/input/command-error
+and goodbye writes have the same failure boundary. The saved-mutation test
+reloads real temporary storage to confirm the task/counter and plan invalidation
+survive an undeliverable confirmation. These tests do not establish real
+terminal/provider behavior on another OS.
+
 ### Tasks and input validation
 
-Choose `D` as tomorrow's local date in `YYYY-MM-DD`; replace every `D` below
-before entering commands. This keeps deadlines in the rolling horizon.
+Use Java 25 and a JAR built from the candidate source described in
+[Task design](#task-model-and-command-parsing), not v1.0. Launch
+`java -ea -jar scheduleflow.jar` from an empty disposable folder. Choose `D`
+as tomorrow's local date and `E` as the following day, both `YYYY-MM-DD` and
+within the next year. Replace `D`/`E` before entering commands; they are not
+special app tokens. Start with no other records, so the first task is T1.
 
-| Ordered command | Expected result |
-| --- | --- |
-| `task add n/Draft due/D 1800 d/90` | Adds T1 with 90 minutes. |
-| `task list` | Lists T1 and its stored deadline/estimate. |
-| `task edit T1 n/Final draft` | Renames T1, retaining its ID and estimate. |
-| `task remaining T1 remaining/60` | Reports 60 remaining minutes. |
-| `task progress T1 done/15` | Credits 15, leaving 45. |
-| `task progress T1 session/61 percent/25` | Credits 15, leaving 30. |
-| `task progress T1 done/31` | Error; remaining work stays 30. |
-| `task complete T1` | Retains T1 with zero remaining. |
-| `task list completed` | Lists T1 with zero minutes. |
-| `task reopen T1 remaining/45` | Retains T1 with 45 remaining; completed view excludes it. |
-| `task delete T1`, then `task list` | Deletes T1; no tasks remain. |
+**One continuous task lifecycle recipe**
 
-Use [task command examples](UserGuide.md#tasks) for further syntax/boundary
-variations. No timer runs and planning never subtracts completed work.
+```text
+task add n/Draft due/D 1800 d/90
+task list
+task edit T1 n/Final draft due/E 1800
+task remaining T1 remaining/60
+task progress T1 done/15
+task progress T1 session/61 percent/25
+task progress T1 done/31
+task complete T1
+task list completed
+task progress T1 done/0
+task reopen T1 remaining/45
+task list completed
+task delete T1
+task list
+task add n/Next due/D 1800 d/1
+```
+
+Expect T1 with 90 minutes; the edit retains T1 and 90, changing its name/deadline.
+The revision leaves 60, direct credit leaves 45, and the session credits 15,
+leaving 30. `done/31` must reject overreporting without changing 30. Completion
+prints `Completed T1: Final draft`; the completed list shows T1 at zero.
+Progress on that completed record must reject even zero credit. Reopening
+prints `Reopened T1: Final draft | Remaining: 45 min`; the completed view is now
+empty. Deletion leaves `No tasks found.` The next addition is T2, not reused T1,
+with a valid one-minute estimate. No timer subtracts work between commands.
+
+**Rejection and no-op checks**
+
+With active T2, try `task delete T02`, `task edit T2`,
+`task edit T2 due/2026-02-30 1800`, `task add n/Bad d/30`,
+`task progress T2 session/60 percent/101`, and
+`task progress T2 done/2147483648`. Each must show `Error:` and `Expected:` and
+return to the prompt. `task delete T999` is a value error with no usage line.
+`task reopen T2 remaining/45` must reject the active task. Check `task list`:
+T2 still has its original name, deadline and one minute.
+
+Run `plan`, record `schedule today`'s timestamp/rows, then enter
+`task progress T2 session/1 percent/1` and `task remaining T2 remaining/1`.
+The first credits zero and the second is unchanged; another schedule view must
+retain the same plan. A changed `remaining/2` must clear it. Repeating completion
+of an already-completed task similarly preserves an existing plan. See
+[storage testing](#saving-restoration-failure-and-recovery) for failed-save/restart
+recipes and [Task syntax](UserGuide.md#tasks) for more fields. Exit before
+discarding only this disposable folder. Live timing is not a fixed-clock test.
 
 ### Commitments and unavailable periods
 
@@ -1607,9 +1784,34 @@ Replace `D` with tomorrow's date and `E` with the day after, both as `YYYY-MM-DD
 | `plan`, then `schedule D` | The whole day shows `08:00 - 22:00 \| [BUSY] C1: Unavailable`, with no T1 session. T1 is placed in another free slot (today's remaining hours or E, depending on launch time). |
 | `commitment delete C1`, then `schedule D` | No current plan again until `plan` runs. |
 
-Do not enter the proposed multi-date commands. For a failed-save case, use the
-[storage tests](#saving-restoration-failure-and-recovery); the outcome is the same
-for every mutating command.
+**Part 4: multi-date unavailable batches**
+
+Use a fourth empty folder and enter:
+
+```text
+plan
+unavailable continuous n/Trip from/2026-10-26 1500 until/2026-10-28 1100
+schedule today
+exit
+```
+
+Expect one confirmation containing C1 for 26 October 15:00–24:00, C2 for the
+full 27 October and C3 for 28 October 00:00–11:00. The schedule command must say
+there is no current plan because the successful batch invalidated it. Relaunch
+and use `commitment list`; all three one-time entries must remain.
+
+In another empty folder, run
+`unavailable daily n/Appointment from/2026-10-26 until/2026-10-28 start/1500 end/1700`.
+Expect three dated records with the same 15:00–17:00 window and consecutive IDs.
+Delete C2 and confirm C1 and C3 remain independently available.
+
+For atomic rejection, first add a one-time commitment on 27 October from
+16:00–16:30, then attempt that daily batch. Expect an overlap error, no generated
+periods and an unchanged next ID; a following valid addition must receive C2.
+UI-024 supplies the exact reversed/equal range, overnight daily, alignment and
+syntax rejections. Deterministic dispatcher tests cover a failed save and
+insufficient ID capacity, which are not practical to force through an ordinary
+JAR session.
 
 ### Planning, schedules, hours, policy and recurrence
 
@@ -1747,4 +1949,8 @@ commands; its 18:00 deadline must be within the allowed calendar-year range.
 Close every instance before cleanup. Remove only disposable A/B/C folders and
 their copies/logs after inspection. This recipe tests a blocked parent, not an
 unsupported atomic move or failed temporary-file cleanup; those provider failure
-injections remain outside the manual coverage above.
+paths have deterministic injected JUnit coverage, separate from this manual
+recipe and from actual provider evidence. If cleanup itself fails, an abandoned
+temporary sibling can remain; preserve the main file and inspect the failure
+before discarding disposable test artifacts. Full impossible-plan rejection is
+still pending the planning validator and its storage integration.
