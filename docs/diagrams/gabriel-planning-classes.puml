@@ -3,6 +3,7 @@
 left to right direction
 
 interface Planner {
+  {static} +validate(plan: Plan): void
   +generate(state: Snapshot, now: LocalDateTime): Plan
 }
 class EarliestDeadlinePlanner
@@ -28,6 +29,8 @@ EarliestDeadlinePlanner ..> Snapshot
 EarliestDeadlinePlanner ..> Task
 EarliestDeadlinePlanner ..> Commitment
 EarliestDeadlinePlanner ..> Plan
+Plan --> ScheduleEntry : breaks
+Planner ..> Plan : validates feasibility
 Plan --> Snapshot : frozen source
 Plan --> StudySession : sessions
 Plan --> UnallocatedWork : remainders

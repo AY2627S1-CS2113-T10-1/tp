@@ -201,6 +201,12 @@ allocation relationships remain the planner's responsibility. Fixed-date
 planner and projection tests verify deadline order, conservation of minutes,
 cutoff rounding, clipping, midnight commitments and allowed schedule dates.
 
+`Planner.validate(Plan)` is the pure cross-record boundary. It checks the frozen
+source and generation time, not the current clock, without regenerating work.
+`EarliestDeadlinePlanner.generate` calls it before returning every result.
+Storage integration is assigned to Ernest and remains pending until his codecs
+call this boundary; raw `Plan` construction retains its lightweight contract.
+
 `Planner` is implemented by `EarliestDeadlinePlanner`. `TimeRules` defines
 cutoff and horizon calculations. `StudyHours`/`StudyWindow` supply daily
 availability and `StudyPolicy` supplies optional work/break limits. The
@@ -926,6 +932,26 @@ until dispatch and transaction acceptance are implemented.
 
 ### Slot allocation under study hours/policy and recurrence
 
+#### Frozen allocation validation
+
+`Planner.validate` rejects unknown/completed task references, duplicate remainder
+rows, identity/deadline/reason mismatches and missing or excessive work. Long
+sums require scheduled `workMinutes` plus one optional remainder to equal each
+source task's exact remaining work. Padding is permitted, so a 45-minute task
+can occupy 60 minutes. Feasibility does not require greedy or optimal placement.
+
+Task and break intervals must fit effective hours, the frozen cutoff and horizon.
+Task intervals must also fit their current deadline and original occurrence
+release. Half-open intervals allow exact adjacency; task/task, task/break,
+break/break and allocation/occurring-commitment overlaps are rejected.
+Commitment membership uses `occursOn`, including bounds and skipped dates.
+Overdue and beyond-horizon work remains fully unallocated with its source reason;
+undated work can only report insufficient capacity. Validation checks break
+bounds and conflicts without replaying policy placement. Legacy/fallback-policy
+breaks are accepted even without a stored policy row. Null plans throw
+`NullPointerException`; inconsistent allocations throw `ValidationException`.
+No I/O, clock reads, recurrence materialization or source mutation occurs.
+
 #### Exact work and slot capacity
 
 Exact work and slot capacity are distinct: `StudySession.workMinutes` carries
@@ -1283,6 +1309,12 @@ console diagnostics section, selecting this logger namespace.
 
 ### Fixed-time planning and recurrence verification
 
+`PlannerTest` directly verifies alternative feasible frozen allocations, exact
+partial work/padding, legacy breaks, source preservation, accounting errors,
+overlap/adjacency, cutoff, overridden hours, deadlines, horizon, original release
+and commitment skips. Existing generator tests now exercise the same validator
+on every real result, retaining ordering, hours, policy and recurrence coverage.
+
 `EarliestDeadlinePlannerTest`, `ScheduleServiceTest` and
 `RecurringTaskServiceTest` use fixed times to verify conservation of exact
 work, rounded capacity, horizon/cutoff boundaries, hours/policy, frozen
@@ -1407,6 +1439,9 @@ platform/provider behavior; see [storage verification](#storage-diagnostics-and-
 * *Plan* - A frozen result derived from one snapshot, containing scheduled
   sessions, reserved breaks and unallocated work. Successful saved changes
   invalidate it; policy no-ops preserve it.
+* *Feasible allocation* - Sessions and breaks within frozen availability and
+  task timing constraints, with exact work conserved; it need not match the
+  greedy generator's placement or maximize completed tasks.
 * *Frozen plan* - The generation time, source snapshot and allocation retained
   for schedule views until replanning or a successful saved change.
 * *Planning horizon* - The calendar range ending at midnight on the same date
@@ -1577,6 +1612,10 @@ Do not enter the proposed multi-date commands. For a failed-save case, use the
 for every mutating command.
 
 ### Planning, schedules, hours, policy and recurrence
+
+Direct malformed-plan validation is an API check covered by `PlannerTest`;
+the console has no command for supplying raw allocations. Run those fixed-time
+tests to check rejection independently of live-clock manual scenarios.
 
 Use another empty folder. Choose `D` as tomorrow and `W` as its full lowercase
 weekday (for example `tuesday`); substitute them in the commands.

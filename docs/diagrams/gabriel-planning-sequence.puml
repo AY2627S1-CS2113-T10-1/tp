@@ -4,6 +4,7 @@ title Generate and save a study plan
 participant "CommandDispatcher\n(shared component)" as D
 participant RecurringTaskService as R
 participant EarliestDeadlinePlanner as P
+participant Planner as C
 participant TimeRules as T
 participant "TextRenderer\n(shared component)" as V
 participant "Storage\n(shared component)" as S
@@ -22,6 +23,8 @@ loop dates and half-hour slots
     P -> P: Check task eligibility, commitments, breaks
 end
 
+P -> C: validate(frozen Plan)
+C --> P: feasible, exact work conserved
 P --> D: immutable Plan
 D -> V: plan(plan)
 V --> D: formatted summary

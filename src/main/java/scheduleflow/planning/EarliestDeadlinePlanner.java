@@ -58,7 +58,9 @@ public final class EarliestDeadlinePlanner implements Planner {
         }
 
         List<StudySession> sessions = mergeSessions(slots);
-        return new Plan(now, horizonEnd, state, sessions, unallocated, collectBreaks(slots));
+        Plan plan = new Plan(now, horizonEnd, state, sessions, unallocated, collectBreaks(slots));
+        Planner.validate(plan);
+        return plan;
     }
 
     /**

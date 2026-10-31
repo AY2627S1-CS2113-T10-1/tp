@@ -718,7 +718,9 @@ of ScheduleFlow; older versions cannot read the new format.
 
 A study plan is a saved snapshot of your tasks, commitments, study hours and
 policy when you run `plan`. Use `schedule` to view its time slots by date. The
-plan does not change a task's saved remaining-work estimate.
+plan does not change a task's saved remaining-work estimate. Every newly
+generated result is checked against the tasks and availability captured for
+that plan before it is returned for saving.
 
 ### Generating a plan
 

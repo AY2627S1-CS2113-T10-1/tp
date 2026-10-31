@@ -37,3 +37,17 @@ I also documented a proposed contract for multi-date unavailable commands. That 
 
 - **Planning features:** Integrated deadline allocation with study-hour settings and continuous-work policy, and added deterministic regression coverage for interactions with fixed commitments. See [PR #81](https://github.com/AY2627S1-CS2113-T10-1/tp/pull/81) and [PR #82](https://github.com/AY2627S1-CS2113-T10-1/tp/pull/82).
 - **Authorship allocation:** Applied the team's agreed whole-file RepoSense tags to my assigned planning, study-hours and related test files, and documented the allocation. This records the agreed ownership boundaries; it does not rewrite historical authorship. See [PR #95](https://github.com/AY2627S1-CS2113-T10-1/tp/pull/95).
+
+### Frozen-plan feasibility validation
+
+- **Change and benefit:** Added [`Planner.validate(Plan)`](../../src/main/java/scheduleflow/planning/Planner.java)
+  so impossible allocations are rejected without changing a student's estimates
+  or recreating their schedule. The generator validates each result before returning it.
+- **Implementation:** Uses frozen time/source, long work totals, original recurrence
+  release, effective hours and half-open interval checks. Accepts feasible alternative
+  placements and legacy breaks without requiring the greedy result.
+- **Coverage:** [`PlannerTest`](../../src/test/java/scheduleflow/planning/PlannerTest.java)
+  tests partial work, overlap, accounting and time boundaries. Existing allocator
+  tests exercise validation on real generated results. Updated planning guide
+  sections, glossary and class/sequence views. Persistence integration belongs to
+  Ernest and remains a separate dependency; no PR has been created for this change.
