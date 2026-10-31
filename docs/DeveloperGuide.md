@@ -296,6 +296,14 @@ The class view focuses on the planner and daily schedule projection boundaries.
 `Snapshot` is the aggregate owned by the persistence component. Arrows show
 dependencies or contained results, not ownership of those external types.
 
+The class view follows the UML Reference Sheet's operation/attribute visibility,
+dashed dependency and realization arrows, navigable associations, role names and
+multiplicities. Underlined members are static; `<<record>>` identifies Java record
+classes. The planner's optional policy association represents its constructor
+fallback, while the snapshot's policy is the saved setting. Shared immutable
+records use associations rather than exclusive-lifetime composition. Only selected
+members and the window-aware `eligibleStart` overload are shown.
+
 ![Planning and schedule projection classes](images/gabriel-planning-classes.svg)
 
 **Figure 5. Planning and schedule projection structure.**
@@ -322,6 +330,11 @@ The sequence view follows a successful `plan` command from time capture through
 plan publication. The planner obtains the horizon, resolves the daily cutoff
 for each date, and evaluates half-hour slots. `TimeRules` is a class participant
 because its methods are static; its internal horizon checks are omitted.
+The `Planner` interface is also shown as a `<<class>>` participant for its static
+`validate` call, following the reference sheet's class-level message notation.
+Ordinary participants use `name:Class` labels. Solid calls, dashed returns,
+nested self-call activations and bracketed `loop`/`opt` guards show the successful
+path. Exception paths and local helper calls remain omitted.
 The dispatcher renders and saves the plan before publishing the candidate
 snapshot and current plan.
 

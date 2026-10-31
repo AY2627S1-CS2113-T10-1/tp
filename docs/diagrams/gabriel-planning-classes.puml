@@ -7,16 +7,29 @@ interface Planner <<interface>> DOMAIN {
     {static} + validate(plan: Plan) : void
     + generate(state: Snapshot, now: LocalDateTime) : Plan
 }
-class EarliestDeadlinePlanner DOMAIN
+class EarliestDeadlinePlanner DOMAIN {
+    + generate(state: Snapshot, now: LocalDateTime) : Plan
+}
 class ScheduleService DOMAIN {
     + forDate(plan: Plan, date: LocalDate) : ScheduleView
 }
 class TimeRules DOMAIN {
+    {static} + SLOT_MINUTES : int = 30
     {static} + horizonEnd(now: LocalDateTime) : LocalDateTime
-    {static} + eligibleStart(...) : LocalDateTime
+    {static} + eligibleStart(date: LocalDate, now: LocalDateTime, window: StudyWindow) : LocalDateTime
 }
-class Plan <<record>> VALUES
-class StudySession <<record>> VALUES
+class Plan <<record>> VALUES {
+    - generatedAt : LocalDateTime
+    - horizonEnd : LocalDateTime
+    + isComplete() : boolean
+}
+class StudySession <<record>> VALUES {
+    - taskId : int
+    - start : LocalDateTime
+    - end : LocalDateTime
+    - workMinutes : int
+    + minutes() : int
+}
 class UnallocatedWork <<record>> VALUES
 class ScheduleEntry <<record>> VALUES
 class ScheduleView <<record>> VALUES
@@ -33,6 +46,7 @@ EarliestDeadlinePlanner ..> Snapshot
 EarliestDeadlinePlanner ..> Task
 EarliestDeadlinePlanner ..> Commitment
 EarliestDeadlinePlanner ..> Plan : creates
+EarliestDeadlinePlanner --> "policy\n0..1" StudyPolicy
 Planner ..> Plan : validates feasibility
 Plan --> "source\n1" Snapshot
 Plan --> "sessions\n*" StudySession
@@ -50,5 +64,5 @@ note as StudyHoursNote
   forDate(date) resolves an override or the default window.
   The windows map holds weekday and dated overrides.
 end note
-StudyHoursNote -[dotted]-> StudyHours
+StudyHoursNote .. StudyHours
 @enduml
