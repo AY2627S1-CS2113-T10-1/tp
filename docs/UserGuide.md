@@ -1098,6 +1098,12 @@ remain in use. Resolve the file/folder problem and retry. Use one running
 instance per data file and a filesystem supporting atomic replacement.
 This does not guarantee recovery after a power failure.
 
+The app attempts to remove a temporary save file after a failed write or
+replacement. If that cleanup also fails, a `.scheduleflow-*.tmp` file may remain
+beside `scheduleflow.txt`. It is not an automatic backup or a file the app loads.
+Close the app and preserve the main file before investigating; do not replace it
+with an incomplete temporary file.
+
 **If loading fails**, the app reports an error and stops before the first prompt.
 It preserves the invalid/unreadable file rather than silently starting empty
 or accepting part of it. Valid overdue tasks still load; a new plan reports

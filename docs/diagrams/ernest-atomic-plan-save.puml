@@ -4,13 +4,18 @@
 participant "dispatcher:CommandDispatcher" as Dispatcher DOMAIN
 participant "storage:FileStorage" as Storage PERSISTENCE
 participant "codec:StateCodec" as Snapshots PERSISTENCE
+participant "operations:FileStorage.FileOperations" as Operations PERSISTENCE
 participant "Files" as Files <<class>> PERSISTENCE
 
 Dispatcher -> Storage ++ : savePlan(plan)
 note right of Storage
   Successful save only; publication follows (not shown).
   Accessors and local text assembly are omitted.
-  Failure cleanup is described in the accompanying text.
+  On any save-stage failure, removeTemporaryFile runs:
+  if a path was returned, call operations.deleteIfExists(path),
+  which delegates to Files.deleteIfExists(path).
+  Throw StorageException with the original cause;
+  suppress any cleanup error. No ordinary-move fallback.
 end note
 create participant "plans:PlanCodec" as Plans PERSISTENCE
 Storage -> Plans ++ : PlanCodec(codec)
@@ -22,12 +27,18 @@ Plans --> Storage -- : source and frozen-result text
 Storage -> Storage ++ : writeAtomically(text)
 Storage -> Files ++ : createDirectories(parent)
 Files --> Storage -- : parent
-Storage -> Files ++ : createTempFile(parent, ".scheduleflow-", ".tmp")
-Files --> Storage -- : temporaryFile
-Storage -> Files ++ : writeString(temporaryFile, text, UTF_8)
-Files --> Storage -- : temporaryFile
-Storage -> Files ++ : move(temporaryFile, file,\nATOMIC_MOVE, REPLACE_EXISTING)
-Files --> Storage -- : file
+Storage -> Operations ++ : createTemporaryFile(parent)
+Operations -> Files ++ : createTempFile(parent, ".scheduleflow-", ".tmp")
+Files --> Operations -- : temporaryFile
+Operations --> Storage -- : temporaryFile
+Storage -> Operations ++ : write(temporaryFile, text)
+Operations -> Files ++ : writeString(temporaryFile, text, UTF_8)
+Files --> Operations -- : temporaryFile
+Operations --> Storage -- : return
+Storage -> Operations ++ : replace(temporaryFile, file)
+Operations -> Files ++ : move(temporaryFile, file,\nATOMIC_MOVE, REPLACE_EXISTING)
+Files --> Operations -- : file
+Operations --> Storage -- : return
 Storage --> Storage -- : return
 Storage --> Dispatcher -- : return
 @enduml

@@ -35,6 +35,9 @@ public final class FileStorage implements Storage {
      */
     private final StateCodec codec;
 
+    /** Supplies real filesystem operations, replaceable only by package-local fault tests. */
+    private final FileOperations operations;
+
     /**
      * Creates the FileStorage dependencies without performing I/O.
      *
@@ -43,8 +46,14 @@ public final class FileStorage implements Storage {
      * @throws NullPointerException if either dependency is null
      */
     public FileStorage(Path file, StateCodec codec) {
+        this(file, codec, new FileOperations());
+    }
+
+    /** Creates storage with controlled save operations without touching the filesystem. */
+    FileStorage(Path file, StateCodec codec, FileOperations operations) {
         this.file = Objects.requireNonNull(file, "file").toAbsolutePath().normalize();
         this.codec = Objects.requireNonNull(codec, "codec");
+        this.operations = Objects.requireNonNull(operations, "operations");
     }
 
     /**
@@ -149,13 +158,13 @@ public final class FileStorage implements Storage {
             LOGGER.log(Level.FINE, "Preparing save directory");
             Files.createDirectories(parent);
             // Write beside the target so atomic replacement uses the same filesystem.
-            temporaryFile = Files.createTempFile(parent, ".scheduleflow-", ".tmp");
+            temporaryFile = operations.createTemporaryFile(parent);
             assert temporaryFile.getParent().equals(parent) && !temporaryFile.equals(file)
                     : "Atomic saving requires a distinct sibling temporary file";
             LOGGER.log(Level.FINE, "Writing temporary saved data");
-            Files.writeString(temporaryFile, text, StandardCharsets.UTF_8);
+            operations.write(temporaryFile, text);
             LOGGER.log(Level.FINE, "Replacing saved data atomically");
-            Files.move(temporaryFile, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            operations.replace(temporaryFile, file);
             LOGGER.log(Level.FINE, "Snapshot save completed");
         } catch (IOException | SecurityException | UnsupportedOperationException exception) {
             LOGGER.log(Level.FINE, "Snapshot save failed; attempting temporary file cleanup");
@@ -177,12 +186,35 @@ public final class FileStorage implements Storage {
             return;
         }
         try {
-            Files.deleteIfExists(temporaryFile);
+            operations.deleteIfExists(temporaryFile);
             LOGGER.log(Level.FINE, "Temporary saved data cleanup completed");
         } catch (IOException | SecurityException exception) {
             // Keep the original save failure while recording any cleanup problem as well.
             failure.addSuppressed(exception);
             LOGGER.log(Level.FINE, "Temporary saved data cleanup failed; original failure retained");
+        }
+    }
+
+    /** Keeps the save transaction on the real Files API while permitting deterministic local faults. */
+    static class FileOperations {
+        /** Creates a distinct temporary sibling on the target filesystem. */
+        Path createTemporaryFile(Path parent) throws IOException {
+            return Files.createTempFile(parent, ".scheduleflow-", ".tmp");
+        }
+
+        /** Writes the complete UTF-8 candidate before any replacement is attempted. */
+        void write(Path temporaryFile, String text) throws IOException {
+            Files.writeString(temporaryFile, text, StandardCharsets.UTF_8);
+        }
+
+        /** Requires atomic replacement; unsupported providers must fail without a fallback. */
+        void replace(Path temporaryFile, Path target) throws IOException {
+            Files.move(temporaryFile, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        /** Removes an abandoned temporary sibling if it still exists. */
+        void deleteIfExists(Path temporaryFile) throws IOException {
+            Files.deleteIfExists(temporaryFile);
         }
     }
 }
