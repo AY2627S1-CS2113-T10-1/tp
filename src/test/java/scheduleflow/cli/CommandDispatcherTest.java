@@ -709,25 +709,120 @@ class CommandDispatcherTest {
     }
 
     @Test
-    void execute_unfinishedRangeRoutes_rejectAsUserErrorsWithoutSavingOrInvalidatingPlan() {
-        Snapshot original = populatedSnapshot();
+    void execute_unavailableRangeRoutes_saveWholeBatchOnceBeforePublication() throws Exception {
+        Map<Command, String> routes = Map.of(
+                new Command.AddContinuousBlock("Trip", NOW.plusDays(1).withHour(15),
+                        NOW.plusDays(3).withHour(11)),
+                "Blocked 3 unavailable periods.\n"
+                        + "C3 | 2026-09-22 | 15:00 - 24:00 | Trip\n"
+                        + "C4 | 2026-09-23 | 00:00 - 24:00 | Trip\n"
+                        + "C5 | 2026-09-24 | 00:00 - 11:00 | Trip\n"
+                        + "Saved unavailable periods. Run plan to regenerate.",
+                new Command.AddDailyBlocks("Appointment", NOW.toLocalDate().plusDays(1),
+                        NOW.toLocalDate().plusDays(3), LocalTime.of(15, 0), LocalTime.of(17, 0)),
+                "Blocked 3 unavailable periods.\n"
+                        + "C3 | 2026-09-22 | 15:00 - 17:00 | Appointment\n"
+                        + "C4 | 2026-09-23 | 15:00 - 17:00 | Appointment\n"
+                        + "C5 | 2026-09-24 | 15:00 - 17:00 | Appointment\n"
+                        + "Saved unavailable periods. Run plan to regenerate.");
+        for (Map.Entry<Command, String> route : routes.entrySet()) {
+            Snapshot original = populatedUnavailableSnapshot();
+            AppState state = new AppState(original);
+            Plan plan = new EarliestDeadlinePlanner().generate(original, NOW);
+            state.replacePlan(plan);
+            FakeStorage storage = new FakeStorage(original);
+            storage.beforeSave = () -> {
+                assertSame(original, state.snapshot());
+                assertSame(plan, state.currentPlan().orElseThrow());
+            };
+
+            CommandResponse response = dispatcher(storage, CLOCK).execute(route.getKey(), state);
+
+            assertEquals(route.getValue(), response.output());
+            assertEquals(1, storage.saveCalls);
+            assertSame(storage.saved, state.snapshot());
+            assertTrue(state.currentPlan().isEmpty());
+            assertEquals(original.tasks(), state.snapshot().tasks());
+            assertEquals(original.studyHours(), state.snapshot().studyHours());
+            assertEquals(original.recurringTasks(), state.snapshot().recurringTasks());
+            assertEquals(original.studyPolicy(), state.snapshot().studyPolicy());
+            assertEquals(original.nextTaskId(), state.snapshot().nextTaskId());
+            assertEquals(original.nextRecurringTaskId(), state.snapshot().nextRecurringTaskId());
+            assertEquals(6, state.snapshot().nextCommitmentId());
+            assertEquals(List.of(3, 4, 5), state.snapshot().commitments().subList(1, 4).stream()
+                    .map(Commitment::id).toList());
+        }
+    }
+
+    @Test
+    void execute_unavailableRangeSaveFailure_preservesBatchPlanAndRetryIds() throws Exception {
+        Snapshot original = populatedUnavailableSnapshot();
+        AppState state = new AppState(original);
+        Plan plan = new EarliestDeadlinePlanner().generate(original, NOW);
+        state.replacePlan(plan);
+        FakeStorage storage = new FakeStorage(original);
+        storage.failSave = true;
+        Command command = new Command.AddContinuousBlock("Trip", NOW.plusDays(1).withHour(15),
+                NOW.plusDays(3).withHour(11));
+        CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
+
+        assertThrows(StorageException.class, () -> dispatcher.execute(command, state));
+        Snapshot failedCandidate = storage.attempted;
+        assertSame(original, state.snapshot());
+        assertSame(plan, state.currentPlan().orElseThrow());
+        assertSame(original, storage.saved);
+        assertEquals(List.of(3, 4, 5), failedCandidate.commitments().subList(1, 4).stream()
+                .map(Commitment::id).toList());
+
+        storage.failSave = false;
+        dispatcher.execute(command, state);
+        assertEquals(failedCandidate, storage.saved);
+        assertSame(storage.saved, state.snapshot());
+        assertTrue(state.currentPlan().isEmpty());
+        assertEquals(2, storage.saveCalls);
+    }
+
+    @Test
+    void execute_invalidUnavailableBatches_preserveStatePlanAndIdsWithoutSaving() {
+        LocalDate conflictDate = NOW.toLocalDate().plusDays(2);
+        Commitment busy = new Commitment(3, "Busy", conflictDate.getDayOfWeek(), LocalTime.of(16, 0), 30,
+                conflictDate, conflictDate);
+        Snapshot base = populatedUnavailableSnapshot();
+        Snapshot original = base.withCommitments(List.of(base.commitments().getFirst(), busy), 4);
         AppState state = new AppState(original);
         Plan plan = new EarliestDeadlinePlanner().generate(original, NOW);
         state.replacePlan(plan);
         FakeStorage storage = new FakeStorage(original);
         CommandDispatcher dispatcher = dispatcher(storage, CLOCK);
-        Map<Command, String> routes = Map.of(
-                new Command.AddContinuousBlock("Trip", NOW.plusDays(1), NOW.plusDays(2)), "continuous",
+        List<Command> invalid = List.of(
+                new Command.AddContinuousBlock("Trip", NOW.plusDays(1).withHour(15),
+                        NOW.plusDays(3).withHour(11)),
                 new Command.AddDailyBlocks("Appointment", NOW.toLocalDate().plusDays(1),
-                        NOW.toLocalDate().plusDays(2), LocalTime.of(15, 0), LocalTime.of(17, 0)), "daily");
-        for (Map.Entry<Command, String> route : routes.entrySet()) {
-            ValidationException exception = assertThrows(ValidationException.class,
-                    () -> dispatcher.execute(route.getKey(), state));
-            assertEquals("unavailable " + route.getValue() + " is not available yet. Add each date with "
-                    + "commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES instead.", exception.getMessage());
+                        NOW.toLocalDate().plusDays(3), LocalTime.of(15, 0), LocalTime.of(17, 0)));
+
+        for (Command command : invalid) {
+            assertThrows(ValidationException.class, () -> dispatcher.execute(command, state));
             assertSame(original, state.snapshot());
             assertSame(plan, state.currentPlan().orElseThrow());
+            assertEquals(4, state.snapshot().nextCommitmentId());
         }
+        assertEquals(0, storage.saveCalls);
+    }
+
+    @Test
+    void execute_unavailableBatchWithInsufficientIds_rejectsBeforeSaving() {
+        Snapshot original = new Snapshot(List.of(), List.of(), 1, Integer.MAX_VALUE - 1);
+        AppState state = new AppState(original);
+        FakeStorage storage = new FakeStorage(original);
+        Command command = new Command.AddDailyBlocks("Appointment", NOW.toLocalDate(),
+                NOW.toLocalDate().plusDays(1), LocalTime.of(15, 0), LocalTime.of(17, 0));
+
+        ValidationException error = assertThrows(ValidationException.class,
+                () -> dispatcher(storage, CLOCK).execute(command, state));
+
+        assertEquals("Commitment IDs are exhausted.", error.getMessage());
+        assertSame(original, state.snapshot());
+        assertSame(original, storage.saved);
         assertEquals(0, storage.saveCalls);
     }
 
@@ -1049,6 +1144,22 @@ class CommandDispatcherTest {
     private Snapshot populatedSnapshot() {
         return new Snapshot(List.of(new Task(2, "Existing", NOW.plusDays(1), 30)),
                 List.of(new Commitment(2, "Class", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60)), 3, 3);
+    }
+
+    /**
+     * Supplies source data from every independent snapshot area to detect batch collateral changes.
+     */
+    private Snapshot populatedUnavailableSnapshot() {
+        LocalDateTime deadline = NOW.plusDays(1).withHour(18);
+        RecurringTask template = new RecurringTask(2, "Weekly", deadline, Optional.empty(), 60,
+                Optional.of(deadline));
+        Task occurrence = new Task(2, "Weekly", Optional.of(deadline), 60, TaskPriority.NORMAL,
+                Optional.of(new TaskOccurrence(2, deadline)));
+        StudyHours hours = new StudyHours(Map.of(
+                "monday", new StudyWindow(LocalTime.of(9, 0), LocalTime.of(18, 0))));
+        Commitment commitment = new Commitment(2, "Class", DayOfWeek.MONDAY, LocalTime.of(10, 0), 60);
+        return new Snapshot(List.of(occurrence), List.of(commitment), 3, 3, hours, List.of(template), 3,
+                Optional.of(new StudyPolicy(60, 30)));
     }
 
     @Test

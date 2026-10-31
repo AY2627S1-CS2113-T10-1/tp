@@ -4,6 +4,7 @@ package scheduleflow.cli;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.logging.Level;
@@ -105,9 +106,8 @@ public final class CommandDispatcher {
         LocalDateTime now = LocalDateTime.now(clock);
         LOGGER.log(Level.FINE, "Command time captured");
         String output = switch (command) {
-            // TODO(ernestgoh-god): implement both range routes with one save before publication and output.
-            case Command.AddContinuousBlock ignored -> throw unfinishedRangeRoute("continuous");
-            case Command.AddDailyBlocks ignored -> throw unfinishedRangeRoute("daily");
+            case Command.AddContinuousBlock block -> addContinuousBlock(block, state);
+            case Command.AddDailyBlocks blocks -> addDailyBlocks(blocks, state);
             case Command.Help ignored -> renderer.help();
             case Command.SetHours hours -> changeHours(hours.target(), state.snapshot().studyHours()
                     .withWindow(hours.target(), new StudyWindow(hours.start(), hours.end())), state);
@@ -145,19 +145,6 @@ public final class CommandDispatcher {
         CommandResponse response = new CommandResponse(output, command instanceof Command.Exit);
         LOGGER.log(Level.FINE, "Command execution completed");
         return response;
-    }
-
-    /**
-     * Rejects an unfinished multi-date route as an ordinary user error so the session keeps running.
-     * Nothing is validated, saved or published, and the current plan is preserved.
-     *
-     * @param mode the {@code unavailable} mode the user entered
-     * @return rejection naming the single-date alternative
-     */
-    private static ValidationException unfinishedRangeRoute(String mode) {
-        LOGGER.log(Level.FINE, "Rejected unfinished unavailable-range route");
-        return new ValidationException("unavailable " + mode + " is not available yet. Add each date with "
-                + "commitment add n/NAME on/YYYY-MM-DD start/HHmm d/MINUTES instead.");
     }
 
     /** Saves hours before clearing a plan, preserving the live settings and plan if saving fails. */
@@ -285,7 +272,7 @@ public final class CommandDispatcher {
      *
      * @param command task ID and reported completed minutes
      * @param state live snapshot and temporary plan
-     * @return confirmation once Printing supplies it
+     * @return formatted progress confirmation
      * @throws StorageException if saving a changed candidate fails
      */
     private String recordTaskWork(Command.RecordTaskWork command, AppState state) throws StorageException {
@@ -299,7 +286,7 @@ public final class CommandDispatcher {
      *
      * @param command task ID, session minutes and percentage of work completed
      * @param state live snapshot and temporary plan
-     * @return confirmation once Printing supplies it
+     * @return formatted progress confirmation
      * @throws StorageException if saving a changed candidate fails
      */
     private String recordTaskSession(Command.RecordTaskSession command, AppState state) throws StorageException {
@@ -310,14 +297,13 @@ public final class CommandDispatcher {
     }
 
     /**
-     * Prepares the actual credited amount for Printing before saving and publishing any change.
-     * An unfinished renderer leaves the command recoverable and the saved/live data untouched.
+     * Prepares the actual credited amount before saving and publishing any change.
      *
      * @param taskId validated task ID
      * @param original source snapshot
      * @param candidate validated candidate or original instance for zero credited work
      * @param state live state to publish after a successful save
-     * @return progress confirmation once Printing supplies it
+     * @return formatted progress confirmation
      * @throws StorageException if saving a changed candidate fails
      */
     private String publishTaskProgress(int taskId, Snapshot original, Snapshot candidate, AppState state)
@@ -328,17 +314,8 @@ public final class CommandDispatcher {
                 .orElseThrow(() -> new IllegalStateException("Validated progress is missing its revised task."));
         int creditedMinutes = previous.remainingMinutes() - revised.remainingMinutes();
         LOGGER.log(Level.FINE, "Preparing task progress confirmation");
-        String confirmation;
-        try {
-            confirmation = Objects.requireNonNull(renderer.taskProgressUpdated(revised, creditedMinutes),
-                    "task progress confirmation");
-        } catch (UnsupportedOperationException exception) {
-            if (!"Task progress rendering is not implemented yet.".equals(exception.getMessage())) {
-                throw exception;
-            }
-            LOGGER.log(Level.FINE, "Task progress confirmation is still pending");
-            throw new ValidationException("Task progress is awaiting printing.");
-        }
+        String confirmation = Objects.requireNonNull(renderer.taskProgressUpdated(revised, creditedMinutes),
+                "task progress confirmation");
         if (candidate != original) {
             saveAndCommit(candidate, state);
         }
@@ -382,6 +359,47 @@ public final class CommandDispatcher {
                 .orElseThrow(() -> new IllegalStateException("Commitment candidate is missing the allocated ID."));
         saveAndCommit(candidate, state);
         return renderer.commitmentAdded(added);
+    }
+
+    /**
+     * Creates and publishes one complete continuous unavailable batch.
+     */
+    private String addContinuousBlock(Command.AddContinuousBlock command, AppState state) throws StorageException {
+        Snapshot original = state.snapshot();
+        Snapshot candidate = commitments.addContinuousBlock(original, command.name(), command.start(), command.end());
+        return publishUnavailableBatch(original, candidate, state);
+    }
+
+    /**
+     * Creates and publishes one complete daily unavailable batch.
+     */
+    private String addDailyBlocks(Command.AddDailyBlocks command, AppState state) throws StorageException {
+        Snapshot original = state.snapshot();
+        Snapshot candidate = commitments.addDailyBlocks(original, command.name(), command.firstDate(),
+                command.lastDate(), command.start(), command.end());
+        return publishUnavailableBatch(original, candidate, state);
+    }
+
+    /**
+     * Formats only the appended unavailable periods, then saves and publishes the whole candidate once.
+     *
+     * @param original source snapshot retained on rendering or save failure
+     * @param candidate validated candidate containing an appended nonempty batch
+     * @param state live state published only after the candidate is durable
+     * @return confirmation for the newly appended periods
+     * @throws StorageException if the complete candidate cannot be saved
+     */
+    private String publishUnavailableBatch(Snapshot original, Snapshot candidate, AppState state)
+            throws StorageException {
+        if (candidate.commitments().size() <= original.commitments().size()) {
+            throw new IllegalStateException("Unavailable candidate must append at least one commitment.");
+        }
+        List<Commitment> added = List.copyOf(candidate.commitments()
+                .subList(original.commitments().size(), candidate.commitments().size()));
+        String confirmation = Objects.requireNonNull(renderer.unavailablePeriodsAdded(added),
+                "unavailable periods confirmation");
+        saveAndCommit(candidate, state);
+        return confirmation;
     }
 
     /**

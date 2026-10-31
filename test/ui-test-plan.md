@@ -70,9 +70,10 @@ Use `./gradlew` on Unix. If needed, set `GRADLE_USER_HOME` to a writable cache.
 The three-OS CI workflow now runs the same sequence with Java 25 and Node 22,
 after printing runtime versions. It selects the OS-appropriate wrapper and
 retains JUnit/Checkstyle reports and console/release transcripts on failure.
-The active and separately planned fixture lists retain their readiness status;
-adding these CI steps does not certify unimplemented range commands or hosted
-matrix results. Runtime saved data and diagnostic logs are not CI artifacts.
+The active fixture list contains 34 release scenarios. The separate range-plan
+file is retained as an empty valid fixture after UI-022 through UI-027 moved into
+the main suite. Adding these CI steps does not by itself certify hosted matrix
+results. Runtime saved data and diagnostic logs are not CI artifacts.
 
 In a restricted Windows environment, place `TEMP` and `TMP` in an ignored,
 writable workspace folder for the process runner. A local Gradle init script
@@ -217,47 +218,30 @@ dependent scenarios; ready active cases must run even if another component is
 unfinished. Exit 0 means active scenarios passed, exit 1 means FAILED, and
 exit 2 means BLOCKED. A planned or diagnostic scaffold case is never a pass.
 
-## Planned multi-date unavailability (follow-up to issue #48)
+## Multi-date unavailability (follow-up to issue #48)
 
-The separate `test/ui-unavailable-ranges.planned.json` file holds proposed
-exact inputs and outputs. It is excluded from the main release fixture, which
-requires every maintained release case to be active. Both range modes are parsed
-into transport records with deterministic JUnit coverage. The commitment service
-operations are implemented with JUnit coverage. The batch renderer is tested
-for exact counts, new ID/date rows, leap day, Unicode, midnight, framing and
-invalid batches.
-The dispatcher routes are not implemented: they reject both modes with an
-ordinary `Error: unavailable MODE is not available yet...` message, leaving the
-session, saved data and plan unchanged (`CommandDispatcherTest` covers this).
-No range case can run yet and that rejection is not a feature pass. New
-command-record tests cover only their implemented transport/reference contracts.
+Both range modes are parsed, expanded into complete commitment candidates,
+formatted before saving, persisted once and published only after that save.
+The active fixture contains all six exact range scenarios. The old separate
+`test/ui-unavailable-ranges.planned.json` file remains valid but empty so tools
+or older links do not encounter malformed JSON.
 
-| ID | Proposed acceptance coverage | Status |
+| ID | Acceptance coverage | Status |
 | --- | --- | --- |
-| UI-022 | Continuous three-date expansion, confirmation, invalidation and restart | Planned |
-| UI-023 | Daily inclusive windows, confirmation, restart and independent deletion | Planned |
-| UI-024 | Invalid ordering, alignment, overnight windows, syntax and retained retry IDs | Planned |
-| UI-025 | Conflict on a later continuous segment rejects the whole batch | Planned |
-| UI-026 | Conflict on a later daily window rejects the whole batch | Planned |
-| UI-027 | Midnight-exclusive and same-day continuous ends, adjacency and leap-day daily expansion | Planned |
+| UI-022 | Continuous three-date expansion, confirmation, invalidation and restart | Active |
+| UI-023 | Daily inclusive windows, confirmation, restart and independent deletion | Active |
+| UI-024 | Invalid ordering, alignment, overnight windows, syntax and retained retry IDs | Active |
+| UI-025 | Conflict on a later continuous segment rejects the whole batch | Active |
+| UI-026 | Conflict on a later daily window rejects the whole batch | Active |
+| UI-027 | Midnight-exclusive and same-day continuous ends, adjacency and leap-day daily expansion | Active |
 
-Run the separate file using
-`node .agents/skills/test-ui/scripts/run-ui-tests.mjs --fixtures test/ui-unavailable-ranges.planned.json`.
-With all six cases planned it executes none and returns exit 2 (BLOCKED: no
-active scenarios), not success. Activate cases as their dependencies are
-implemented and move verified cases to the main fixture. Existing 22 active
-scenarios must continue passing throughout integration.
-
-The Developer Guide summarizes the proposed integration and links to the
-planned fixtures. Transaction acceptance must cover injected save failure,
-whole-batch rollback and ID exhaustion before those fixtures are activated.
-Two active planner tests supply the expected dated records manually through
-the existing one-time API to verify allocation/projection compatibility for
-continuous and daily representations. `CommitmentServiceTest` separately
-verifies the implemented batch creation, rollback and ID limits. Exact
-range-command parsing has JUnit coverage; transaction acceptance remains
-unexecuted until dispatch is implemented. The planned fixtures retain their
-exact expectations.
+`CommandDispatcherTest` checks prepare-before-save ordering, one whole-batch
+save, plan invalidation only after success, failed-save retry with identical IDs,
+later-segment conflict rollback, preservation of tasks/settings/recurrence and
+ID-capacity rejection. `CommitmentServiceTest` covers expansion, boundary dates,
+alignment, overlap and counter limits. Parser and renderer tests retain their
+exact grammar and output coverage. The packaged scenarios add restart and
+independent deletion acceptance through the real JAR.
 
 ## Issue #40 console acceptance
 
