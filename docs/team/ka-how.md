@@ -7,48 +7,49 @@
 ## Overview
 
 ScheduleFlow is a Java 25 command-line application that helps university students
-manage coursework, fixed commitments and study time. It generates study plans in
-30-minute slots, explains work that cannot fit before its deadline, and saves
-records and frozen plans for later sessions.
+manage coursework, fixed commitments and study time. It creates study plans in
+30-minute slots, reports work that cannot fit before its deadline, and saves
+data and generated plans for later sessions.
 
 ## Summary of Contributions
 
 Given below are my contributions to the project.
 
-- **New Feature: Added recoverable console sessions and live-state coordination**
+- **New Feature: Added console error recovery and session state management**
   ([PR #29][pr29]).
-  - **What it does:** Connects startup, input, command execution and responses.
-    Students can correct syntax, validation and save errors at the next prompt;
-    `exit` and end of input terminate normally. Corrupt saved data stops startup
+  - **What it does:** Runs startup and the command loop. Students can correct
+    invalid commands and retry failed saves at the next prompt. `exit` and end
+    of input close the session normally. Corrupt saved data stops startup
     before commands are accepted.
-  - **Justification:** Students can correct mistakes without restarting, while
-    rejected changes leave their previous records and plan available.
-  - **Highlights:** Separated console I/O, rendering and session coordination;
-    used typed command/response values and injected storage, clocks and streams.
-    `AppState` publishes saved snapshots, invalidates outdated plans and rejects
-    stale plans. The challenge was coordinating recovery and termination across
-    the team's parser, services and storage without hiding programming defects.
+  - **Justification:** Students can fix input mistakes without restarting.
+    Rejected commands leave their saved records and current plan unchanged.
+  - **Highlights:** Separated console input/output, text formatting and session
+    state. Used typed commands and responses, and supplied storage, clocks and
+    streams for predictable tests. `AppState` updates the current data after a
+    successful save, clears outdated plans and rejects plans based on different
+    data. Coordinating error recovery across the team's parser, services and
+    storage was the main challenge; unexpected programming errors remain visible.
 
-- **New Feature: Added consistent task and schedule presentation**
+- **New Feature: Added consistent task and schedule output**
   ([PR #22][pr22], [PR #87][pr87]).
-  - **What it does:** Formats help, confirmations, task/commitment lists, progress,
-    completion/reopening, daily schedules, `[BREAK]` rows and whole-plan
-    unallocated-work explanations.
+  - **What it does:** Displays help, confirmations, task and commitment lists,
+    progress, completion/reopening, daily schedules and `[BREAK]` rows. Explains
+    work left unscheduled across the full plan.
   - **Justification:** Stable IDs, clear labels and explicit remaining work help
     students understand their workload and choose their next action.
-  - **Highlights:** Kept rendering free of I/O, clock reads and state changes.
-    Preserved Unicode names and schedule boundaries, fixed locale-dependent
-    dates, displayed midnight endpoints as `24:00`, and used `long` totals.
-    Distinguished exact work from reserved capacity: 45 minutes of work can
-    occupy a 60-minute interval without inflating the work total.
+  - **Highlights:** Kept text formatting separate from input/output, clock reads
+    and data changes. Preserved Unicode names and schedule boundaries, made dates
+    independent of system language, displayed midnight as `24:00`, and used
+    `long` totals to avoid integer overflow. Showed actual work separately from
+    reserved time: 45 minutes of work can occupy a 60-minute interval.
 
 - **Code contributed:** [RepoSense code dashboard][reposense]. My area
   comprises `Main`, `App`, `AppState`, `Command`, `CommandResponse`, `ConsoleUi`
   and `TextRenderer`, plus their tests.
 
 - **Project management:**
-  - Established the shared Java 25 foundation and public contracts so team
-    members could work independently ([PR #1][pr1]).
+  - Set up the shared Java 25 project and interfaces so team members could work
+    independently ([PR #1][pr1]).
   - Published **two releases**, [v1.0][release1] and [v2.0][release2], uploading
     `scheduleflow.jar` with release notes, launch instructions and limitations.
   - Created user stories for [viewing completed tasks][issue65] and
@@ -56,23 +57,25 @@ Given below are my contributions to the project.
     [UG][issue97], [DG][issue96] and [PPP][issue98] deliverables.
 
 - **Enhancements to existing features:**
-  - **Console reliability:** Detected suppressed writer/flush failures and stopped
-    with status 1 before another command read, without retrying failed output.
-    Preserved already-saved changes. Added 12 focused regression tests, including
-    controlled writer failures and isolated child JVMs ([PR #123][pr123]).
-  - **Reopening completed tasks:** Connected parsing and dispatch to the existing
-    reopening service so students can correct mistaken completion. Preserved task
-    metadata and saved changes before invalidating the plan ([PR #91][pr91]).
-  - **Regression coverage:** Added JUnit 5 tests for startup/restart, failed-save
-    recovery, stale-plan rejection and exact output. Covered Unicode, empty
-    results, midnight, leap days, non-English locales and large totals using
-    fixed clocks, temporary storage and restored JVM settings
+  - **Console reliability:** Detected output write and flush failures that Java's
+    writer otherwise hides. Stopped with status 1 before reading another command,
+    without retrying failed output, and kept already-saved changes. Added 12
+    regression tests using failing writers and separate Java processes
+    ([PR #123][pr123]).
+  - **Reopening completed tasks:** Connected the console command to the existing
+    reopening service so students can correct mistaken completion. Kept task
+    details and saved changes before clearing the outdated plan ([PR #91][pr91]).
+  - **Regression coverage:** Added JUnit 5 tests for startup/restart, recovery
+    after failed saves, rejection of outdated plans and exact output. Covered
+    Unicode, empty results, midnight, leap days, non-English language settings
+    and large totals using fixed clocks, temporary storage and restored JVM settings
     ([application tests][app-tests], [renderer tests][renderer-tests],
     [entry-point tests][main-tests]).
-  - **Packaged acceptance:** Built the isolated console runner with per-command
-    assertions and transcripts ([PR #1][pr1]); maintained the [UI plan][ui-plan].
-    Added UI-035 for impossible saved work and UI-036 for edits after commitment
-    skips, checking rejection, preserved data/plans and saved restarts.
+  - **Console acceptance tests:** Built a test runner that checks each command's
+    response and records transcripts in isolated test folders ([PR #1][pr1]);
+    maintained the [UI plan][ui-plan]. Added UI-035 for saved plans with impossible
+    work totals and UI-036 for editing commitments after skipped occurrences.
+    Checked rejection, retained data/plans and restarts.
 
 - **Documentation:**
   - **User Guide:** Wrote the introduction, [command conventions][ug-format],
@@ -82,7 +85,7 @@ Given below are my contributions to the project.
     against console behaviour ([PR #106][pr106], [PR #134][pr134]).
   - **Developer Guide:** Wrote [console design][dg-design],
     [interaction/rendering][dg-implementation], setup, verification, scope and
-    manual console testing; reorganized the guide around AB3 ([PR #100][pr100]).
+    manual console testing; reorganized the guide ([PR #100][pr100]).
     Added the [console class diagram][class-diagram] and
     [command-loop sequence diagram][sequence-diagram], then added the
     architecture overview and corrected notation across all eleven guide
@@ -91,15 +94,15 @@ Given below are my contributions to the project.
     layouts for portable offline documentation ([PR #119][pr119]).
 
 - **Team-based tasks:**
-  - Reviewed frozen-plan invariants and regression coverage for overlap, timing,
-    task references and accounting ([PR #127 review][review127]). Commented on
-    recurrence coverage across components and saved restarts
+  - Reviewed saved-plan checks and tests for overlaps, timing, task references
+    and work totals ([PR #127 review][review127]). Commented on recurring-task
+    tests across components and saved restarts
     ([PR #76 review][review76]).
   - Added contributor guidance requiring Javadoc and meaningful JUnit regression
     tests, and repaired team profile/portfolio navigation ([PR #22][pr22],
     [PR #101][pr101]).
 
-- **Tools:** Extended the existing Ubuntu/macOS/Windows CI matrix to run the
+- **Tools:** Updated the existing Ubuntu/macOS/Windows CI checks to run the
   Java 25 build, runner self-tests, console scenarios and packaged release
   checks, retaining reports after failures ([PR #123][pr123]). Fixed Shadow JAR
   distribution classpaths and enabled launcher assertions ([PR #35][pr35]).

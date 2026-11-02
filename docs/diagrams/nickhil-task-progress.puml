@@ -1,5 +1,6 @@
 @startuml
 !include course-style.puml
+' Gaps reserve space for return labels below their arrows in the course export.
 
 participant "dispatcher:CommandDispatcher" as Dispatcher DOMAIN
 participant "tasks:TaskService" as Tasks DOMAIN
@@ -18,23 +19,32 @@ Tasks -> Tasks ++ : recordWork(source, taskId, done)
 Tasks -> Tasks ++ : findTask(source, taskId)
 Tasks -> Source ++ : tasks()
 Source --> Tasks -- : stored tasks
+||16||
 Tasks --> Tasks -- : task
+||16||
 note right of Tasks : remaining = task.remainingMinutes() - done
 Tasks -> Tasks ++ : replaceRemaining(source, task, remaining)
 create participant "replacement:Task" as Replacement VALUES
 Tasks -> Replacement ++ : Task(...)
 Replacement --> Tasks -- : replacement
+||16||
 note right of Tasks : Copy task list; replace task at its stored position.
 Tasks -> Source ++ : withTasks(replacements, nextTaskId)
 Source --> Tasks -- : candidate
+||16||
 Tasks --> Tasks -- : candidate
+||16||
 Tasks --> Tasks -- : candidate
+||16||
 Tasks --> Dispatcher -- : candidate
+||16||
 note right of Dispatcher
   Remaining dispatcher work is omitted:
   publishTaskProgress prepares confirmation,
   saves the candidate, then publishes it.
 end note
 Dispatcher --> Dispatcher -- : confirmation
+||16||
 [<-- Dispatcher -- : response: CommandResponse
+||16||
 @enduml

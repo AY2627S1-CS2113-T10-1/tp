@@ -1,6 +1,7 @@
 @startuml
 !pragma teoz true
 !include course-style.puml
+' Gaps reserve space for return labels below their arrows in the course export.
 
 participant "dispatcher:CommandDispatcher" as Dispatcher DOMAIN
 participant "recurringTasks:RecurringTaskService" as Recurrence DOMAIN
@@ -20,9 +21,11 @@ end note
 Dispatcher -> Dispatcher ++ : generatePlan(state, now)
 Dispatcher -> Recurrence ++ : materialize(source, now)
 Recurrence --> Dispatcher -- : candidate
+||16||
 Dispatcher -> Planner ++ : generate(candidate, now)
 Planner -> Rules ++ : horizonEnd(now)
 Rules --> Planner -- : horizonEnd
+||16||
 note right of Planner : Filter and sort unfinished tasks; create pending work.
 Planner -> Planner ++ : createSlots(candidate, now, horizonEnd, pending)
 loop date < horizonEnd.toLocalDate()
@@ -32,6 +35,8 @@ loop date < horizonEnd.toLocalDate()
     end note
     Planner -> Rules ++ : eligibleStart(date, now, window)
     Rules --> Planner -- : cutoff
+    ' Keep this spacing local so the loop frame encloses only its participants.
+    Planner -[hidden]> Planner
     note right of Planner
       Allocate 30-minute slots.
       Check busy time/breaks.
@@ -39,23 +44,33 @@ loop date < horizonEnd.toLocalDate()
     end note
 end
 Planner --> Planner -- : slots
+||16||
 note right of Planner
   Collect remaining work, merge sessions and collect breaks.
   Construct immutable Plan; helper/constructor calls omitted.
 end note
 Planner -> Validation ++ : validate(plan)
 Validation --> Planner -- : return (feasible)
+||16||
 Planner --> Dispatcher -- : plan
+||16||
 Dispatcher -> Renderer ++ : plan(plan)
 Renderer --> Dispatcher -- : output
+||16||
 Dispatcher -> Storage ++ : savePlan(plan)
 Storage --> Dispatcher -- : return (saved)
+||16||
 opt candidate != source
     Dispatcher -> State ++ : commit(candidate)
     State --> Dispatcher -- : return
+    ' Keep this spacing local so the opt frame starts beside the dispatcher.
+    Dispatcher -[hidden]> Dispatcher
 end
 Dispatcher -> State ++ : replacePlan(plan)
 State --> Dispatcher -- : return
+||16||
 Dispatcher --> Dispatcher -- : output
+||16||
 [<-- Dispatcher -- : response: CommandResponse
+||16||
 @enduml

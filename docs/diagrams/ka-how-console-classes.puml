@@ -56,6 +56,10 @@ App --> "storage\n1" Storage
 ConsoleUi --> "input\n1" BufferedReader
 ConsoleUi --> "output\n1" PrintWriter
 App ..> AppState : creates in run()
+CommandParser ..> Command : returns
+CommandDispatcher ..> Command : accepts
+CommandDispatcher ..> CommandResponse : creates / returns
+App ..> CommandResponse : reads
 Command <|.. Help
 Command <|.. AddTask
 AppState --> "snapshot\n1" Snapshot
@@ -64,12 +68,12 @@ AppState --> "currentPlan\n0..1" Plan
 note as CommandNote
   Only two representative command records are shown.
 end note
-CommandNote -[dotted]-> Command
+CommandNote -[dashed]- Command
 
 note as OutputNote
   checkError() flushes and checks output.
   ConsoleUi exposes writer failure as UncheckedIOException.
   App stops with status 1 without another command read.
 end note
-OutputNote -[dotted]-> ConsoleUi
+OutputNote -[dashed]- ConsoleUi
 @enduml

@@ -3,9 +3,10 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
+import { applyReferenceStyle } from './uml-reference-style.mjs';
 
 // PlantUML cannot connect sequence notes to lifelines. Add those annotations
-// to its SVG, then rasterize that same SVG so both exports contain the arrows.
+// to its SVG, then derive both exports from the reference-sheet notation.
 const { values } = parseArgs({ options: {
   plantuml: { type: 'string' },
   chrome: { type: 'string' },
@@ -98,21 +99,17 @@ try {
             throw new Error(`Note order changed: expected '${note.firstLine}', found '${texts[0]}'`);
           }
           group.setAttribute('transform', `translate(${offset},0)`);
-          const arrow = document.createElementNS(ns, 'g');
-          arrow.setAttribute('class', 'uml-note-link');
-          arrow.setAttribute('data-note-target', note.target);
+          const connector = document.createElementNS(ns, 'g');
+          connector.setAttribute('class', 'uml-note-link');
+          connector.setAttribute('data-note-target', note.target);
           const line = document.createElementNS(ns, 'path');
           line.setAttribute('d', `M${box.x + offset},${y} H${target}`);
-          line.setAttribute('stroke-dasharray', '1,3');
-          const head = document.createElementNS(ns, 'path');
-          head.setAttribute('d', `M${target + 7},${y - 4} L${target},${y} L${target + 7},${y + 4}`);
-          for (const part of [line, head]) {
-            part.setAttribute('stroke', '#000000');
-            part.setAttribute('stroke-width', '1.2');
-            part.setAttribute('fill', 'none');
-            arrow.append(part);
-          }
-          group.after(arrow);
+          line.setAttribute('stroke-dasharray', '6,4');
+          line.setAttribute('stroke', '#000000');
+          line.setAttribute('stroke-width', '1.2');
+          line.setAttribute('fill', 'none');
+          connector.append(line);
+          group.after(connector);
           width = Math.max(width, box.x + offset + box.width + 5);
         }
         const height = svg.viewBox.baseVal.height;
@@ -124,12 +121,13 @@ try {
         document.body.style.margin = '0';
         return { width: Math.ceil(width), height: Math.ceil(height) };
       }, { participants, notes });
+      await page.evaluate(applyReferenceStyle, { sequence: Object.keys(participants).length > 0 });
       await page.setViewportSize(size);
       const stem = path.basename(file, '.puml');
       await fs.writeFile(path.join(output, `${stem}.svg`), await page.locator('svg')
         .evaluate(svg => new XMLSerializer().serializeToString(svg)));
       await page.locator('svg').screenshot({ path: path.join(output, `${stem}.png`) });
-      console.log(`${stem}: SVG and 2x PNG; ${notes.length} sequence note arrow(s)`);
+      console.log(`${stem}: SVG and 2x PNG; ${notes.length} sequence note connector(s)`);
     } finally {
       await context.close();
     }
