@@ -59,11 +59,11 @@ note as SnapshotNote
   Hours, policy and three ID counters are omitted.
   Lists are copied; counters survive deletion.
 end note
-SnapshotNote -[dotted]-> Snapshot
+SnapshotNote -[dashed]- Snapshot
 note as OperationsNote
   Nested package-private collaborator.
   Tests inject faults without changing global providers.
   Reads and directory creation use Files directly.
 end note
-OperationsNote -[dotted]-> FileOperations
+OperationsNote -[dashed]- FileOperations
 @enduml

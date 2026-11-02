@@ -1,5 +1,5 @@
 ' Shared course UML notation and responsibility colours.
-' Export with tools/render-uml.mjs to include sequence note arrows.
+' Export with tools/render-uml.mjs for reference-sheet folds, heads and connectors.
 !define SHELL #CAB6E8
 !define PARSING #9FEBFF
 !define DOMAIN #DDFDAF
@@ -43,7 +43,6 @@ skinparam sequence {
 }
 skinparam ParticipantPadding 24
 skinparam maxMessageSize 240
-skinparam responseMessageBelowArrow false
 skinparam sequenceMessageAlign left
 skinparam nodesep 70
 skinparam ranksep 65

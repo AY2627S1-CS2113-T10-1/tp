@@ -94,12 +94,15 @@ Implementation section traces the workflows that connect them.
 The figures use the course's class and sequence notation. Solid open-headed
 arrows show retained references; dashed open-headed arrows show use or creation.
 A hollow triangle on a dashed line points to an implemented interface.
-Multiplicities and reference roles appear at the target end. Java records are
+Reference roles and multiplicities appear on opposite sides of the association
+at the target end. Java records are
 marked «record» and their stored fields are private; omitted accessors remain
 available in the code. Sequence calls use filled heads and returns use dashed
-lines. A narrow activation represents one invocation, including time spent
-waiting for nested calls. Folded-corner notes explain deliberately omitted detail;
-dotted open-headed arrows point from each note to the element it describes.
+lines, with italic return values below the arrows. A narrow activation represents
+one invocation, including time spent
+waiting for nested calls. Notes have a folded bottom-right corner, as shown in
+the UML Reference Sheet. Dashed lines without arrowheads connect notes to the
+elements they describe.
 Colours identify responsibilities consistently across figures, independently of
 the team's ownership allocation.
 
@@ -1403,7 +1406,8 @@ and [Week 11 DG review guidance](https://nus-cs2113-ay2627-s1.github.io/website/
 Check depicted members, retained references and call order against the current
 Java source and its tests. Keep each view focused; identify omitted helper calls
 in attached notes or the surrounding explanation. Although the textbook permits
-unattached notes, this guide connects every note with a dotted arrow to its subject.
+unattached notes, this guide connects every note to its subject with a dashed
+line without an arrowhead, matching page 7 of the UML Reference Sheet.
 
 The [DG review (#118)](https://github.com/AY2627S1-CS2113-T10-1/tp/issues/118)
 identifies course notation, missing activations and unclear notes as concerns.
@@ -1435,17 +1439,25 @@ include is a style file, not a standalone diagram. Captions belong in the guide
 so that titles cannot change export names. The Windows PlantUML distribution
 used here supplies Graphviz; other installations may require it separately.
 
-PlantUML draws structural note arrows directly. Its sequence notes have no
-connector, so [`tools/render-uml.mjs`](https://github.com/AY2627S1-CS2113-T10-1/tp/blob/master/tools/render-uml.mjs) adds dotted arrows
+PlantUML draws structural note connectors directly. Its sequence notes have no
+connector, so [`tools/render-uml.mjs`](https://github.com/AY2627S1-CS2113-T10-1/tp/blob/master/tools/render-uml.mjs) adds dashed lines without arrowheads
 to their named participants' active invocation bars (or lifelines), then derives
 the PNG from the same SVG. Sequence notes must use `note right of PARTICIPANT`;
 the exporter checks their count, text and targets and reserves a visible gap for
-each arrow. Plain PlantUML exports alone omit these sequence note connectors.
+each connector. Plain PlantUML exports alone omit these sequence note connectors.
+The shared exporter also applies the reference sheet's bottom-right note folds,
+open V relationship heads, upright interface names, and separated endpoint roles
+and multiplicities. Sequence messages are italic; returns use visible dashes
+with labels below the arrows. Explicit gaps in the sequence sources reserve
+space for those labels. Realization triangles, static underlines and chamfered
+fragment tabs are preserved. Both image formats are derived from this final SVG.
+Run `node --test test/uml-diagrams.test.mjs` after rendering to check the exported
+notation, SVG/PNG dimensions, and diagram links in the guide and team pages.
 
 Commit each edited source, shared style change and corresponding SVG/PNG exports
 together. Check displayed members and call order against the source and relevant
 JUnit tests. Inspect every rendered figure at full size: visibility and static
-underlines, endpoint roles/multiplicities, realization triangles, dotted note
+underlines, endpoint roles/multiplicities, realization triangles, dashed note
 attachments, solid filled call heads, dashed returns, continuous/nested
 activations, guarded fragments, and constructor-time headers. Deliberate omissions
 are identified beside the figures; failure paths remain documented in prose.

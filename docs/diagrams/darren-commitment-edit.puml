@@ -1,5 +1,6 @@
 @startuml
 !include course-style.puml
+' Gaps reserve space for return labels below their arrows in the course export.
 
 participant "app:App" as App SHELL
 participant "dispatcher:CommandDispatcher" as Dispatcher DOMAIN
@@ -13,6 +14,7 @@ note right of Dispatcher : Capture now once; time API and accessors omitted.
 Dispatcher -> Dispatcher ++ : editCommitment(command, state)
 Dispatcher -> State ++ : snapshot()
 State --> Dispatcher -- : source
+||16||
 Dispatcher -> Service ++ : edit(source, id, name, day, start,\nminutes, startDate, endDate)
 Service -> Service ++ : createEdit(source, id, name, day, start,\nminutes, startDate, endDate)
 note right of Service
@@ -23,22 +25,31 @@ note right of Service
 end note
 Service -> Service ++ : rejectOverlaps(edited, otherCommitments)
 Service --> Service -- : return
+||16||
 note right of Service
   Replace C1 at the same list position.
   withCommitments creates the candidate (call omitted).
 end note
 Service --> Service -- : candidate
+||16||
 Service --> Dispatcher -- : candidate
+||16||
 Dispatcher -> Dispatcher ++ : saveAndCommit(candidate, state)
 note right of Dispatcher : Original snapshot/plan accessors and assertions omitted.
 Dispatcher -> Storage ++ : save(candidate)
 Storage --> Dispatcher -- : return (atomic replacement succeeded)
+||32||
 Dispatcher -> State ++ : commit(candidate)
 note right of State : Publish saved candidate and clear currentPlan.
 State --> Dispatcher -- : return
+||16||
 Dispatcher --> Dispatcher -- : return
+||16||
 Dispatcher -> Renderer ++ : commitmentEdited(edited)
 Renderer --> Dispatcher -- : confirmation
+||16||
 Dispatcher --> Dispatcher -- : confirmation
+||16||
 Dispatcher --> App -- : response: CommandResponse
+||16||
 @enduml
