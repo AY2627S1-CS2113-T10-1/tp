@@ -85,7 +85,7 @@ Given below are my contributions to the project.
     against console behaviour ([PR #106][pr106], [PR #134][pr134]).
   - **Developer Guide:** Wrote [console design][dg-design],
     [interaction/rendering][dg-implementation], setup, verification, scope and
-    manual console testing; reorganized the guide around AB3 ([PR #100][pr100]).
+    manual console testing; reorganized the guide ([PR #100][pr100]).
     Added the [console class diagram][class-diagram] and
     [command-loop sequence diagram][sequence-diagram], then added the
     architecture overview and corrected notation across all eleven guide
