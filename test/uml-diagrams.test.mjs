@@ -66,6 +66,26 @@ for (const stem of stems) {
   });
 }
 
+test('Console command values connect to their producers and consumers', async () => {
+  const svg = await fs.readFile(path.join(images, 'ka-how-console-classes.svg'), 'utf8');
+  const relationships = [
+    ['CommandParser', 'Command', 'returns'],
+    ['CommandDispatcher', 'Command', 'accepts'],
+    ['CommandDispatcher', 'CommandResponse', 'creates / returns'],
+    ['App', 'CommandResponse', 'reads'],
+  ];
+  for (const [from, to, label] of relationships) {
+    const link = svg.match(new RegExp(
+      `<g class="link"[^>]*data-entity-1="${from}" data-entity-2="${to}"[^>]*>(.*?)</g>`));
+    assert.ok(link, `Missing dependency from ${from} to ${to}`);
+    assert.match(link[1], /stroke-dasharray:7,7/);
+    assert.match(link[1], /<polyline[^>]*fill="none"/);
+    const renderedLabel = [...link[1].matchAll(/<text\b[^>]*>(.*?)<\/text>/g)]
+      .map(match => match[1]).join('').replaceAll('\u00a0', ' ');
+    assert.equal(renderedLabel, label);
+  }
+});
+
 test('Guide and PPP Markdown diagram links resolve to existing files', async () => {
   const files = [path.join(root, 'docs/DeveloperGuide.md'), path.join(root, 'docs/UserGuide.md'),
     ...(await fs.readdir(path.join(root, 'docs/team'))).filter(name => name.endsWith('.md'))

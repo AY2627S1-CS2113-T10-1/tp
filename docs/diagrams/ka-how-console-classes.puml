@@ -56,6 +56,10 @@ App --> "storage\n1" Storage
 ConsoleUi --> "input\n1" BufferedReader
 ConsoleUi --> "output\n1" PrintWriter
 App ..> AppState : creates in run()
+CommandParser ..> Command : returns
+CommandDispatcher ..> Command : accepts
+CommandDispatcher ..> CommandResponse : creates / returns
+App ..> CommandResponse : reads
 Command <|.. Help
 Command <|.. AddTask
 AppState --> "snapshot\n1" Snapshot

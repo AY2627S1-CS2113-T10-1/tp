@@ -143,8 +143,12 @@ The shell connects text interaction to the domain without putting console I/O
 inside services. The class view shows the shell's production types and the
 external collaborators needed to understand the command path. Associations
 denote retained references; dashed dependencies denote creation or use.
-`...` marks omitted parameters. Service, codec, clock and transport-use
-dependencies are omitted to keep this view focused.
+The parser returns a `Command`, which the dispatcher accepts. The dispatcher
+creates and returns a `CommandResponse`, which `App` reads for output and the
+termination decision. These temporary uses are shown as dashed dependencies;
+the command and response values are not retained fields of those collaborators.
+`...` marks omitted parameters. Service, codec and clock dependencies are omitted
+to keep this view focused.
 
 ![Console shell classes, command transports and external collaborators](images/diagrams/ka-how-console-classes.svg)
 
