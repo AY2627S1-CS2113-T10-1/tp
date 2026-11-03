@@ -32,22 +32,22 @@ body:has(.sf-home) {
   margin: 30px 0;
   padding: 0;
 }
-.sf-home .sf-preview {
-  margin: 0 0 18px;
+.sf-home main > p:has(img) {
+  margin: 0;
 }
-.sf-preview img {
+.sf-home main > p:has(img) img {
   border: 1px solid #d1d5da;
   display: block;
   height: auto;
   max-width: 100%;
   width: 100%;
 }
-.sf-preview figcaption {
+.sf-home main > p:has(img) + p {
   color: #555;
   font-size: 13px;
-  margin-top: 6px;
+  margin: 6px 0 18px;
 }
-.sf-home .sf-acknowledgements h2 {
+.sf-home h2 {
   border: 0;
   font-size: 16px;
   font-weight: 700;
